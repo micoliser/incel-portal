@@ -10,12 +10,18 @@ from applications.serializers import (
     AccessOverrideCreateSerializer,
     AccessOverrideSerializer,
     AuditLogSerializer,
+    ApplicationLogoUploadUrlSerializer,
     InternalApplicationSerializer,
     InternalApplicationWriteSerializer,
     SetApplicationDepartmentsSerializer,
 )
+from applications.s3 import (
+    ApplicationLogoUploadError,
+    delete_application_logo_by_public_url,
+    generate_application_logo_upload_url,
+)
 from common.access import can_user_access_application
-from common.permissions import IsGlobalAccessUser
+from common.permissions import IsGlobalAccessUser, has_global_access
 from organization.models import Department
 
 
@@ -24,10 +30,35 @@ class ApplicationListView(APIView):
 
     def get(self, request):
         applications = InternalApplication.objects.all().order_by('name')
+
+        search_query = request.query_params.get('q', '').strip()
+        if search_query:
+            applications = applications.filter(name__icontains=search_query)
+
+        department_id = request.query_params.get('department_id', '').strip()
+        if department_id and department_id.lower() != 'all' and has_global_access(request.user):
+            if department_id.isdigit():
+                applications = applications.filter(departments__id=int(department_id)).distinct()
+
+        department_ids_raw = request.query_params.get('department_ids', '').strip()
+        if department_ids_raw and has_global_access(request.user):
+            parsed_ids = []
+            for value in department_ids_raw.split(','):
+                cleaned = value.strip()
+                if cleaned.isdigit():
+                    parsed_ids.append(int(cleaned))
+            if parsed_ids:
+                applications = applications.filter(departments__id__in=parsed_ids).distinct()
+
+        accessible_raw = request.query_params.get('accessible', '').strip().lower()
+        accessible_only = accessible_raw in {'1', 'true', 'yes'}
+
         data = []
         for app in applications:
             item = InternalApplicationSerializer(app).data
             can_access, reason = can_user_access_application(request.user, app)
+            if accessible_only and not can_access:
+                continue
             item['can_access'] = can_access
             item['access_reason'] = reason
             data.append(item)
@@ -115,6 +146,25 @@ class AdminApplicationCreateView(APIView):
         return Response(InternalApplicationSerializer(app).data, status=status.HTTP_201_CREATED)
 
 
+class AdminApplicationLogoUploadUrlView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+
+    def post(self, request):
+        serializer = ApplicationLogoUploadUrlSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            payload = generate_application_logo_upload_url(
+                slug=serializer.validated_data['slug'],
+                file_name=serializer.validated_data['file_name'],
+                content_type=serializer.validated_data['content_type'],
+            )
+        except ApplicationLogoUploadError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(payload)
+
+
 class AdminApplicationUpdateDeleteView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
@@ -123,6 +173,7 @@ class AdminApplicationUpdateDeleteView(APIView):
         if not app:
             return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        previous_logo_url = app.logo_url
         serializer = InternalApplicationWriteSerializer(app, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -130,6 +181,14 @@ class AdminApplicationUpdateDeleteView(APIView):
         for key, value in serializer.validated_data.items():
             setattr(app, key, value)
         app.save()
+
+        if previous_logo_url and app.logo_url != previous_logo_url:
+            try:
+                delete_application_logo_by_public_url(previous_logo_url)
+            except ApplicationLogoUploadError as exc:
+                app.logo_url = previous_logo_url
+                app.save(update_fields=['logo_url', 'updated_at'])
+                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         if department_ids is not None:
             departments = list(Department.objects.filter(id__in=department_ids))
@@ -201,6 +260,14 @@ class AdminApplicationDepartmentsView(APIView):
 
 class AdminApplicationOverridesCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+
+    def get(self, _request, application_id):
+        app = InternalApplication.objects.filter(id=application_id).first()
+        if not app:
+            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        overrides = ApplicationAccessOverride.objects.filter(application=app).order_by('-created_at')
+        return Response(AccessOverrideSerializer(overrides, many=True).data)
 
     def post(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()

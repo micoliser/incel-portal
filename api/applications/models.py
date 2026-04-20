@@ -23,6 +23,7 @@ class InternalApplication(TimeStampedModel):
     slug = models.SlugField(max_length=180, unique=True)
     description = models.TextField(blank=True)
     app_url = models.URLField(max_length=500)
+    logo_url = models.URLField(max_length=500, blank=True, null=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     access_scope = models.CharField(
         max_length=30,
