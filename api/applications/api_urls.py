@@ -8,6 +8,7 @@ urlpatterns = [
     path('applications/<int:application_id>/can-access', views_api.ApplicationCanAccessView.as_view(), name='applications-can-access'),
     path('applications/<int:application_id>/open', views_api.ApplicationOpenView.as_view(), name='applications-open'),
     path('admin/applications', views_api.AdminApplicationCreateView.as_view(), name='admin-applications-create'),
+    path('admin/applications/logo-upload-url', views_api.AdminApplicationLogoUploadUrlView.as_view(), name='admin-applications-logo-upload-url'),
     path('admin/applications/<int:application_id>', views_api.AdminApplicationUpdateDeleteView.as_view(), name='admin-applications-update-delete'),
     path('admin/applications/<int:application_id>/departments', views_api.AdminApplicationDepartmentsView.as_view(), name='admin-applications-departments'),
     path('admin/applications/<int:application_id>/overrides', views_api.AdminApplicationOverridesCreateView.as_view(), name='admin-applications-overrides-create'),

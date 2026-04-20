@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'organization',
@@ -49,6 +50,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -132,6 +134,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME', '')
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME', '')
+AWS_S3_CUSTOM_DOMAIN = os.getenv('AWS_S3_CUSTOM_DOMAIN', '')
+AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL', '')
+AWS_APPLICATION_LOGO_S3_PREFIX = os.getenv('AWS_APPLICATION_LOGO_S3_PREFIX', 'application-logos')
+AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN', '900'))
+AWS_S3_OBJECT_ACL = os.getenv('AWS_S3_OBJECT_ACL', 'public-read')
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -142,3 +152,15 @@ REST_FRAMEWORK = {
     ],
     'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
 }
+
+
+def _env_list(name: str, default: str = ''):
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
+CORS_ALLOWED_ORIGINS = _env_list(
+    'CORS_ALLOWED_ORIGINS',
+    'http://127.0.0.1:3000,http://localhost:3000',
+)
+CORS_ALLOW_CREDENTIALS = True

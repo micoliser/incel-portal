@@ -30,6 +30,7 @@ class InternalApplicationSerializer(serializers.ModelSerializer):
             'slug',
             'description',
             'app_url',
+            'logo_url',
             'status',
             'access_scope',
             'visibility_scope',
@@ -56,6 +57,7 @@ class InternalApplicationWriteSerializer(serializers.ModelSerializer):
             'slug',
             'description',
             'app_url',
+            'logo_url',
             'status',
             'access_scope',
             'visibility_scope',
@@ -79,6 +81,26 @@ class InternalApplicationWriteSerializer(serializers.ModelSerializer):
 
     def validate_department_ids(self, value):
         return _validated_department_ids(value)
+
+
+class ApplicationLogoUploadUrlSerializer(serializers.Serializer):
+    slug = serializers.SlugField(max_length=180)
+    file_name = serializers.CharField(max_length=255)
+    content_type = serializers.CharField(max_length=100)
+
+    def validate_file_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('file_name cannot be blank.')
+        return value
+
+    def validate_content_type(self, value):
+        value = value.strip().lower()
+        if not value:
+            raise serializers.ValidationError('content_type cannot be blank.')
+        if not value.startswith('image/'):
+            raise serializers.ValidationError('content_type must be an image MIME type.')
+        return value
 
 
 class AccessOverrideSerializer(serializers.ModelSerializer):
