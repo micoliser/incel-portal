@@ -10,7 +10,7 @@ on:
       frontend_api_base_url:
         description: Public API base URL baked into the frontend image
         required: false
-        default: https://api.portal.incelgroup.com/api/v1
+        default: https://workspaceapi.incelgroup.com/api/v1
 
 permissions:
   contents: read
