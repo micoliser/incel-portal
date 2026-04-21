@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  ScrollText,
   Sun,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [userInfo, setUserInfo] = useState<{
     username?: string;
     first_name?: string;
@@ -64,7 +66,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
     async function loadUserContext() {
       try {
-        const response = await apiClient.get("/me");
+        const [response, permissionsResponse] = await Promise.all([
+          apiClient.get("/me"),
+          apiClient.get("/me/permissions"),
+        ]);
 
         const data = response.data as {
           username?: string;
@@ -76,7 +81,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           department?: string | null;
           department_id?: number | null;
         };
+        const permissionsData = permissionsResponse.data as {
+          is_superuser?: boolean;
+          role_code?: string | null;
+        };
+
         setUserInfo(data);
+        setIsAdmin(
+          Boolean(permissionsData.is_superuser) ||
+            String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN",
+        );
       } catch (error) {
         if (axios.isAxiosError(error) && error.response) {
           clearStoredTokens();
@@ -84,6 +98,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           return;
         }
         setUserInfo(null);
+        setIsAdmin(false);
       } finally {
         setIsCheckingAuth(false);
       }
@@ -98,10 +113,15 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           title: "Applications",
           subtitle: "Browse and manage internal application access.",
         }
-      : {
-          title: "Dashboard",
-          subtitle: "Your portal workspace is ready.",
-        };
+      : pathname === "/logs"
+        ? {
+            title: "Logs",
+            subtitle: "Review audit events and activity history.",
+          }
+        : {
+            title: "Dashboard",
+            subtitle: "Your portal workspace is ready.",
+          };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
@@ -275,6 +295,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             />
             <span>Applications</span>
           </Link>
+
+          {isAdmin ? (
+            <Link
+              href="/logs"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname === "/logs"
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname === "/logs" ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <ScrollText
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname === "/logs" ? "scale-110" : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Logs</span>
+            </Link>
+          ) : null}
         </nav>
 
         <Button

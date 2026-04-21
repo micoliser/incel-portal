@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ApplicationsSkeleton } from "@/components/skeletons/applications-skeleton";
 import { apiClient } from "@/lib/api-client";
 
 type ApplicationRecord = {
@@ -31,6 +32,16 @@ type ApplicationRecord = {
   department_ids?: number[];
   can_access?: boolean;
   access_reason?: string;
+};
+
+type ApplicationsResponse = {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  next_page: number | null;
+  previous_page: number | null;
+  results: ApplicationRecord[];
 };
 
 type FormState = {
@@ -250,6 +261,9 @@ function sameNumberList(a: number[], b: number[]) {
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
@@ -303,6 +317,8 @@ export default function ApplicationsPage() {
     number | null
   >(null);
   const [deniedFeedbackIds, setDeniedFeedbackIds] = useState<number[]>([]);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const isRequestInFlightRef = useRef(false);
 
   useEffect(() => {
     async function loadPermissionsAndContext() {
@@ -359,9 +375,31 @@ export default function ApplicationsPage() {
       return;
     }
 
+    setApplications([]);
+    setCurrentPage(1);
+    setHasNextPage(false);
+  }, [
+    hasGlobalAccess,
+    isPermissionsReady,
+    searchQuery,
+    selectedDepartmentFilterIds,
+    userVisibilityFilter,
+  ]);
+
+  useEffect(() => {
+    if (!isPermissionsReady) {
+      return;
+    }
+
     async function loadApplications() {
       try {
-        setIsLoading(true);
+        const isInitialPage = currentPage === 1;
+        isRequestInFlightRef.current = true;
+        if (isInitialPage) {
+          setIsLoading(true);
+        } else {
+          setIsLoadingMore(true);
+        }
 
         const params: Record<string, string> = {};
         if (searchQuery) {
@@ -376,23 +414,69 @@ export default function ApplicationsPage() {
           params.accessible = "true";
         }
 
+        params.page = String(currentPage);
+
         const response = await apiClient.get("/applications", { params });
-        setApplications(response.data as ApplicationRecord[]);
+        const payload = response.data as
+          | ApplicationsResponse
+          | ApplicationRecord[];
+
+        if (Array.isArray(payload)) {
+          setApplications(payload);
+          setHasNextPage(false);
+          return;
+        }
+
+        setApplications((current) =>
+          isInitialPage ? payload.results : [...current, ...payload.results],
+        );
+        setHasNextPage(Boolean(payload.next_page));
       } catch (error) {
         toast.error(errorMessage(error, "Failed to load applications."));
       } finally {
+        isRequestInFlightRef.current = false;
         setIsLoading(false);
+        setIsLoadingMore(false);
       }
     }
 
     void loadApplications();
   }, [
+    currentPage,
     hasGlobalAccess,
     isPermissionsReady,
     searchQuery,
     selectedDepartmentFilterIds,
     userVisibilityFilter,
   ]);
+
+  useEffect(() => {
+    if (!hasNextPage || isLoading || isLoadingMore) {
+      return;
+    }
+
+    const element = loadMoreRef.current;
+    if (!element) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting || isRequestInFlightRef.current) {
+          return;
+        }
+
+        setCurrentPage((page) => page + 1);
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasNextPage, isLoading, isLoadingMore]);
 
   const activeFilterCount = useMemo(() => {
     if (hasGlobalAccess) {
@@ -805,7 +889,7 @@ export default function ApplicationsPage() {
         [application.id]: response.data as AccessOverrideEntry[],
       }));
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to load access overrides."));
+      toast.error(errorMessage(error, "Failed to load access."));
     } finally {
       setIsLoadingOverrides(false);
     }
@@ -1059,9 +1143,9 @@ export default function ApplicationsPage() {
 
       setOverrideUserId("");
       setOverrideReason("");
-      toast.success("Access override granted.");
+      toast.success("Access granted.");
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to grant access override."));
+      toast.error(errorMessage(error, "Failed to grant access."));
     } finally {
       setIsGrantingAccess(false);
     }
@@ -1941,11 +2025,11 @@ export default function ApplicationsPage() {
 
                 <div className="rounded-md border border-border bg-background p-4 dark:border-slate-700 dark:bg-slate-900">
                   <h3 className="text-sm font-semibold text-foreground">
-                    Grant Access Override
+                    Grant Access
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Select a user who currently does not have access and grant
-                    access override.
+                    access.
                   </p>
 
                   <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
@@ -2025,7 +2109,7 @@ export default function ApplicationsPage() {
 
                 <div className="rounded-md border border-border bg-background p-4 dark:border-slate-700 dark:bg-slate-900">
                   <h3 className="text-sm font-semibold text-foreground">
-                    Remove Access Override
+                    Remove Access
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Select a user who currently has access and explicitly deny
@@ -2104,10 +2188,7 @@ export default function ApplicationsPage() {
       ) : null}
 
       {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Loading applications...
-        </div>
+        <ApplicationsSkeleton />
       ) : applications.length === 0 ? (
         <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
           <div className="space-y-2">
@@ -2120,90 +2201,110 @@ export default function ApplicationsPage() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {applications.map((application) => {
-            const hasLogo = Boolean(application.logo_url);
-            const canAccess = application.can_access !== false;
-            const isDeniedAnimating = deniedFeedbackIds.includes(
-              application.id,
-            );
-            const isOpening = openingApplicationId === application.id;
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {applications.map((application) => {
+              const hasLogo = Boolean(application.logo_url);
+              const canAccess = application.can_access !== false;
+              const isDeniedAnimating = deniedFeedbackIds.includes(
+                application.id,
+              );
+              const isOpening = openingApplicationId === application.id;
 
-            return (
-              <Card
-                key={application.id}
-                className={`group border-border bg-card p-5 shadow-sm transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-1 hover:shadow-md ${
-                  isDeniedAnimating
-                    ? "animate-[app-denied-shake_0.18s_ease-in-out_4] border-red-200 bg-red-50/70 dark:border-red-900 dark:bg-red-950/25"
-                    : ""
-                }`}
-              >
-                <div className="flex h-full flex-col gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent text-accent-foreground shadow-sm transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                      {hasLogo ? (
-                        <img
-                          src={application.logo_url ?? ""}
-                          alt={application.name}
-                          className="size-full object-contain p-2"
-                        />
+              return (
+                <Card
+                  key={application.id}
+                  className={`group border-border bg-card p-5 shadow-sm transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-1 hover:shadow-md ${
+                    isDeniedAnimating
+                      ? "animate-[app-denied-shake_0.18s_ease-in-out_4] border-red-200 bg-red-50/70 dark:border-red-900 dark:bg-red-950/25"
+                      : ""
+                  }`}
+                >
+                  <div className="flex h-full flex-col gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent text-accent-foreground shadow-sm transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                        {hasLogo ? (
+                          <img
+                            src={application.logo_url ?? ""}
+                            alt={application.name}
+                            className="size-full object-contain p-2"
+                          />
+                        ) : (
+                          <AppWindow className="size-5" aria-hidden="true" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h2 className="text-base font-semibold text-foreground">
+                          {application.name}
+                        </h2>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                          {application.description ||
+                            "No description available."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-auto flex items-center justify-between gap-3">
+                      {isAdmin ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 cursor-pointer rounded-full border-sky-300 bg-sky-100 px-3 text-xs text-sky-800 hover:bg-sky-200 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200 dark:hover:bg-sky-900/70"
+                          onClick={() => openManageModal(application)}
+                        >
+                          Manage
+                        </Button>
                       ) : (
-                        <AppWindow className="size-5" aria-hidden="true" />
+                        <span />
                       )}
-                    </div>
 
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-base font-semibold text-foreground">
-                        {application.name}
-                      </h2>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        {application.description || "No description available."}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-auto flex items-center justify-between gap-3">
-                    {isAdmin ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-8 cursor-pointer rounded-full border-sky-300 bg-sky-100 px-3 text-xs text-sky-800 hover:bg-sky-200 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200 dark:hover:bg-sky-900/70"
-                        onClick={() => openManageModal(application)}
+                      <a
+                        href={application.app_url}
+                        onClick={(event) =>
+                          handleOpenApplication(event, application)
+                        }
+                        aria-disabled={isOpening}
+                        className={`inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          canAccess
+                            ? "border-border bg-background text-foreground hover:bg-muted dark:border-slate-700 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+                            : "border-red-300 bg-red-100/90 text-red-700 hover:bg-red-200 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200 dark:hover:bg-red-900/70"
+                        } ${isOpening ? "pointer-events-none opacity-70" : ""}`}
                       >
-                        Manage
-                      </Button>
-                    ) : (
-                      <span />
-                    )}
-
-                    <a
-                      href={application.app_url}
-                      onClick={(event) =>
-                        handleOpenApplication(event, application)
-                      }
-                      aria-disabled={isOpening}
-                      className={`inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                        canAccess
-                          ? "border-border bg-background text-foreground hover:bg-muted dark:border-slate-700 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-                          : "border-red-300 bg-red-100/90 text-red-700 hover:bg-red-200 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200 dark:hover:bg-red-900/70"
-                      } ${isOpening ? "pointer-events-none opacity-70" : ""}`}
-                    >
-                      Open
-                      {isOpening ? (
-                        <Loader2
-                          className="size-3.5 animate-spin"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <ExternalLink className="size-3.5" aria-hidden="true" />
-                      )}
-                    </a>
+                        Open
+                        {isOpening ? (
+                          <Loader2
+                            className="size-3.5 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <ExternalLink
+                            className="size-3.5"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </a>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {isLoadingMore ? (
+            <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+              <Loader2
+                className="mr-2 size-4 animate-spin"
+                aria-hidden="true"
+              />
+              Loading more applications...
+            </div>
+          ) : null}
+
+          {hasNextPage ? (
+            <div ref={loadMoreRef} className="h-1 w-full" />
+          ) : null}
+        </>
       )}
 
       <style jsx global>{`

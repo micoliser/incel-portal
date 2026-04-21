@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
 import { apiClient } from "@/lib/api-client";
 
 type MeProfile = {
@@ -272,14 +273,7 @@ export default function DashboardPage() {
       ];
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="flex items-center gap-3 rounded-full border border-border bg-card px-5 py-3 text-sm font-medium text-muted-foreground shadow-sm">
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Loading dashboard...
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (loadError) {
@@ -294,7 +288,7 @@ export default function DashboardPage() {
             <CardDescription>{loadError}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => router.refresh()}>Try again</Button>
+            <Button onClick={() => window.location.reload()}>Try again</Button>
           </CardContent>
         </Card>
       </div>
