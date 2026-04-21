@@ -28,7 +28,7 @@ from urllib import error, request
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/api/v1"
 DEFAULT_EMAIL = "samueliwelumo@gmail.com"
-DEFAULT_PASSWORD = "642654737"
+DEFAULT_PASSWORD = "Mi642654737?"
 DEFAULT_USER_PASSWORD = "PortalDemo#8429"
 DEFAULT_LOGO_PATH = Path(__file__).resolve().parents[2] / "portal" / "genlayer.png"
 

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -52,6 +53,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -83,17 +85,23 @@ WSGI_APPLICATION = 'portalapi.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Check if running tests
+IS_TESTING = 'test' in sys.argv and 'pytest' not in sys.modules
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME', 'incel_portal_db'),
-        'USER': os.getenv('DB_USER', 'incel_portal_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'change-this-password'),
-        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
-        'PORT': os.getenv('DB_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
+        'ENGINE': 'django.db.backends.sqlite3' if IS_TESTING else 'django.db.backends.postgresql',
+        'NAME': '/tmp/test_incel_portal.db' if IS_TESTING else os.getenv('DB_NAME', 'incel_portal_db'),
+        **(
+            {
+                'USER': os.getenv('DB_USER', 'incel_portal_user'),
+                'PASSWORD': os.getenv('DB_PASSWORD', 'change-this-password'),
+                'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+                'PORT': os.getenv('DB_PORT', '5432'),
+            }
+            if not IS_TESTING
+            else {}
+        ),
     }
 }
 
@@ -133,6 +141,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME', '')
 AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME', '')
