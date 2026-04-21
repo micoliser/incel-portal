@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.paginator import EmptyPage, Paginator
 from django.utils.dateparse import parse_datetime
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -21,7 +22,7 @@ from applications.s3 import (
     generate_application_logo_upload_url,
 )
 from common.access import can_user_access_application
-from common.permissions import IsGlobalAccessUser, has_global_access
+from common.permissions import IsAdminUser, IsGlobalAccessUser, has_global_access
 from organization.models import Department
 
 
@@ -30,6 +31,7 @@ class ApplicationListView(APIView):
 
     def get(self, request):
         applications = InternalApplication.objects.all().order_by('name')
+        page_value = request.query_params.get('page')
 
         search_query = request.query_params.get('q', '').strip()
         if search_query:
@@ -52,6 +54,63 @@ class ApplicationListView(APIView):
 
         accessible_raw = request.query_params.get('accessible', '').strip().lower()
         accessible_only = accessible_raw in {'1', 'true', 'yes'}
+
+        if page_value is not None:
+            if accessible_only:
+                filtered_data = []
+                for app in applications:
+                    can_access, reason = can_user_access_application(request.user, app)
+                    if not can_access:
+                        continue
+                    item = InternalApplicationSerializer(app).data
+                    item['can_access'] = can_access
+                    item['access_reason'] = reason
+                    filtered_data.append(item)
+
+                paginator = Paginator(filtered_data, 15)
+            else:
+                paginator = Paginator(applications, 15)
+
+            try:
+                page_number = int(page_value)
+            except (TypeError, ValueError):
+                page_number = 1
+
+            if page_number < 1:
+                page_number = 1
+
+            try:
+                page_obj = paginator.page(page_number)
+            except EmptyPage:
+                if paginator.count == 0:
+                    page_number = 1
+                    page_obj = paginator.page(1)
+                else:
+                    page_number = paginator.num_pages
+                    page_obj = paginator.page(page_number)
+
+            data = []
+            if accessible_only:
+                data = list(page_obj.object_list)
+            else:
+                for app in page_obj.object_list:
+                    item = InternalApplicationSerializer(app).data
+                    can_access, reason = can_user_access_application(request.user, app)
+                    item['can_access'] = can_access
+                    item['access_reason'] = reason
+                    data.append(item)
+
+            return Response(
+                {
+                    'count': paginator.count,
+                    'page': page_number,
+                    'page_size': 15,
+                    'total_pages': paginator.num_pages,
+                    'next_page': page_number + 1 if page_obj.has_next() else None,
+                    'previous_page': page_number - 1 if page_obj.has_previous() else None,
+                    'results': data,
+                }
+            )
 
         data = []
         for app in applications:
@@ -331,7 +390,7 @@ class AdminApplicationOverrideDeleteView(APIView):
 
 
 class AdminAuditLogListView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     def get(self, request):
         logs = AuditLog.objects.select_related('actor_user').all().order_by('-created_at')
@@ -357,11 +416,41 @@ class AdminAuditLogListView(APIView):
             if dt:
                 logs = logs.filter(created_at__lte=dt)
 
-        return Response(AuditLogSerializer(logs, many=True).data)
+        paginator = Paginator(logs, 30)
+        page_value = request.query_params.get('page', '1')
+        try:
+            page_number = int(page_value)
+        except (TypeError, ValueError):
+            page_number = 1
+
+        if page_number < 1:
+            page_number = 1
+
+        try:
+            page_obj = paginator.page(page_number)
+        except EmptyPage:
+            if paginator.count == 0:
+                page_number = 1
+                page_obj = paginator.page(1)
+            else:
+                page_number = paginator.num_pages
+                page_obj = paginator.page(page_number)
+
+        return Response(
+            {
+                'count': paginator.count,
+                'page': page_number,
+                'page_size': 30,
+                'total_pages': paginator.num_pages,
+                'next_page': page_number + 1 if page_obj.has_next() else None,
+                'previous_page': page_number - 1 if page_obj.has_previous() else None,
+                'results': AuditLogSerializer(page_obj.object_list, many=True).data,
+            }
+        )
 
 
 class AdminAuditLogDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     def get(self, _request, log_id):
         log = AuditLog.objects.select_related('actor_user').filter(id=log_id).first()

@@ -27,6 +27,7 @@ class StaffProfileSerializer(serializers.ModelSerializer):
 class UserWithProfileSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     role_code = serializers.SerializerMethodField()
+    department = serializers.SerializerMethodField()
     department_id = serializers.SerializerMethodField()
 
     class Meta:
@@ -40,6 +41,7 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'is_active',
             'role',
             'role_code',
+            'department',
             'department_id',
         ]
 
@@ -53,6 +55,12 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     def get_role_code(self, obj):
         profile = self._profile(obj)
         return profile.role.code if profile and profile.role else None
+
+    def get_department(self, obj):
+        profile = self._profile(obj)
+        if not profile or not profile.department:
+            return None
+        return profile.department.name
 
     def get_department_id(self, obj):
         profile = self._profile(obj)

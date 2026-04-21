@@ -21,3 +21,22 @@ def has_global_access(user):
 class IsGlobalAccessUser(BasePermission):
     def has_permission(self, request, _view):
         return has_global_access(request.user)
+
+
+def has_admin_access(user):
+    if not user or not user.is_authenticated:
+        return False
+
+    if user.is_superuser:
+        return True
+
+    profile = getattr(user, 'staff_profile', None)
+    if not profile or not profile.role:
+        return False
+
+    return profile.role.code == 'ADMIN'
+
+
+class IsAdminUser(BasePermission):
+    def has_permission(self, request, _view):
+        return has_admin_access(request.user)
