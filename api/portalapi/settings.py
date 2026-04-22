@@ -178,3 +178,12 @@ CORS_ALLOWED_ORIGINS = _env_list(
     'http://127.0.0.1:3000,http://localhost:3000',
 )
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = _env_list(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://workspaceapi.incelgroup.com,https://workspace.incelgroup.com',
+)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
