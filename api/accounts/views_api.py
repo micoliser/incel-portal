@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.functions import Lower
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -23,7 +24,7 @@ from accounts.serializers import (
 from applications.audit import log_audit
 from applications.models import InternalApplication
 from common.access import can_user_access_application
-from common.permissions import IsGlobalAccessUser, has_global_access
+from common.permissions import IsGlobalAccessUser, has_admin_access, has_global_access
 from organization.models import Department, Role
 
 
@@ -192,6 +193,40 @@ class MeApplicationsView(APIView):
         return Response(payload)
 
 
+class AuthenticatedUserListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        users = User.objects.select_related(
+            'staff_profile__role',
+            'staff_profile__department',
+        ).filter(is_active=True)
+
+        department_id = request.query_params.get('department_id')
+        if department_id:
+            users = users.filter(staff_profile__department_id=department_id)
+
+        search = (request.query_params.get('search') or '').strip()
+        if search:
+            search_terms = [term for term in search.split() if term]
+            search_query = (
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(username__icontains=search)
+                | Q(email__icontains=search)
+            )
+            if len(search_terms) > 1:
+                first = search_terms[0]
+                last = ' '.join(search_terms[1:])
+                search_query |= Q(first_name__icontains=first, last_name__icontains=last)
+                search_query |= Q(first_name__icontains=last, last_name__icontains=first)
+
+            users = users.filter(search_query)
+
+        users = users.order_by(Lower('username'))
+        return Response(UserWithProfileSerializer(users, many=True).data)
+
+
 class AdminUserListView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
@@ -201,6 +236,9 @@ class AdminUserListView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        if not has_admin_access(request.user):
+            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = AdminCreateUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -258,6 +296,9 @@ class AdminUserRoleUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
     def patch(self, request, user_id):
+        if not has_admin_access(request.user):
+            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = UpdateUserRoleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -292,6 +333,9 @@ class AdminUserDepartmentUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
     def put(self, request, user_id):
+        if not has_admin_access(request.user):
+            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = UpdateUserDepartmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -327,6 +371,9 @@ class AdminUserStatusUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
     def patch(self, request, user_id):
+        if not has_admin_access(request.user):
+            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = UpdateUserStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 

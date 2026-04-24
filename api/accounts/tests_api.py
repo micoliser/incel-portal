@@ -2,12 +2,30 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework import status
 
+from accounts.models import StaffProfile
 from applications.models import AuditLog, InternalApplication
 from common.test_utils import BaseAPITestCase
 from organization.models import Role
 
 
 class AccountsApiTests(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.role_admin = Role.objects.create(name='Admin', code='ADMIN', has_global_access=True)
+        self.admin_writer = User.objects.create_user(
+            username='admin.writer@example.com',
+            email='admin.writer@example.com',
+            password='AdminWriterStrongPass123!',
+            first_name='Admin',
+            last_name='Writer',
+        )
+        StaffProfile.objects.create(
+            user=self.admin_writer,
+            role=self.role_admin,
+            department=self.dep_eng,
+            is_active=True,
+        )
+
     def test_login_success_returns_jwt_tokens(self):
         response = self.client.post(reverse('auth-login'), self.login_payload(), format='json')
 
@@ -116,13 +134,104 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertTrue(data_by_slug['open-tool']['can_access'])
         self.assertIn(open_app.slug, data_by_slug)
 
+    def test_users_list_requires_authentication(self):
+        response = self.client.get(reverse('users-list'))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_users_list_returns_active_users_for_authenticated(self):
+        inactive_user = User.objects.create_user(
+            username='inactive@example.com',
+            email='inactive@example.com',
+            password='InactiveStrongPass123!',
+            is_active=False,
+        )
+        StaffProfile.objects.create(
+            user=inactive_user,
+            role=self.role_staff,
+            department=self.dep_eng,
+            is_active=False,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('users-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        emails = [item['email'] for item in response.data]
+        self.assertIn('admin@example.com', emails)
+        self.assertIn('staff@example.com', emails)
+        self.assertNotIn('inactive@example.com', emails)
+
+    def test_users_list_filters_by_department(self):
+        hr_user = User.objects.create_user(
+            username='hr.user@example.com',
+            email='hr.user@example.com',
+            password='HrStrongPass123!',
+            first_name='Hr',
+            last_name='User',
+            is_active=True,
+        )
+        StaffProfile.objects.create(
+            user=hr_user,
+            role=self.role_staff,
+            department=self.dep_hr,
+            is_active=True,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('users-list'), {'department_id': self.dep_hr.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item['department_id'] == self.dep_hr.id for item in response.data))
+        emails = [item['email'] for item in response.data]
+        self.assertIn('hr.user@example.com', emails)
+        self.assertNotIn('staff@example.com', emails)
+
+    def test_users_list_supports_search_by_name_or_email(self):
+        user = User.objects.create_user(
+            username='john.doe@example.com',
+            email='john.doe@example.com',
+            password='JohnStrongPass123!',
+            first_name='John',
+            last_name='Doe',
+            is_active=True,
+        )
+        StaffProfile.objects.create(
+            user=user,
+            role=self.role_staff,
+            department=self.dep_eng,
+            is_active=True,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        by_name = self.client.get(reverse('users-list'), {'search': 'John'})
+        self.assertEqual(by_name.status_code, status.HTTP_200_OK)
+        self.assertIn('john.doe@example.com', [item['email'] for item in by_name.data])
+
+        by_email = self.client.get(reverse('users-list'), {'search': 'john.doe@example.com'})
+        self.assertEqual(by_email.status_code, status.HTTP_200_OK)
+        self.assertIn('john.doe@example.com', [item['email'] for item in by_email.data])
+
+    def test_staff_cannot_create_user_via_admin_users_route(self):
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        payload = {
+            'first_name': 'Blocked',
+            'last_name': 'Create',
+            'email': 'blocked.create@example.com',
+            'password': 'VeryStrongPass123!',
+            'department_id': self.dep_hr.id,
+        }
+
+        response = self.client.post(reverse('admin-users-list'), payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_admin_users_list_requires_global_access(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.get(reverse('admin-users-list'))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_can_create_user_defaults_role_to_staff(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         payload = {
             'first_name': 'New',
             'last_name': 'Member',
@@ -140,7 +249,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertTrue(AuditLog.objects.filter(action='ADMIN_USER_CREATED', target_id=str(created.id)).exists())
 
     def test_admin_user_create_rejects_duplicate_email(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         payload = {
             'first_name': 'Dup',
             'last_name': 'User',
@@ -153,7 +262,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_user_create_rejects_invalid_department(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         payload = {
             'first_name': 'No',
             'last_name': 'Department',
@@ -166,12 +275,12 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_user_detail_not_found(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.get(reverse('admin-users-detail', kwargs={'user_id': 999999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_can_update_user_role(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.patch(
             reverse('admin-users-role', kwargs={'user_id': self.staff_user.id}),
             {'role_id': self.role_md.id},
@@ -183,7 +292,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(self.staff_user.staff_profile.role_id, self.role_md.id)
 
     def test_admin_role_update_rejects_invalid_role(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.patch(
             reverse('admin-users-role', kwargs={'user_id': self.staff_user.id}),
             {'role_id': 999999},
@@ -193,7 +302,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_can_update_user_department(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.put(
             reverse('admin-users-department', kwargs={'user_id': self.staff_user.id}),
             {'department_id': self.dep_hr.id},
@@ -205,7 +314,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(self.staff_user.staff_profile.department_id, self.dep_hr.id)
 
     def test_admin_department_update_requires_department(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.put(
             reverse('admin-users-department', kwargs={'user_id': self.staff_user.id}),
             {},
@@ -215,7 +324,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_can_toggle_user_status(self):
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.patch(
             reverse('admin-users-status', kwargs={'user_id': self.staff_user.id}),
             {'is_active': False},
@@ -241,7 +350,7 @@ class AccountsApiTests(BaseAPITestCase):
         self.staff_user.staff_profile.role = self.role_md
         self.staff_user.staff_profile.save(update_fields=['role', 'updated_at'])
         Role.objects.filter(code='STAFF').delete()
-        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
 
         response = self.client.post(
             reverse('admin-users-list'),
@@ -257,3 +366,13 @@ class AccountsApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(Role.objects.filter(code='STAFF').exists())
+
+    def test_global_access_non_admin_cannot_call_admin_mutation_endpoints(self):
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.patch(
+            reverse('admin-users-status', kwargs={'user_id': self.staff_user.id}),
+            {'is_active': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

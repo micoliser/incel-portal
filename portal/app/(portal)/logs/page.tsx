@@ -3,11 +3,10 @@
 import axios from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { TriangleAlert } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -16,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LogsTableSkeleton } from "@/components/skeletons/logs-skeleton";
+import { PageErrorCard } from "@/components/page-error-card";
 import { apiClient } from "@/lib/api-client";
 
 type PermissionPayload = {
@@ -330,6 +330,7 @@ export default function LogsPage() {
         const detail = axios.isAxiosError(error)
           ? (error.response?.data?.detail as string | undefined)
           : undefined;
+        toast.error(detail || fallback);
         setErrorMessage(detail || fallback);
       } finally {
         setIsLoading(false);
@@ -586,20 +587,11 @@ export default function LogsPage() {
 
   if (errorMessage) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center px-4">
-        <Card className="w-full max-w-2xl border-destructive/30 bg-destructive/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <TriangleAlert className="size-5" aria-hidden="true" />
-              Failed to load logs
-            </CardTitle>
-            <CardDescription>{errorMessage}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => router.refresh()}>Try again</Button>
-          </CardContent>
-        </Card>
-      </div>
+      <PageErrorCard
+        title="Failed to load logs"
+        message={errorMessage}
+        onRetry={() => window.location.reload()}
+      />
     );
   }
 
