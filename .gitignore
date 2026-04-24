@@ -5,3 +5,4 @@
 docker-compose.yml
 DEPLOYMENT.md
 deployment/
+deploy.sh

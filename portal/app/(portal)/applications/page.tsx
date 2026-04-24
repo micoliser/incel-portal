@@ -1,7 +1,7 @@
 "use client";
 
 import axios from "axios";
-import { AppWindow, ExternalLink, Loader2, Plus, X } from "lucide-react";
+import { AppWindow, ExternalLink, Loader2, Plus } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -10,12 +10,19 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ApplicationsSkeleton } from "@/components/skeletons/applications-skeleton";
 import { apiClient } from "@/lib/api-client";
 
@@ -1197,8 +1204,6 @@ export default function ApplicationsPage() {
 
   return (
     <div className="w-full">
-      <Toaster richColors position="top-right" />
-
       <div className="mx-auto mb-4 w-full max-w-2xl">
         <Input
           id="applications-search"
@@ -1286,48 +1291,12 @@ export default function ApplicationsPage() {
       ) : null}
 
       {isCreateOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
-          <button
-            type="button"
-            className="absolute inset-0 bg-foreground/35 backdrop-blur-[1px]"
-            onClick={() => {
-              if (isSubmitting) {
-                return;
-              }
-              setIsCreateOpen(false);
-              setCreateStep(1);
-              setFormErrors({});
-            }}
-            aria-label="Close create application form"
-          />
-
-          <Card className="relative z-50 max-h-[90vh] w-full max-w-3xl overflow-y-auto border-border bg-card p-5 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Create Application
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Create a new application
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (isSubmitting) {
-                    return;
-                  }
-                  setIsCreateOpen(false);
-                  setCreateStep(1);
-                  setFormErrors({});
-                }}
-                aria-label="Close modal"
-              >
-                <X className="size-4" aria-hidden="true" />
-              </Button>
-            </div>
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
+            <DialogHeader>
+              <DialogTitle>Create Application</DialogTitle>
+              <DialogDescription>Create a new application</DialogDescription>
+            </DialogHeader>
 
             <form
               className="grid gap-6"
@@ -1676,39 +1645,19 @@ export default function ApplicationsPage() {
                 )}
               </div>
             </form>
-          </Card>
-        </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       {isManageOpen && manageTarget && manageForm ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
-          <button
-            type="button"
-            className="absolute inset-0 bg-foreground/35 backdrop-blur-[1px]"
-            onClick={closeManageModal}
-            aria-label="Close manage application modal"
-          />
-
-          <Card className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto border-border bg-card p-5 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Manage {manageTarget.name}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Edit details and manage access controls.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={closeManageModal}
-                aria-label="Close modal"
-              >
-                <X className="size-4" aria-hidden="true" />
-              </Button>
-            </div>
+        <Dialog open={isManageOpen} onOpenChange={closeManageModal}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
+            <DialogHeader>
+              <DialogTitle>Manage {manageTarget.name}</DialogTitle>
+              <DialogDescription>
+                Edit details and manage access controls.
+              </DialogDescription>
+            </DialogHeader>
 
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <Button
@@ -2183,8 +2132,8 @@ export default function ApplicationsPage() {
                 </div>
               </div>
             )}
-          </Card>
-        </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       {isLoading ? (

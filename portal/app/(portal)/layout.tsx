@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AppWindow,
+  CheckSquare2,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -118,10 +119,15 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             title: "Logs",
             subtitle: "Review audit events and activity history.",
           }
-        : {
-            title: "Dashboard",
-            subtitle: "Your portal workspace is ready.",
-          };
+        : pathname.startsWith("/tasks")
+          ? {
+              title: "Tasks",
+              subtitle: "Manage and track your tasks.",
+            }
+          : {
+              title: "Dashboard",
+              subtitle: "Your portal workspace is ready.",
+            };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
@@ -294,6 +300,33 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               aria-hidden="true"
             />
             <span>Applications</span>
+          </Link>
+
+          <Link
+            href="/tasks"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname === "/tasks"
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname === "/tasks" ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <CheckSquare2
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname === "/tasks" ? "scale-110" : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>Tasks</span>
           </Link>
 
           {isAdmin ? (
