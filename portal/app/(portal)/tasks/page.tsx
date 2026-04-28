@@ -81,7 +81,7 @@ export default function TasksPage() {
     setTasks([]);
     setCurrentPage(1);
     setHasNextPage(false);
-  }, [activeView, selectedStatuses, selectedPriorities, reloadToken]);
+  }, [activeView, selectedStatuses, selectedPriorities]);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -123,7 +123,13 @@ export default function TasksPage() {
     };
 
     loadTasks();
-  }, [activeView, currentPage, selectedPriorities, selectedStatuses]);
+  }, [
+    activeView,
+    currentPage,
+    reloadToken,
+    selectedPriorities,
+    selectedStatuses,
+  ]);
 
   useEffect(() => {
     if (!hasNextPage || loading || isLoadingMore) {
@@ -356,7 +362,10 @@ export default function TasksPage() {
       <CreateTaskModal
         open={createModalOpen}
         onOpenChange={setCreateModalOpen}
-        onTaskCreated={() => setReloadToken((value) => value + 1)}
+        onTaskCreated={() => {
+          setCurrentPage(1);
+          setReloadToken((value) => value + 1);
+        }}
         currentUserId={currentUserId}
       />
     </div>
