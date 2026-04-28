@@ -3,12 +3,30 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
+from rest_framework import status
 from django.db import models
 from django.utils import timezone
 from applications.audit import log_audit
+from notifications.services import create_notification
+from notifications.models import Notification
 from .models import Task, TaskActivity
 from .serializers import TaskSerializer, TaskActivitySerializer
 from .permissions import IsTaskAssignedOrAssigner
+
+
+COMMENT_MAX_LENGTH = 200
+
+
+def _display_name(user):
+    return user.get_full_name() or user.username
+
+
+def _comment_preview(comment_text: str, words: int = 3) -> str:
+    tokens = [token for token in comment_text.split() if token]
+    preview = " ".join(tokens[:words])
+    if preview:
+        return f"{preview}..."
+    return "..."
 
 
 class TaskPagination(PageNumberPagination):
@@ -76,6 +94,19 @@ class TaskViewSet(ModelViewSet):
                 'status': task.status,
             },
         )
+        create_notification(
+            recipient=task.assigned_to,
+            actor=self.request.user,
+            notification_type=Notification.TYPE_TASK_ASSIGNED,
+            title='New Task',
+            body=f'You were assigned: {task.title} by {_display_name(self.request.user)}',
+            link_url=f'/tasks/{task.id}',
+            payload={
+                'task_id': task.id,
+                'status': task.status,
+                'priority': task.priority,
+            },
+        )
 
     def perform_update(self, serializer):
         old_task = self.get_object()
@@ -106,6 +137,19 @@ class TaskViewSet(ModelViewSet):
                     'assigned_to_id': task.assigned_to_id,
                 },
             )
+            create_notification(
+                recipient=task.assigned_by,
+                actor=self.request.user,
+                notification_type=Notification.TYPE_TASK_STATUS_CHANGED,
+                title=f'Status updated for task {task.title}',
+                body=f'{_display_name(self.request.user)} changed the status to {new_status.replace("_", " ")}',
+                link_url=f'/tasks/{task.id}',
+                payload={
+                    'task_id': task.id,
+                    'old_status': old_status,
+                    'new_status': new_status,
+                },
+            )
 
     @action(detail=True, methods=['get'])
     def activities(self, request, pk=None):
@@ -113,3 +157,42 @@ class TaskViewSet(ModelViewSet):
         activities = task.activities.all()
         serializer = TaskActivitySerializer(activities, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def comments(self, request, pk=None):
+        task = self.get_object()
+        comment_text = str(request.data.get('comment', '')).strip()
+
+        if not comment_text:
+            return Response(
+                {'comment': ['Comment cannot be empty.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(comment_text) > COMMENT_MAX_LENGTH:
+            return Response(
+                {'comment': [f'Comment cannot exceed {COMMENT_MAX_LENGTH} characters.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        activity = TaskActivity.objects.create(
+            task=task,
+            user=request.user,
+            activity_type='comment',
+            comment=comment_text,
+        )
+        recipient = task.assigned_by if request.user == task.assigned_to else task.assigned_to
+        create_notification(
+            recipient=recipient,
+            actor=request.user,
+            notification_type=Notification.TYPE_TASK_COMMENT,
+            title=f'New comment on task {task.title}',
+            body=f'{_display_name(request.user)} made a new comment "{_comment_preview(comment_text, 3)}"',
+            link_url=f'/tasks/{task.id}',
+            payload={
+                'task_id': task.id,
+                'comment': comment_text,
+            },
+        )
+        serializer = TaskActivitySerializer(activity)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

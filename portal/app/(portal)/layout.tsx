@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { NotificationCenter } from "@/components/notification-center";
 import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
@@ -406,6 +407,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="ml-auto flex items-center gap-3">
+            <NotificationCenter />
+
             <Button
               type="button"
               variant="outline"

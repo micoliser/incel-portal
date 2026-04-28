@@ -17,6 +17,7 @@ import {
   getTaskDetail,
   getTaskActivities,
   updateTaskStatus,
+  addTaskComment,
 } from "@/lib/api/tasks";
 import type { Task, TaskActivity } from "@/lib/api/tasks";
 import { apiClient } from "@/lib/api-client";
@@ -43,6 +44,8 @@ const priorityColors: Record<string, string> = {
   high: "text-red-500",
 };
 
+const COMMENT_MAX_LENGTH = 200;
+
 function formatStatusLabel(status: string) {
   return status
     .split("_")
@@ -61,6 +64,9 @@ export default function TaskDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [comment, setComment] = useState("");
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [isPostingComment, setIsPostingComment] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -109,6 +115,40 @@ export default function TaskDetailPage() {
     }
   };
 
+  const handleAddComment = async () => {
+    if (!task) return;
+
+    const trimmed = comment.trim();
+    if (!trimmed) {
+      setCommentError("Comment cannot be empty.");
+      return;
+    }
+
+    if (trimmed.length > COMMENT_MAX_LENGTH) {
+      setCommentError(
+        `Comment cannot exceed ${COMMENT_MAX_LENGTH} characters.`,
+      );
+      return;
+    }
+
+    try {
+      setIsPostingComment(true);
+      setCommentError(null);
+      await addTaskComment(taskId, trimmed);
+      setComment("");
+      const newActivities = await getTaskActivities(taskId);
+      setActivities(newActivities);
+      toast.success("Comment posted successfully.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to add comment";
+      toast.error(message);
+      setCommentError(message);
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
   if (loading) {
     return <TaskDetailSkeleton />;
   }
@@ -139,6 +179,9 @@ export default function TaskDetailPage() {
   const availableTransitions =
     nextStatuses[task.status as keyof typeof nextStatuses] || [];
   const canUpdateStatus = currentUserId === task.assigned_to.id;
+  const canComment =
+    currentUserId === task.assigned_to.id ||
+    currentUserId === task.assigned_by.id;
   const hasCompletedTimelineItem = Boolean(task.completed_at);
 
   return (
@@ -174,7 +217,7 @@ export default function TaskDetailPage() {
       </div>
 
       {/* Task Details */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-6">
           <h3 className="font-semibold mb-4">Task Information</h3>
           <div className="space-y-4">
@@ -267,6 +310,46 @@ export default function TaskDetailPage() {
                 Only the assignee can update task progress.
               </p>
             )}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">Add Comment</h3>
+          <div className="space-y-3">
+            <textarea
+              value={comment}
+              onChange={(event) => {
+                setComment(event.target.value);
+                if (commentError) setCommentError(null);
+              }}
+              placeholder="Write a comment for this task..."
+              disabled={!canComment || isPostingComment}
+              maxLength={COMMENT_MAX_LENGTH}
+              rows={6}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <p className="text-xs text-gray-500 text-right">
+              {comment.length}/{COMMENT_MAX_LENGTH}
+            </p>
+            {commentError && (
+              <p className="text-sm text-red-600">{commentError}</p>
+            )}
+            {!canComment && (
+              <p className="text-sm text-gray-600">
+                Only the assigner and assignee can add comments.
+              </p>
+            )}
+            <Button
+              type="button"
+              onClick={handleAddComment}
+              disabled={!canComment || isPostingComment}
+              className="w-full"
+            >
+              {isPostingComment && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Post Comment
+            </Button>
           </div>
         </Card>
       </div>

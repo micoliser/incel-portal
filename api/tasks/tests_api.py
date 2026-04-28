@@ -7,6 +7,7 @@ from rest_framework import status
 
 from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
+from notifications.models import Notification
 from tasks.models import Task, TaskActivity
 
 
@@ -77,6 +78,16 @@ class TasksApiTests(BaseAPITestCase):
         self.assertEqual(audit.actor_user, self.admin_user)
         self.assertEqual(audit.metadata_json.get('status'), 'pending')
         self.assertEqual(audit.metadata_json.get('assigned_to_id'), self.staff_user.id)
+
+        assigned_notifications = Notification.objects.filter(
+            recipient=self.staff_user,
+            notification_type='task_assigned',
+        )
+        self.assertEqual(assigned_notifications.count(), 1)
+        first_assigned = assigned_notifications.first()
+        self.assertEqual(first_assigned.title, 'New Task')
+        self.assertIn('Fix broken flow', first_assigned.body)
+        self.assertIn(self.admin_user.username, first_assigned.body)
 
     def test_create_task_does_not_require_assigned_by_id(self):
         self.client.credentials(**self.auth_headers_for(self.admin_user))
@@ -361,6 +372,18 @@ class TasksApiTests(BaseAPITestCase):
         self.assertEqual(latest_log.metadata_json.get('old_status'), 'in_progress')
         self.assertEqual(latest_log.metadata_json.get('new_status'), 'completed')
 
+        status_notifications = Notification.objects.filter(
+            recipient=self.admin_user,
+            notification_type='task_status_changed',
+        )
+        self.assertEqual(status_notifications.count(), 2)
+        latest_status_notification = status_notifications.order_by('-created_at').first()
+        self.assertEqual(
+            latest_status_notification.title,
+            f'Status updated for task {task.title}',
+        )
+        self.assertIn('changed the status to completed', latest_status_notification.body)
+
     def test_assigner_cannot_change_status(self):
         task = Task.objects.create(
             title='Assigner blocked',
@@ -470,3 +493,140 @@ class TasksApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(TaskActivity.objects.filter(task=task, activity_type='status_change').count(), 0)
+
+    def test_assigner_can_add_comment(self):
+        task = Task.objects.create(
+            title='Commentable task',
+            description='Assigner can comment',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': 'Please prioritize this today.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['activity_type'], 'comment')
+        self.assertEqual(response.data['comment'], 'Please prioritize this today.')
+        self.assertEqual(response.data['user']['id'], self.admin_user.id)
+        self.assertTrue(
+            TaskActivity.objects.filter(
+                task=task,
+                user=self.admin_user,
+                activity_type='comment',
+                comment='Please prioritize this today.',
+            ).exists()
+        )
+
+    def test_assignee_can_add_comment(self):
+        task = Task.objects.create(
+            title='Commentable task',
+            description='Assignee can comment',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': 'Started and making progress.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['activity_type'], 'comment')
+        self.assertEqual(response.data['comment'], 'Started and making progress.')
+        self.assertEqual(response.data['user']['id'], self.staff_user.id)
+
+    def test_non_involved_user_cannot_add_comment(self):
+        task = Task.objects.create(
+            title='Restricted comment task',
+            description='Only involved users can comment',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.other_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': 'I should not be able to comment.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_comment_must_not_be_empty(self):
+        task = Task.objects.create(
+            title='Non-empty comment task',
+            description='Comment validation',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': '   '},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('comment', response.data)
+
+    def test_comment_must_not_exceed_200_characters(self):
+        task = Task.objects.create(
+            title='Bounded comment task',
+            description='Comment length validation',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': 'a' * 201},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('comment', response.data)
+
+    def test_comments_can_be_added_after_completion_and_show_in_timeline(self):
+        task = Task.objects.create(
+            title='Completed with comments',
+            description='Comments remain available after completion',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            status='completed',
+            completed_at=timezone.now(),
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        comment_text = 'Post completion note for handoff'
+        create_response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': comment_text},
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+
+        activities_response = self.client.get(
+            reverse('task-activities', kwargs={'pk': task.id})
+        )
+        self.assertEqual(activities_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(activities_response.data), 1)
+        self.assertEqual(activities_response.data[0]['activity_type'], 'comment')
+        self.assertEqual(activities_response.data[0]['comment'], comment_text)
+
+        comment_notifications = Notification.objects.filter(
+            recipient=self.staff_user,
+            notification_type='task_comment',
+        )
+        self.assertEqual(comment_notifications.count(), 1)
+        notification = comment_notifications.first()
+        self.assertEqual(notification.title, f'New comment on task {task.title}')
+        self.assertIn('made a new comment "Post completion note..."', notification.body)
