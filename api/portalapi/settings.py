@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'accounts',
     'applications',
     'tasks',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -156,6 +157,10 @@ AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL', '')
 AWS_APPLICATION_LOGO_S3_PREFIX = os.getenv('AWS_APPLICATION_LOGO_S3_PREFIX', 'application-logos')
 AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN', '900'))
 AWS_S3_OBJECT_ACL = os.getenv('AWS_S3_OBJECT_ACL', 'public-read')
+
+WEB_PUSH_VAPID_PUBLIC_KEY = os.getenv('WEB_PUSH_VAPID_PUBLIC_KEY', '')
+WEB_PUSH_VAPID_PRIVATE_KEY = os.getenv('WEB_PUSH_VAPID_PRIVATE_KEY', '')
+WEB_PUSH_VAPID_SUBJECT = os.getenv('WEB_PUSH_VAPID_SUBJECT', 'mailto:admin@localhost')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

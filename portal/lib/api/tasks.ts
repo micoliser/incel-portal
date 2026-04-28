@@ -128,6 +128,16 @@ export async function getTaskActivities(
   return response.data;
 }
 
+export async function addTaskComment(
+  taskId: number,
+  comment: string,
+): Promise<TaskActivity> {
+  const response = await apiClient.post(`/tasks/${taskId}/comments/`, {
+    comment,
+  });
+  return response.data;
+}
+
 export async function getUsers(params?: GetUsersParams): Promise<UserOption[]> {
   const response = await apiClient.get("/users", {
     params,

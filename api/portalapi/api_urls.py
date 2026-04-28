@@ -5,4 +5,5 @@ urlpatterns = [
     path('', include('organization.api_urls')),
     path('', include('applications.api_urls')),
     path('', include('tasks.api_urls')),
+    path('', include('notifications.api_urls')),
 ]
