@@ -159,7 +159,7 @@ export default function DashboardPage() {
 
   // Task calculations
   const assignedToMeTasks = useMemo(
-    () => tasks.filter((task) => task.assigned_to.id === profile?.id ?? -1),
+    () => tasks.filter((task) => task.assigned_to.id === (profile?.id ?? -1)),
     [tasks, profile?.id],
   );
 
