@@ -172,8 +172,9 @@ function validateForm(form: FormState): FormErrors {
   }
 
   if (form.logoFile) {
-    if (!form.logoFile.type.startsWith("image/")) {
-      errors.logoFile = "Logo must be an image file.";
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowedTypes.includes(form.logoFile.type)) {
+      errors.logoFile = "Logo must be PNG, JPG, JPEG, or WebP.";
     }
     const maxBytes = 5 * 1024 * 1024;
     if (form.logoFile.size > maxBytes) {
@@ -212,8 +213,9 @@ function validateCreateStepOne(form: FormState): FormErrors {
   }
 
   if (form.logoFile) {
-    if (!form.logoFile.type.startsWith("image/")) {
-      errors.logoFile = "Logo must be an image file.";
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowedTypes.includes(form.logoFile.type)) {
+      errors.logoFile = "Logo must be PNG, JPG, JPEG, or WebP.";
     }
     const maxBytes = 5 * 1024 * 1024;
     if (form.logoFile.size > maxBytes) {
@@ -1431,7 +1433,7 @@ export default function ApplicationsPage() {
                         id="logoFile"
                         name="logoFile"
                         type="file"
-                        accept="image/*"
+                        accept=".png,.jpg,.jpeg,.webp"
                         onChange={handleLogoChange}
                         className="hidden"
                         aria-invalid={Boolean(formErrors.logoFile)}
@@ -1810,7 +1812,7 @@ export default function ApplicationsPage() {
                       ref={manageFileInputRef}
                       id="manage-logo-file"
                       type="file"
-                      accept="image/*"
+                      accept=".png,.jpg,.jpeg,.webp"
                       onChange={handleManageLogoChange}
                       className="hidden"
                       aria-invalid={Boolean(manageFormErrors.logoFile)}
@@ -2171,7 +2173,7 @@ export default function ApplicationsPage() {
                 >
                   <div className="flex h-full flex-col gap-4">
                     <div className="flex items-start gap-4">
-                      <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent text-accent-foreground shadow-sm transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                      <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent text-accent-foreground shadow-sm transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                         {hasLogo ? (
                           <img
                             src={application.logo_url ?? ""}

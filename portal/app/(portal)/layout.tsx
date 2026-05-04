@@ -219,29 +219,29 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           isSidebarOpen && "translate-x-0",
         )}
       >
-        <div className="mb-4 flex items-center justify-end lg:hidden">
+        <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-foreground">
+              IG
+            </div>
+            <div>
+              <p className="text-base font-semibold leading-tight text-sidebar-foreground">
+                Incel Group
+              </p>
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                Portal
+              </p>
+            </div>
+          </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleCloseSidebar}
             aria-label="Close sidebar"
+            className="lg:hidden"
           >
             <X className="size-5" aria-hidden="true" />
           </Button>
-        </div>
-
-        <div className="flex items-center gap-3 rounded-2xl px-3 py-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-foreground">
-            IG
-          </div>
-          <div>
-            <p className="text-base font-semibold leading-tight text-sidebar-foreground">
-              Incel Group
-            </p>
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
-              Portal
-            </p>
-          </div>
         </div>
 
         <nav className="mt-6 flex flex-1 flex-col gap-2">
@@ -447,7 +447,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="h-screen overflow-y-auto px-5 pb-6 pt-44 sm:px-6 sm:pb-8 sm:pt-40 lg:ml-72 lg:pt-36">
+      <main className="h-screen overflow-y-auto px-5 pb-6 pt-56 sm:px-6 sm:pb-8 sm:pt-40 lg:ml-72 lg:pt-36">
         {children}
       </main>
     </div>

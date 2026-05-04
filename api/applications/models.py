@@ -98,3 +98,37 @@ class AuditLog(TimeStampedModel):
     def __str__(self):
         actor = self.actor_user.get_username() if self.actor_user else 'system'
         return f"{self.action} by {actor}"
+
+
+class RecentApplication(TimeStampedModel):
+    """Records when a user last opened an application.
+
+    We enforce uniqueness on (user, application) so that repeated opens update
+    the timestamp rather than creating duplicates. The dashboard will query
+    the most recent 4 entries per user ordered by `opened_at` (alias to
+    `updated_at` from TimeStampedModel) to display recently opened apps.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='recent_applications',
+    )
+    application = models.ForeignKey(
+        InternalApplication,
+        on_delete=models.CASCADE,
+        related_name='recent_entries',
+    )
+    opened_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = (('user', 'application'),)
+        indexes = [models.Index(fields=['user', 'opened_at']),]
+
+    def save(self, *args, **kwargs):
+        # Keep opened_at fresh on every save unless explicitly set
+        self.opened_at = timezone.now()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"RecentApplication user={self.user_id} app={self.application_id} at={self.opened_at}"

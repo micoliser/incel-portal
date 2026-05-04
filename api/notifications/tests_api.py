@@ -230,6 +230,38 @@ class NotificationsApiTests(BaseAPITestCase):
         self.assertEqual(update_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(update_response.data['id'], subscription_id)
 
+        self.client.credentials(**self.auth_headers_for(self.other_user))
+        rebind_response = self.client.post(
+            reverse('notifications-subscriptions'),
+            {
+                'subscription': {
+                    'endpoint': 'https://example.com/endpoint/abc',
+                    'keys': {
+                        'p256dh': 'other-p256dh-key',
+                        'auth': 'other-auth-key',
+                    },
+                },
+                'user_agent': 'other-agent',
+            },
+            format='json',
+        )
+        self.assertEqual(rebind_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(rebind_response.data['id'], subscription_id)
+        self.assertEqual(
+            PushSubscription.objects.filter(endpoint='https://example.com/endpoint/abc').count(),
+            1,
+        )
+        self.assertTrue(
+            PushSubscription.objects.filter(
+                id=subscription_id,
+                user=self.other_user,
+                endpoint='https://example.com/endpoint/abc',
+                p256dh='other-p256dh-key',
+                auth='other-auth-key',
+                user_agent='other-agent',
+            ).exists()
+        )
+
         delete_response = self.client.delete(
             reverse('notifications-subscription-delete', kwargs={'subscription_id': subscription_id})
         )

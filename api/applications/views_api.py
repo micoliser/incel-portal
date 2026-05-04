@@ -1,12 +1,13 @@
 from django.contrib.auth.models import User
 from django.core.paginator import EmptyPage, Paginator
 from django.utils.dateparse import parse_datetime
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from applications.audit import log_audit
-from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication
+from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication, RecentApplication
 from applications.serializers import (
     AccessOverrideCreateSerializer,
     AccessOverrideSerializer,
@@ -173,7 +174,38 @@ class ApplicationOpenView(APIView):
         if not can_access:
             return Response({'detail': reason}, status=status.HTTP_403_FORBIDDEN)
 
+        # Upsert a RecentApplication for this user/application and update timestamp
+        RecentApplication.objects.update_or_create(
+            user=request.user,
+            application=app,
+            defaults={'opened_at': timezone.now()},
+        )
+
+        # Trim older entries to keep only the 4 most recent per user
+        ids_to_keep = list(
+            RecentApplication.objects.filter(user=request.user)
+            .order_by('-opened_at')
+            .values_list('id', flat=True)[:4]
+        )
+        if ids_to_keep:
+            RecentApplication.objects.filter(user=request.user).exclude(id__in=ids_to_keep).delete()
+
         return Response({'application_id': app.id, 'url': app.app_url})
+
+
+class RecentApplicationsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        recent = (
+            RecentApplication.objects.filter(user=request.user)
+            .select_related('application')
+            .order_by('-opened_at')[:4]
+        )
+        from applications.serializers import RecentApplicationSerializer
+
+        serializer = RecentApplicationSerializer(recent, many=True)
+        return Response(serializer.data)
 
 
 class AdminApplicationCreateView(APIView):

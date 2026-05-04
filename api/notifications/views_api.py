@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -138,16 +139,29 @@ class PushSubscriptionListCreateView(APIView):
         serializer = PushSubscriptionWriteSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
 
-        subscription, _created = PushSubscription.objects.update_or_create(
-            user=request.user,
-            endpoint=serializer.validated_data['endpoint'],
-            defaults={
-                'p256dh': serializer.validated_data['p256dh'],
-                'auth': serializer.validated_data['auth'],
-                'user_agent': serializer.validated_data.get('user_agent', ''),
-                'is_active': True,
-            },
-        )
+        endpoint = serializer.validated_data['endpoint']
+        with transaction.atomic():
+            subscriptions = list(
+                PushSubscription.objects.select_for_update()
+                .filter(endpoint=endpoint)
+                .order_by('-updated_at', '-id')
+            )
+
+            if subscriptions:
+                subscription = subscriptions[0]
+                if len(subscriptions) > 1:
+                    PushSubscription.objects.filter(
+                        id__in=[item.id for item in subscriptions[1:]],
+                    ).delete()
+            else:
+                subscription = PushSubscription(endpoint=endpoint)
+
+            subscription.user = request.user
+            subscription.p256dh = serializer.validated_data['p256dh']
+            subscription.auth = serializer.validated_data['auth']
+            subscription.user_agent = serializer.validated_data.get('user_agent', '')
+            subscription.is_active = True
+            subscription.save()
 
         return Response(
             PushSubscriptionSerializer(subscription).data,

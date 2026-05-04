@@ -13,6 +13,7 @@ import {
   ListTodo,
   Zap,
   Calendar,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -62,6 +63,8 @@ type DashboardApplication = {
   access_scope: "ALL_AUTHENTICATED" | "RESTRICTED";
   visibility_scope: "VISIBLE_TO_ALL" | "HIDDEN";
   department_ids?: number[];
+  description?: string | null;
+  logo_url?: string | null;
   can_access?: boolean;
   reason?: string;
 };
@@ -100,6 +103,9 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<MeProfile | null>(null);
   const [permissions, setPermissions] = useState<MePermissions | null>(null);
   const [applications, setApplications] = useState<DashboardApplication[]>([]);
+  const [recentApps, setRecentApps] = useState<DashboardApplication[] | null>(
+    null,
+  );
   const [tasks, setTasks] = useState<Task[]>([]);
 
   useEffect(() => {
@@ -123,6 +129,17 @@ export default function DashboardPage() {
         setProfile(profileResponse.data as MeProfile);
         setPermissions(permissionsResponse.data as MePermissions);
         setApplications(applicationsResponse.data as DashboardApplication[]);
+        // Try to fetch recent apps for the current user (may return up to 4)
+        try {
+          const recentResp = await apiClient.get("/me/recent-applications");
+          const recentData = (recentResp.data || []).map(
+            (r: any) => r.application as DashboardApplication,
+          );
+          setRecentApps(recentData);
+        } catch (err) {
+          // silently ignore recent apps failure; dashboard will fall back to defaults
+          setRecentApps(null);
+        }
         const tasksData = tasksResponse.data as DashboardTasksResponse;
         setTasks(tasksData.results);
       } catch (error) {
@@ -191,6 +208,41 @@ export default function DashboardPage() {
       return isPast(deadline) || isDueWithinDays(deadline, 3);
     });
   }, [assignedToMeTasks]);
+
+  // Tasks the current user assigned to others
+  const assignedByMeTasks = useMemo(
+    () => tasks.filter((task) => task.assigned_by.id === (profile?.id ?? -1)),
+    [tasks, profile?.id],
+  );
+
+  const pendingAssignedByMe = useMemo(
+    () => assignedByMeTasks.filter((task) => task.status === "pending"),
+    [assignedByMeTasks],
+  );
+  const inProgressAssignedByMe = useMemo(
+    () => assignedByMeTasks.filter((task) => task.status === "in_progress"),
+    [assignedByMeTasks],
+  );
+  const completedAssignedByMe = useMemo(
+    () => assignedByMeTasks.filter((task) => task.status === "completed"),
+    [assignedByMeTasks],
+  );
+
+  const highPriorityAssignedByMe = useMemo(
+    () =>
+      assignedByMeTasks.filter(
+        (task) => task.priority === "high" && task.status !== "completed",
+      ),
+    [assignedByMeTasks],
+  );
+
+  const overdueOrDueSoonAssignedByMe = useMemo(() => {
+    return assignedByMeTasks.filter((task) => {
+      if (!task.deadline || task.status === "completed") return false;
+      const deadline = new Date(task.deadline);
+      return isPast(deadline) || isDueWithinDays(deadline, 3);
+    });
+  }, [assignedByMeTasks]);
 
   const accessibleApps = useMemo(
     () =>
@@ -431,15 +483,11 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
-            <CardTitle>
-              {isAdmin ? "Your assigned tasks" : "Your assigned tasks"}
-            </CardTitle>
+            <CardTitle>Your assigned tasks</CardTitle>
             <CardDescription>
-              {isAdmin
-                ? `You have ${assignedToMeTasks.length} tasks assigned to you.`
-                : `You have ${assignedToMeTasks.length} tasks assigned to you.`}
+              {`You have ${assignedToMeTasks.length} tasks assigned to you.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -501,22 +549,37 @@ export default function DashboardPage() {
                         >
                           {task.priority}
                         </span>
-                        {deadline && task.status !== "completed" && (
-                          <span
-                            className={`text-xs font-medium ${
-                              isOverdue
-                                ? "text-red-600 dark:text-red-400"
-                                : isDueSoon
-                                  ? "text-amber-600 dark:text-amber-400"
-                                  : "text-muted-foreground"
-                            }`}
+                        <div className="flex items-center gap-2">
+                          {deadline && task.status !== "completed" && (
+                            <span
+                              className={`text-xs font-medium ${
+                                isOverdue
+                                  ? "text-red-600 dark:text-red-400"
+                                  : isDueSoon
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-muted-foreground"
+                              }`}
+                            >
+                              {isOverdue ? "Overdue" : "Due"}{" "}
+                              {formatDistanceToNow(deadline, {
+                                addSuffix: true,
+                              })}
+                            </span>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => router.push(`/tasks/${task.id}`)}
+                            aria-label="View task"
+                            title="View task"
+                            className="p-1 group hover:bg-primary/10 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                           >
-                            {isOverdue ? "Overdue" : "Due"}{" "}
-                            {formatDistanceToNow(deadline, {
-                              addSuffix: true,
-                            })}
-                          </span>
-                        )}
+                            <Eye
+                              className="h-4 w-4 text-muted-foreground transition-transform duration-150 ease-in-out group-hover:scale-110 group-hover:text-primary"
+                              aria-hidden="true"
+                            />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -537,14 +600,123 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">
-              {isAdmin ? "Your focus" : "Your focus"}
-            </CardTitle>
+            <CardTitle>Tasks you assigned</CardTitle>
             <CardDescription>
-              {isAdmin
-                ? "Quick stats on your workload."
-                : "Quick stats on your workload."}
+              You have {assignedByMeTasks.length} tasks assigned to others.
             </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {assignedByMeTasks.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60">
+                <p>No tasks assigned by you right now.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {assignedByMeTasks.slice(0, 5).map((task) => {
+                  const deadline = task.deadline
+                    ? new Date(task.deadline)
+                    : null;
+                  const isOverdue = deadline && isPast(deadline);
+                  const isDueSoon =
+                    deadline && isDueWithinDays(deadline, 3) && !isOverdue;
+
+                  return (
+                    <div
+                      key={task.id}
+                      className="rounded-xl border border-border bg-background p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="font-semibold text-foreground">
+                            {task.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Assigned to{" "}
+                            {task.assigned_to.full_name ||
+                              task.assigned_to.username}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                            task.status === "completed"
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+                              : task.status === "in_progress"
+                                ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200"
+                                : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+                          }`}
+                        >
+                          {task.status === "in_progress"
+                            ? "In Progress"
+                            : task.status === "completed"
+                              ? "Completed"
+                              : "Pending"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <span
+                          className={`rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide ${
+                            task.priority === "high"
+                              ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200"
+                              : task.priority === "medium"
+                                ? "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
+                                : "bg-gray-100 text-gray-700 dark:bg-gray-950/60 dark:text-gray-200"
+                          }`}
+                        >
+                          {task.priority}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {deadline && task.status !== "completed" && (
+                            <span
+                              className={`text-xs font-medium ${
+                                isOverdue
+                                  ? "text-red-600 dark:text-red-400"
+                                  : isDueSoon
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-muted-foreground"
+                              }`}
+                            >
+                              {isOverdue ? "Overdue" : "Due"}{" "}
+                              {formatDistanceToNow(deadline, {
+                                addSuffix: true,
+                              })}
+                            </span>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => router.push(`/tasks/${task.id}`)}
+                            aria-label="View task"
+                            title="View task"
+                            className="p-1 group hover:bg-primary/10 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                          >
+                            <Eye
+                              className="h-4 w-4 text-muted-foreground transition-transform duration-150 ease-in-out group-hover:scale-110 group-hover:text-primary"
+                              aria-hidden="true"
+                            />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {assignedByMeTasks.length > 5 && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => router.push("/tasks?filter=assigned-by-me")}
+                  >
+                    View all {assignedByMeTasks.length} tasks
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Your focus</CardTitle>
+            <CardDescription>Quick stats on your workload.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {isAdmin ? (
@@ -733,63 +905,93 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Recent applications</CardTitle>
             <CardDescription>
-              {isAdmin
-                ? `A quick view of ${applications.slice(0, 4).length} applications.`
-                : `You can open ${accessibleApps.slice(0, 4).length} applications.`}
+              View your most recently accessed applications.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
-              {(isAdmin
-                ? topAdminApps
-                : hasGlobalAccess
-                  ? topAccessibleApps
-                  : topAccessibleApps
-              ).map((application) => (
-                <div
-                  key={application.id}
-                  className="rounded-xl border border-border bg-background p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-foreground">
-                        {application.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {application.slug}
-                      </p>
+              {recentApps && recentApps.length > 0 ? (
+                recentApps.map((application) => (
+                  <div
+                    key={application.id}
+                    className="rounded-xl border border-border bg-background p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={application.logo_url ?? '/vercel.svg'}
+                          alt={`${application.name} logo`}
+                          className="h-10 w-10 rounded-md object-cover bg-muted"
+                        />
+                        <div>
+                          <p className="font-semibold text-foreground">
+                            {application.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {application.slug}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          application.can_access === false
+                            ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200"
+                            : application.status === "MAINTENANCE"
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+                        }`}
+                      >
+                        {application.can_access === false
+                          ? "Restricted"
+                          : application.status.toLowerCase()}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                        application.can_access === false
-                          ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200"
-                          : application.status === "MAINTENANCE"
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
-                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
-                      }`}
-                    >
-                      {application.can_access === false
-                        ? "Restricted"
-                        : application.status.toLowerCase()}
-                    </span>
+                    <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
+                      {application.description
+                        ? application.description
+                        : "No description available."}
+                    </p>
+                    <div className="mt-4 flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const resp = await apiClient.post(
+                              `/applications/${application.id}/open`,
+                            );
+                            const url = resp?.data?.url;
+                            if (url) {
+                              window.open(url, "_blank", "noopener,noreferrer");
+                            } else {
+                              router.push("/applications");
+                            }
+                          } catch (error) {
+                            toast.error("Failed to open application.");
+                            router.push("/applications");
+                          }
+                        }}
+                      >
+                        Open
+                      </Button>
+                    </div>
                   </div>
-                  <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
-                    {application.can_access === false
-                      ? application.reason || "Access is currently blocked."
-                      : application.access_scope === "RESTRICTED"
-                        ? "This app is limited to specific departments or overrides."
-                        : "This app is available to authenticated users."}
-                  </p>
-                  <div className="mt-4 flex items-center gap-2">
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60 sm:col-span-2">
+                  <p>
+                    You have not opened any applications yet.
                     <Button
+                      variant="ghost"
                       size="sm"
                       onClick={() => router.push("/applications")}
+                      className="underline"
                     >
-                      Open
+                      Go to Applications
                     </Button>
-                  </div>
+                    to start.
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>

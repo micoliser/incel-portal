@@ -1,3 +1,13 @@
+const NOTIFICATION_ICON = "/vercel.svg?v=2";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
   if (!event.data) {
     return;
@@ -17,8 +27,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Notification";
   const options = {
     body: payload.body || "",
-    icon: "/window.svg",
-    badge: "/window.svg",
+    icon: NOTIFICATION_ICON,
+    badge: NOTIFICATION_ICON,
     data: {
       url: payload.url || "/dashboard",
     },
