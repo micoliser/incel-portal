@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication
+from applications.models import RecentApplication
 from organization.models import Department
 
 
@@ -98,8 +99,9 @@ class ApplicationLogoUploadUrlSerializer(serializers.Serializer):
         value = value.strip().lower()
         if not value:
             raise serializers.ValidationError('content_type cannot be blank.')
-        if not value.startswith('image/'):
-            raise serializers.ValidationError('content_type must be an image MIME type.')
+        allowed_types = ['image/png', 'image/jpeg', 'image/webp']
+        if value not in allowed_types:
+            raise serializers.ValidationError('content_type must be PNG, JPG, JPEG, or WebP.')
         return value
 
 
@@ -151,3 +153,15 @@ class AuditLogSerializer(serializers.ModelSerializer):
         if not obj.actor_user:
             return None
         return obj.actor_user.username
+
+
+class RecentApplicationSerializer(serializers.ModelSerializer):
+    application = InternalApplicationSerializer()
+
+    class Meta:
+        model = RecentApplication
+        fields = [
+            'id',
+            'application',
+            'opened_at',
+        ]

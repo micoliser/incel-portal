@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { Loader2, Plus, AlertCircle } from "lucide-react";
@@ -42,6 +43,7 @@ const priorityFilterOptions: Array<{
 ];
 
 export default function TasksPage() {
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -51,7 +53,7 @@ export default function TasksPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [reloadToken, setReloadToken] = useState(0);
   const [activeView, setActiveView] = useState<"assigned" | "created">(
-    "assigned",
+    searchParams.get("filter") === "assigned-by-me" ? "created" : "assigned",
   );
   const [selectedStatuses, setSelectedStatuses] = useState<Task["status"][]>(
     [],

@@ -59,8 +59,8 @@ class PushSubscription(models.Model):
         ordering = ['-updated_at']
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'endpoint'],
-                name='notifications_unique_user_endpoint',
+                fields=['endpoint'],
+                name='notifications_unique_endpoint',
             )
         ]
 
