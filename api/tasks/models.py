@@ -1,8 +1,11 @@
+import uuid
+
 from django.db import models
 from django.contrib.auth.models import User
 
 
 class Task(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('in_progress', 'In Progress'),
@@ -33,6 +36,7 @@ class Task(models.Model):
 
 
 class TaskActivity(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ACTIVITY_TYPES = [
         ('status_change', 'Status Change'),
         ('assignment', 'Assignment'),

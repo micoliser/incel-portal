@@ -92,11 +92,11 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class UpdateUserRoleSerializer(serializers.Serializer):
-    role_id = serializers.IntegerField(min_value=1)
+    role_id = serializers.UUIDField()
 
 
 class UpdateUserDepartmentSerializer(serializers.Serializer):
-    department_id = serializers.IntegerField(min_value=1)
+    department_id = serializers.UUIDField()
 
 
 class UpdateUserStatusSerializer(serializers.Serializer):
@@ -108,7 +108,7 @@ class AdminCreateUserSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)
-    department_id = serializers.IntegerField(min_value=1)
+    department_id = serializers.UUIDField()
 
     def validate_first_name(self, value):
         value = value.strip()

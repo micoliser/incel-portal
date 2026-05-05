@@ -1,7 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 
 export interface Task {
-  id: number;
+  id: string;
   title: string;
   description: string;
   assigned_by: {
@@ -25,8 +25,8 @@ export interface Task {
 }
 
 export interface TaskActivity {
-  id: number;
-  task: number;
+  id: string;
+  task: string;
   user: {
     id: number;
     username: string;
@@ -46,13 +46,13 @@ export interface UserOption {
   email: string;
   first_name: string;
   last_name: string;
-  department_id: number | null;
+  department_id: string | null;
   is_active: boolean;
 }
 
 export interface GetUsersParams {
   search?: string;
-  department_id?: number;
+  department_id?: string;
 }
 
 export interface CreateTaskPayload {
@@ -103,7 +103,7 @@ export async function getTasks(
   return response.data;
 }
 
-export async function getTaskDetail(id: number): Promise<Task> {
+export async function getTaskDetail(id: string): Promise<Task> {
   const response = await apiClient.get(`/tasks/${id}/`);
   return response.data;
 }
@@ -114,7 +114,7 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
 }
 
 export async function updateTaskStatus(
-  id: number,
+  id: string,
   status: string,
 ): Promise<Task> {
   const response = await apiClient.patch(`/tasks/${id}/`, { status });
@@ -122,14 +122,14 @@ export async function updateTaskStatus(
 }
 
 export async function getTaskActivities(
-  taskId: number,
+  taskId: string,
 ): Promise<TaskActivity[]> {
   const response = await apiClient.get(`/tasks/${taskId}/activities/`);
   return response.data;
 }
 
 export async function addTaskComment(
-  taskId: number,
+  taskId: string,
   comment: string,
 ): Promise<TaskActivity> {
   const response = await apiClient.post(`/tasks/${taskId}/comments/`, {

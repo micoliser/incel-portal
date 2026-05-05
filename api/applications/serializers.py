@@ -9,9 +9,6 @@ def _validated_department_ids(department_ids):
     if len(department_ids) != len(set(department_ids)):
         raise serializers.ValidationError('department_ids cannot contain duplicates.')
 
-    if any(department_id < 1 for department_id in department_ids):
-        raise serializers.ValidationError('department_ids must contain positive integers only.')
-
     existing_ids = set(Department.objects.filter(id__in=department_ids).values_list('id', flat=True))
     missing = [department_id for department_id in department_ids if department_id not in existing_ids]
     if missing:
@@ -46,7 +43,7 @@ class InternalApplicationSerializer(serializers.ModelSerializer):
 
 class InternalApplicationWriteSerializer(serializers.ModelSerializer):
     department_ids = serializers.ListField(
-        child=serializers.IntegerField(),
+        child=serializers.UUIDField(),
         required=False,
         allow_empty=True,
     )
@@ -123,7 +120,7 @@ class AccessOverrideCreateSerializer(serializers.Serializer):
 
 class SetApplicationDepartmentsSerializer(serializers.Serializer):
     department_ids = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
+        child=serializers.UUIDField(),
         allow_empty=True,
     )
 

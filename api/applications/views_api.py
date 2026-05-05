@@ -1,3 +1,5 @@
+import uuid
+
 from django.contrib.auth.models import User
 from django.core.paginator import EmptyPage, Paginator
 from django.utils.dateparse import parse_datetime
@@ -27,6 +29,25 @@ from common.permissions import IsAdminUser, IsGlobalAccessUser, has_global_acces
 from organization.models import Department
 
 
+def _parse_uuid(value: str):
+    try:
+        return uuid.UUID(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _parse_uuid_list(raw_value: str):
+    parsed = []
+    for value in raw_value.split(','):
+        cleaned = value.strip()
+        if not cleaned:
+            continue
+        parsed_value = _parse_uuid(cleaned)
+        if parsed_value is not None:
+            parsed.append(parsed_value)
+    return parsed
+
+
 class ApplicationListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -40,16 +61,13 @@ class ApplicationListView(APIView):
 
         department_id = request.query_params.get('department_id', '').strip()
         if department_id and department_id.lower() != 'all' and has_global_access(request.user):
-            if department_id.isdigit():
-                applications = applications.filter(departments__id=int(department_id)).distinct()
+            parsed_department_id = _parse_uuid(department_id)
+            if parsed_department_id is not None:
+                applications = applications.filter(departments__id=parsed_department_id).distinct()
 
         department_ids_raw = request.query_params.get('department_ids', '').strip()
         if department_ids_raw and has_global_access(request.user):
-            parsed_ids = []
-            for value in department_ids_raw.split(','):
-                cleaned = value.strip()
-                if cleaned.isdigit():
-                    parsed_ids.append(int(cleaned))
+            parsed_ids = _parse_uuid_list(department_ids_raw)
             if parsed_ids:
                 applications = applications.filter(departments__id__in=parsed_ids).distinct()
 

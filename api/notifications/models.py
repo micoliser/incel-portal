@@ -1,8 +1,11 @@
+import uuid
+
 from django.contrib.auth.models import User
 from django.db import models
 
 
 class Notification(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     TYPE_TASK_ASSIGNED = 'task_assigned'
     TYPE_TASK_STATUS_CHANGED = 'task_status_changed'
     TYPE_TASK_COMMENT = 'task_comment'
@@ -42,6 +45,7 @@ class Notification(models.Model):
 
 
 class PushSubscription(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,

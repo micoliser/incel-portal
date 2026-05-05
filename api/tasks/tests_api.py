@@ -77,7 +77,7 @@ class TasksApiTests(BaseAPITestCase):
         self.assertIsNotNone(audit)
         self.assertEqual(audit.actor_user, self.admin_user)
         self.assertEqual(audit.metadata_json.get('status'), 'pending')
-        self.assertEqual(audit.metadata_json.get('assigned_to_id'), self.staff_user.id)
+        self.assertEqual(audit.metadata_json.get('assigned_to_id'), str(self.staff_user.id))
 
         assigned_notifications = Notification.objects.filter(
             recipient=self.staff_user,
@@ -217,7 +217,7 @@ class TasksApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = [item['id'] for item in self._list_results(response)]
-        self.assertEqual(ids.count(task.id), 1)
+        self.assertEqual(ids.count(str(task.id)), 1)
 
     def test_list_supports_backend_view_and_attribute_filters(self):
         Task.objects.create(
@@ -302,7 +302,7 @@ class TasksApiTests(BaseAPITestCase):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.get(reverse('task-detail', kwargs={'pk': task.id}))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['id'], task.id)
+        self.assertEqual(response.data['id'], str(task.id))
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
         response = self.client.get(reverse('task-detail', kwargs={'pk': task.id}))
@@ -472,7 +472,7 @@ class TasksApiTests(BaseAPITestCase):
         response = self.client.get(reverse('task-activities', kwargs={'pk': task.id}))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item['id'] for item in response.data], [second.id, first.id])
+        self.assertEqual([item['id'] for item in response.data], [str(second.id), str(first.id)])
 
     def test_completed_task_can_stay_completed_without_extra_activity(self):
         task = Task.objects.create(
