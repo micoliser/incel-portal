@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -22,6 +23,10 @@ def create_notification(
     payload: dict[str, Any] | None = None,
     send_push: bool = True,
 ) -> Notification:
+    payload_json = payload or {}
+    if payload_json:
+        payload_json = json.loads(json.dumps(payload_json, default=str))
+
     notification = Notification.objects.create(
         recipient=recipient,
         actor=actor,
@@ -29,7 +34,7 @@ def create_notification(
         title=title,
         body=body,
         link_url=link_url,
-        payload_json=payload or {},
+        payload_json=payload_json,
     )
 
     if send_push:
@@ -92,6 +97,4 @@ def _dispatch_push_for_notification(recipient: User, notification: Notification)
 
 
 def _to_json(data: dict[str, Any]) -> str:
-    import json
-
-    return json.dumps(data)
+    return json.dumps(data, default=str)

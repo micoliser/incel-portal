@@ -42,7 +42,7 @@ class NotificationsApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
-        self.assertEqual(response.data['results'][0]['id'], mine.id)
+        self.assertEqual(response.data['results'][0]['id'], str(mine.id))
 
     def test_unread_count_endpoint(self):
         Notification.objects.create(

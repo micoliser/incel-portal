@@ -1,7 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 
 export type NotificationItem = {
-  id: number;
+  id: string;
   notification_type: string;
   title: string;
   body: string;
@@ -24,7 +24,7 @@ export type NotificationListResponse = {
 };
 
 export type PushSubscriptionRecord = {
-  id: number;
+  id: string;
   endpoint: string;
   is_active: boolean;
   created_at: string;
@@ -47,7 +47,7 @@ export async function getUnreadNotificationCount(): Promise<number> {
 }
 
 export async function markNotificationRead(
-  id: number,
+  id: string,
 ): Promise<NotificationItem> {
   const response = await apiClient.post(`/notifications/${id}/read`);
   return response.data;
@@ -58,7 +58,7 @@ export async function markAllNotificationsRead(): Promise<number> {
   return Number(response.data?.updated || 0);
 }
 
-export async function clearNotification(id: number): Promise<void> {
+export async function clearNotification(id: string): Promise<void> {
   await apiClient.delete(`/notifications/${id}`);
 }
 
@@ -99,7 +99,7 @@ export async function upsertPushSubscription(payload: {
 }
 
 export async function deletePushSubscription(
-  subscriptionId: number,
+  subscriptionId: string,
 ): Promise<void> {
   await apiClient.delete(`/notifications/subscriptions/${subscriptionId}`);
 }

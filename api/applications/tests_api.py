@@ -57,5 +57,5 @@ class RecentApplicationsAPITest(APITestCase):
 
 		# Confirm ordering: the last opened app should be first
 		returned_app_ids = [item['application']['id'] for item in data]
-		expected = [a.id for a in self.apps[::-1][:4]]
+		expected = [str(a.id) for a in self.apps[::-1][:4]]
 		self.assertEqual(returned_app_ids, expected)

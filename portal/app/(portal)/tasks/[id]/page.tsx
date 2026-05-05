@@ -55,7 +55,7 @@ function formatStatusLabel(status: string) {
 
 export default function TaskDetailPage() {
   const params = useParams();
-  const taskId = Number(params.id);
+  const taskId = String(params.id);
 
   const [task, setTask] = useState<Task | null>(null);
   const [activities, setActivities] = useState<TaskActivity[]>([]);

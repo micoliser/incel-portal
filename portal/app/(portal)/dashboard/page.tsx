@@ -45,24 +45,24 @@ type MeProfile = {
   role?: string | null;
   role_code?: string | null;
   department?: string | null;
-  department_id?: number | null;
+  department_id?: string | null;
 };
 
 type MePermissions = {
   is_superuser?: boolean;
   has_global_access?: boolean;
   role_code?: string | null;
-  department_id?: number | null;
+  department_id?: string | null;
 };
 
 type DashboardApplication = {
-  id: number;
+  id: string;
   name: string;
   slug: string;
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   access_scope: "ALL_AUTHENTICATED" | "RESTRICTED";
   visibility_scope: "VISIBLE_TO_ALL" | "HIDDEN";
-  department_ids?: number[];
+  department_ids?: string[];
   description?: string | null;
   logo_url?: string | null;
   can_access?: boolean;
@@ -77,7 +77,7 @@ type DashboardTasksResponse = {
 };
 
 type RecentApplicationResponse = {
-  id: number;
+  id: string;
   application: DashboardApplication;
   opened_at: string;
 };

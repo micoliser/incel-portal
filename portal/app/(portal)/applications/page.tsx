@@ -27,7 +27,7 @@ import { ApplicationsSkeleton } from "@/components/skeletons/applications-skelet
 import { apiClient } from "@/lib/api-client";
 
 type ApplicationRecord = {
-  id: number;
+  id: string;
   name: string;
   slug: string;
   description: string;
@@ -36,7 +36,7 @@ type ApplicationRecord = {
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   access_scope: "ALL_AUTHENTICATED" | "RESTRICTED";
   visibility_scope: "VISIBLE_TO_ALL" | "HIDDEN";
-  department_ids?: number[];
+  department_ids?: string[];
   can_access?: boolean;
   access_reason?: string;
 };
@@ -59,7 +59,7 @@ type FormState = {
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   access_scope: "ALL_AUTHENTICATED" | "RESTRICTED";
   visibility_scope: "VISIBLE_TO_ALL" | "HIDDEN";
-  department_ids: number[];
+  department_ids: string[];
   logoFile: File | null;
 };
 
@@ -80,7 +80,7 @@ const initialForm: FormState = {
 };
 
 type DepartmentOption = {
-  id: number;
+  id: string;
   name: string;
   code: string;
 };
@@ -92,11 +92,11 @@ type UserOption = {
   email?: string;
   is_active?: boolean;
   role_code?: string | null;
-  department_id?: number | null;
+  department_id?: string | null;
 };
 
 type RoleOption = {
-  id: number;
+  id: string;
   code: string;
   has_global_access: boolean;
 };
@@ -110,13 +110,13 @@ type ManageFormState = {
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   visibility_scope: "VISIBLE_TO_ALL" | "HIDDEN";
   access_scope: "ALL_AUTHENTICATED" | "RESTRICTED";
-  department_ids: number[];
+  department_ids: string[];
 };
 
 type ManageTab = "edit" | "access";
 
 type AccessOverrideEntry = {
-  id: number;
+  id: string;
   user: number;
   effect: "ALLOW" | "DENY";
   reason?: string;
@@ -135,6 +135,8 @@ function normalizeSlug(raw: string) {
 function validateForm(form: FormState): FormErrors {
   const errors: FormErrors = {};
   const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   if (!form.name.trim()) {
     errors.name = "Application name is required.";
@@ -160,10 +162,10 @@ function validateForm(form: FormState): FormErrors {
   }
 
   const invalidDepartment = form.department_ids.find(
-    (value) => !Number.isInteger(value) || value <= 0,
+    (value) => !uuidPattern.test(value),
   );
   if (invalidDepartment) {
-    errors.department_ids = "Departments must be valid IDs.";
+    errors.department_ids = "Departments must be valid UUIDs.";
   }
 
   if (form.access_scope === "RESTRICTED" && form.department_ids.length === 0) {
@@ -228,12 +230,14 @@ function validateCreateStepOne(form: FormState): FormErrors {
 
 function validateCreateStepTwo(form: FormState): FormErrors {
   const errors: FormErrors = {};
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   const invalidDepartment = form.department_ids.find(
-    (value) => !Number.isInteger(value) || value <= 0,
+    (value) => !uuidPattern.test(value),
   );
   if (invalidDepartment) {
-    errors.department_ids = "Departments must be valid IDs.";
+    errors.department_ids = "Departments must be valid UUIDs.";
   }
 
   if (form.access_scope === "RESTRICTED" && form.department_ids.length === 0) {
@@ -254,13 +258,13 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function sortedNumberList(values: number[]) {
-  return [...values].sort((a, b) => a - b);
+function sortedStringList(values: string[]) {
+  return [...values].sort();
 }
 
-function sameNumberList(a: number[], b: number[]) {
-  const left = sortedNumberList(a);
-  const right = sortedNumberList(b);
+function sameStringList(a: string[], b: string[]) {
+  const left = sortedStringList(a);
+  const right = sortedStringList(b);
   if (left.length !== right.length) {
     return false;
   }
@@ -286,7 +290,7 @@ export default function ApplicationsPage() {
     "all" | "accessible"
   >("all");
   const [selectedDepartmentFilterIds, setSelectedDepartmentFilterIds] =
-    useState<number[]>([]);
+    useState<string[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createStep, setCreateStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -314,7 +318,7 @@ export default function ApplicationsPage() {
   const [denyUserId, setDenyUserId] = useState<string>("");
   const [denyReason, setDenyReason] = useState<string>("");
   const [overridesByApp, setOverridesByApp] = useState<
-    Record<number, AccessOverrideEntry[]>
+    Record<string, AccessOverrideEntry[]>
   >({});
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
@@ -323,9 +327,9 @@ export default function ApplicationsPage() {
   const manageFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isLogoDragging, setIsLogoDragging] = useState(false);
   const [openingApplicationId, setOpeningApplicationId] = useState<
-    number | null
+    string | null
   >(null);
-  const [deniedFeedbackIds, setDeniedFeedbackIds] = useState<number[]>([]);
+  const [deniedFeedbackIds, setDeniedFeedbackIds] = useState<string[]>([]);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
 
@@ -657,7 +661,7 @@ export default function ApplicationsPage() {
     setFormErrors((current) => ({ ...current, [name]: undefined }));
   }
 
-  function toggleDepartment(departmentId: number) {
+  function toggleDepartment(departmentId: string) {
     setForm((current) => {
       const exists = current.department_ids.includes(departmentId);
       return {
@@ -670,7 +674,7 @@ export default function ApplicationsPage() {
     setFormErrors((current) => ({ ...current, department_ids: undefined }));
   }
 
-  function toggleDepartmentFilter(departmentId: number) {
+  function toggleDepartmentFilter(departmentId: string) {
     setSelectedDepartmentFilterIds((current) => {
       if (current.includes(departmentId)) {
         return current.filter((id) => id !== departmentId);
@@ -807,7 +811,7 @@ export default function ApplicationsPage() {
     setCreateStep(2);
   }
 
-  function triggerDeniedFeedback(applicationId: number) {
+  function triggerDeniedFeedback(applicationId: string) {
     setDeniedFeedbackIds((current) => {
       if (current.includes(applicationId)) {
         return current;
@@ -978,7 +982,7 @@ export default function ApplicationsPage() {
     setManageFormErrors((current) => ({ ...current, [name]: undefined }));
   }
 
-  function toggleManageDepartment(departmentId: number) {
+  function toggleManageDepartment(departmentId: string) {
     setManageForm((current) => {
       if (!current) {
         return current;
@@ -1015,7 +1019,7 @@ export default function ApplicationsPage() {
 
     const hasAccessChanges =
       manageForm.access_scope !== manageTarget.access_scope ||
-      !sameNumberList(
+      !sameStringList(
         manageForm.department_ids,
         manageTarget.department_ids ?? [],
       );

@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -6,6 +8,7 @@ from common.models import TimeStampedModel
 
 
 class InternalApplication(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     class Status(models.TextChoices):
         ACTIVE = 'ACTIVE', 'Active'
         INACTIVE = 'INACTIVE', 'Inactive'
@@ -50,6 +53,7 @@ class InternalApplication(TimeStampedModel):
 
 
 class ApplicationAccessOverride(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     class Effect(models.TextChoices):
         ALLOW = 'ALLOW', 'Allow'
         DENY = 'DENY', 'Deny'
@@ -79,6 +83,7 @@ class ApplicationAccessOverride(TimeStampedModel):
 
 
 class AuditLog(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     actor_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -108,6 +113,7 @@ class RecentApplication(TimeStampedModel):
     the most recent 4 entries per user ordered by `opened_at` (alias to
     `updated_at` from TimeStampedModel) to display recently opened apps.
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

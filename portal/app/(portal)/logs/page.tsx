@@ -24,7 +24,7 @@ type PermissionPayload = {
 };
 
 type AuditLogEntry = {
-  id: number;
+  id: string;
   actor_user?: number | null;
   actor_username?: string | null;
   action: string;

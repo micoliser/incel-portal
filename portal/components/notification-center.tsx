@@ -225,7 +225,7 @@ export function NotificationCenter() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
-  const markOneRead = async (notificationId: number) => {
+  const markOneRead = async (notificationId: string) => {
     try {
       const existing = notifications.find((item) => item.id === notificationId);
       const updated = await markNotificationRead(notificationId);
@@ -244,7 +244,7 @@ export function NotificationCenter() {
     }
   };
 
-  const handleClearOne = async (notificationId: number) => {
+  const handleClearOne = async (notificationId: string) => {
     try {
       const existing = notifications.find((item) => item.id === notificationId);
       await clearNotification(notificationId);
