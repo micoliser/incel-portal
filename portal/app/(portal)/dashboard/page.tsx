@@ -76,6 +76,12 @@ type DashboardTasksResponse = {
   results: Task[];
 };
 
+type RecentApplicationResponse = {
+  id: number;
+  application: DashboardApplication;
+  opened_at: string;
+};
+
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -131,10 +137,10 @@ export default function DashboardPage() {
         setApplications(applicationsResponse.data as DashboardApplication[]);
         // Try to fetch recent apps for the current user (may return up to 4)
         try {
-          const recentResp = await apiClient.get("/me/recent-applications");
-          const recentData = (recentResp.data || []).map(
-            (r: any) => r.application as DashboardApplication,
+          const recentResp = await apiClient.get<RecentApplicationResponse[]>(
+            "/me/recent-applications",
           );
+          const recentData = recentResp.data.map((r) => r.application);
           setRecentApps(recentData);
         } catch (err) {
           // silently ignore recent apps failure; dashboard will fall back to defaults
