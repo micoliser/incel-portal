@@ -275,6 +275,33 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
+            href="/tasks"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname === "/tasks"
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname === "/tasks" ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <CheckSquare2
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname === "/tasks" ? "scale-110" : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>Tasks</span>
+          </Link>
+
+          <Link
             href="/applications"
             onClick={handleCloseSidebar}
             className={cn(
@@ -303,32 +330,34 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span>Applications</span>
           </Link>
 
-          <Link
-            href="/tasks"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname === "/tasks"
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+          {isAdmin ? (
+            <Link
+              href="/users"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname === "/tasks" ? "opacity-100" : "opacity-0",
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname === "/users"
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <CheckSquare2
-              className={cn(
-                "size-4 transition-transform duration-300",
-                pathname === "/tasks" ? "scale-110" : "group-hover:scale-105",
-              )}
-              aria-hidden="true"
-            />
-            <span>Tasks</span>
-          </Link>
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname === "/users" ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <LayoutDashboard
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname === "/users" ? "scale-110" : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Users</span>
+            </Link>
+          ) : null}
 
           {isAdmin ? (
             <Link

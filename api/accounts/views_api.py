@@ -19,6 +19,7 @@ from accounts.serializers import (
     UpdateUserDepartmentSerializer,
     UpdateUserRoleSerializer,
     UpdateUserStatusSerializer,
+    UpdateAdminUserSerializer,
     UserWithProfileSerializer,
 )
 from applications.audit import log_audit
@@ -230,8 +231,32 @@ class AuthenticatedUserListView(APIView):
 class AdminUserListView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
-    def get(self, _request):
-        users = User.objects.all().order_by(Lower('username'))
+    def get(self, request):
+        users = User.objects.all()
+
+        department_id = request.query_params.get('department_id')
+        if department_id:
+            users = users.filter(staff_profile__department_id=department_id)
+
+        # Support 'q' param for admin search to mirror other list endpoints
+        search = (request.query_params.get('q') or '').strip()
+        if search:
+            search_terms = [term for term in search.split() if term]
+            search_query = (
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(username__icontains=search)
+                | Q(email__icontains=search)
+            )
+            if len(search_terms) > 1:
+                first = search_terms[0]
+                last = ' '.join(search_terms[1:])
+                search_query |= Q(first_name__icontains=first, last_name__icontains=last)
+                search_query |= Q(first_name__icontains=last, last_name__icontains=first)
+
+            users = users.filter(search_query)
+
+        users = users.order_by(Lower('username'))
         return Response(UserWithProfileSerializer(users, many=True).data)
 
     @transaction.atomic
@@ -289,6 +314,50 @@ class AdminUserDetailView(APIView):
         user = User.objects.filter(id=user_id).first()
         if not user:
             return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(UserWithProfileSerializer(user).data)
+
+    @transaction.atomic
+    def patch(self, request, user_id):
+        if not has_admin_access(request.user):
+            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UpdateAdminUserSerializer(data=request.data, context={'user_id': user_id})
+        serializer.is_valid(raise_exception=True)
+
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        user.email = serializer.validated_data['email']
+        user.username = serializer.validated_data['email']
+        user.first_name = serializer.validated_data['first_name']
+        user.last_name = serializer.validated_data.get('last_name', '')
+        user.save(update_fields=['email', 'username', 'first_name', 'last_name'])
+
+        department_id = serializer.validated_data.get('department_id')
+        department = Department.objects.filter(id=department_id).first() if department_id else None
+
+        profile = _profile_or_none(user)
+        if profile is None:
+            # Create a basic profile if it doesn't exist
+            role, _ = Role.objects.get_or_create(
+                code='STAFF',
+                defaults={'name': 'Staff', 'has_global_access': False, 'is_active': True},
+            )
+            profile = StaffProfile.objects.create(user=user, role=role, department=department, is_active=user.is_active)
+        else:
+            profile.department = department
+            profile.save(update_fields=['department', 'updated_at'])
+
+        log_audit(
+            action='ADMIN_USER_UPDATED',
+            request=request,
+            actor_user=request.user,
+            target_type='User',
+            target_id=user.id,
+            metadata={'email': user.email, 'department_id': department_id},
+        )
+
         return Response(UserWithProfileSerializer(user).data)
 
 

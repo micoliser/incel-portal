@@ -138,3 +138,36 @@ class AdminCreateUserSerializer(serializers.Serializer):
         candidate_user = User(username=str(email).strip().lower(), email=str(email).strip().lower())
         validate_password(value, user=candidate_user)
         return value
+
+
+class UpdateAdminUserSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150, allow_blank=True)
+    email = serializers.EmailField()
+    department_id = serializers.UUIDField(allow_null=True, required=False)
+
+    def validate_first_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('first_name cannot be blank.')
+        return value
+
+    def validate_last_name(self, value):
+        return value.strip()
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        user_id = self.context.get('user_id')
+        qs = User.objects.filter(email__iexact=value)
+        if user_id:
+            qs = qs.exclude(id=user_id)
+        if qs.exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+    def validate_department_id(self, value):
+        if value is None:
+            return None
+        if not Department.objects.filter(id=value).exists():
+            raise serializers.ValidationError('Department not found.')
+        return value
