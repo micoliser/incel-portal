@@ -9,12 +9,22 @@ from django.utils import timezone
 from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
-from .models import Task, TaskActivity
-from .serializers import TaskSerializer, TaskActivitySerializer
+from .models import Task, TaskActivity, TaskAttachment
+from .s3 import (
+    TaskAttachmentStorageError,
+    build_task_attachment_key_prefix,
+    generate_task_attachment_upload_url,
+)
+from .serializers import (
+    TaskAttachmentUploadRequestSerializer,
+    TaskCommentCreateSerializer,
+    TaskSerializer,
+    TaskActivitySerializer,
+)
 from .permissions import IsTaskAssignedOrAssigner
+import logging
 
-
-COMMENT_MAX_LENGTH = 200
+logger = logging.getLogger(__name__)
 
 
 def _display_name(user):
@@ -151,6 +161,22 @@ class TaskViewSet(ModelViewSet):
                 },
             )
 
+    @action(detail=True, methods=['post'], url_path='attachment-upload-url')
+    def attachment_upload_url(self, request, pk=None):
+        task = self.get_object()
+        serializer = TaskAttachmentUploadRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            payload = generate_task_attachment_upload_url(
+                task_id=task.id,
+                file_name=serializer.validated_data['file_name'],
+                content_type=serializer.validated_data['content_type'],
+            )
+        except TaskAttachmentStorageError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
+
     @action(detail=True, methods=['get'])
     def activities(self, request, pk=None):
         task = self.get_object()
@@ -161,37 +187,72 @@ class TaskViewSet(ModelViewSet):
     @action(detail=True, methods=['post'])
     def comments(self, request, pk=None):
         task = self.get_object()
-        comment_text = str(request.data.get('comment', '')).strip()
+        serializer = TaskCommentCreateSerializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception as exc:
+            # print validation errors to aid debugging in tests
+            try:
+                import json
+                detail = getattr(exc, 'detail', None) or getattr(serializer, 'errors', None)
+                logger.debug('Comment create validation errors: %s', json.dumps(detail, default=str))
+            except Exception:
+                logger.exception('Comment create validation exception')
+            raise
 
-        if not comment_text:
-            return Response(
-                {'comment': ['Comment cannot be empty.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if len(comment_text) > COMMENT_MAX_LENGTH:
-            return Response(
-                {'comment': [f'Comment cannot exceed {COMMENT_MAX_LENGTH} characters.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        attachments_data = serializer.validated_data.get('attachments')
+        if attachments_data:
+            expected_prefix = build_task_attachment_key_prefix(task.id)
+            # Accept either configured prefix (which may include env prefix) or the bare 'task-attachments/<id>/'
+            alt_prefix = None
+            if '/' in expected_prefix:
+                alt_prefix = expected_prefix.split('/', 1)[-1]
+                if not alt_prefix.endswith('/'):
+                    alt_prefix = alt_prefix + '/'
+            logger.debug('expected_prefix=%s alt_prefix=%s', expected_prefix, alt_prefix)
+            for attachment_data in attachments_data:
+                key = str(attachment_data['object_key'])
+                ok = key.startswith(expected_prefix) or (alt_prefix and key.startswith(alt_prefix))
+                logger.debug('attachment key=%s ok=%s', key, ok)
+                if not ok:
+                    return Response(
+                        {'attachments': ['One or more attachment keys do not belong to this task.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
         activity = TaskActivity.objects.create(
             task=task,
             user=request.user,
             activity_type='comment',
-            comment=comment_text,
+            comment=serializer.validated_data['comment'],
         )
+
+        if attachments_data:
+            for attachment_data in attachments_data:
+                TaskAttachment.objects.create(
+                    activity=activity,
+                    object_key=attachment_data['object_key'],
+                    file_name=attachment_data['file_name'],
+                    content_type=attachment_data['content_type'],
+                    size=attachment_data['size'],
+                )
+
         recipient = task.assigned_by if request.user == task.assigned_to else task.assigned_to
+        notification_body = f'{_display_name(request.user)} made a new comment "{_comment_preview(serializer.validated_data["comment"], 3)}"'
+        if attachments_data:
+            attachment_count = len(attachments_data)
+            files_text = "file" if attachment_count == 1 else "files"
+            notification_body += f' [{attachment_count} {files_text} attached]'
         create_notification(
             recipient=recipient,
             actor=request.user,
             notification_type=Notification.TYPE_TASK_COMMENT,
             title=f'New comment on task {task.title}',
-            body=f'{_display_name(request.user)} made a new comment "{_comment_preview(comment_text, 3)}"',
+            body=notification_body,
             link_url=f'/tasks/{task.id}',
             payload={
                 'task_id': task.id,
-                'comment': comment_text,
+                'comment': serializer.validated_data['comment'],
             },
         )
         serializer = TaskActivitySerializer(activity)

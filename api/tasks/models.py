@@ -57,3 +57,23 @@ class TaskActivity(models.Model):
 
     def __str__(self):
         return f'{self.task.title} - {self.activity_type}'
+
+
+class TaskAttachment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    activity = models.ForeignKey(
+        TaskActivity,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+    )
+    object_key = models.CharField(max_length=1024, unique=True)
+    file_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=255)
+    size = models.PositiveBigIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return self.file_name

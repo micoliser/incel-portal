@@ -179,6 +179,16 @@ def _env_list(name: str, default: str = ''):
     return [item.strip() for item in raw.split(',') if item.strip()]
 
 
+TASK_ATTACHMENT_S3_PREFIX = os.getenv('TASK_ATTACHMENT_S3_PREFIX', 'task-attachments')
+TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
+TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '60'))
+TASK_ATTACHMENT_MAX_SIZE = int(os.getenv('TASK_ATTACHMENT_MAX_SIZE', str(10 * 1024 * 1024)))
+TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES = _env_list(
+    'TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES',
+    'image/png,image/jpeg,image/webp,application/pdf,text/plain,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+)
+
+
 CORS_ALLOWED_ORIGINS = _env_list(
     'CORS_ALLOWED_ORIGINS',
     'http://127.0.0.1:3000,http://localhost:3000',

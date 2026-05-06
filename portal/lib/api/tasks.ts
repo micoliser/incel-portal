@@ -37,6 +37,16 @@ export interface TaskActivity {
   old_value: string | null;
   new_value: string | null;
   comment: string | null;
+  attachments: TaskAttachment[];
+  created_at: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  file_name: string;
+  content_type: string;
+  size: number;
+  download_url: string | null;
   created_at: string;
 }
 
@@ -68,6 +78,25 @@ export interface GetTasksParams {
   status?: Task["status"][];
   priority?: Task["priority"][];
   page?: number;
+}
+
+export interface TaskAttachmentUploadRequest {
+  file_name: string;
+  content_type: string;
+  size: number;
+}
+
+export interface TaskAttachmentUploadResponse {
+  upload_url: string;
+  object_key: string;
+  expires_in: number;
+}
+
+export interface TaskCommentAttachmentPayload {
+  object_key: string;
+  file_name: string;
+  content_type: string;
+  size: number;
 }
 
 export interface TaskListResponse {
@@ -128,12 +157,25 @@ export async function getTaskActivities(
   return response.data;
 }
 
+export async function getTaskAttachmentUploadUrl(
+  taskId: string,
+  payload: TaskAttachmentUploadRequest,
+): Promise<TaskAttachmentUploadResponse> {
+  const response = await apiClient.post(
+    `/tasks/${taskId}/attachment-upload-url/`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function addTaskComment(
   taskId: string,
   comment: string,
+  attachments?: TaskCommentAttachmentPayload[],
 ): Promise<TaskActivity> {
   const response = await apiClient.post(`/tasks/${taskId}/comments/`, {
     comment,
+    ...(attachments ? { attachments } : {}),
   });
   return response.data;
 }

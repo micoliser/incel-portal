@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import { format } from "date-fns";
 import {
   ArrowLeft,
@@ -10,6 +11,7 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -18,8 +20,9 @@ import {
   getTaskActivities,
   updateTaskStatus,
   addTaskComment,
+  getTaskAttachmentUploadUrl,
 } from "@/lib/api/tasks";
-import type { Task, TaskActivity } from "@/lib/api/tasks";
+import type { Task, TaskActivity, TaskAttachment } from "@/lib/api/tasks";
 import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -67,6 +70,9 @@ export default function TaskDetailPage() {
   const [comment, setComment] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const [selectedAttachments, setSelectedAttachments] = useState<File[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -134,8 +140,50 @@ export default function TaskDetailPage() {
     try {
       setIsPostingComment(true);
       setCommentError(null);
-      await addTaskComment(taskId, trimmed);
+
+      let attachmentsPayload:
+        | {
+            object_key: string;
+            file_name: string;
+            content_type: string;
+            size: number;
+          }[]
+        | undefined;
+
+      if (selectedAttachments.length > 0) {
+        setIsUploadingAttachment(true);
+        attachmentsPayload = [];
+        for (const file of selectedAttachments) {
+          const uploadResponse = await getTaskAttachmentUploadUrl(taskId, {
+            file_name: file.name,
+            content_type: file.type || "application/octet-stream",
+            size: file.size,
+          });
+
+          const uploadResult = await fetch(uploadResponse.upload_url, {
+            method: "PUT",
+            headers: {
+              "Content-Type": file.type || "application/octet-stream",
+            },
+            body: file,
+          });
+
+          if (!uploadResult.ok) {
+            throw new Error(`Failed to upload attachment ${file.name}`);
+          }
+
+          attachmentsPayload.push({
+            object_key: uploadResponse.object_key,
+            file_name: file.name,
+            content_type: file.type || "application/octet-stream",
+            size: file.size,
+          });
+        }
+      }
+
+      await addTaskComment(taskId, trimmed, attachmentsPayload);
       setComment("");
+      setSelectedAttachments([]);
       const newActivities = await getTaskActivities(taskId);
       setActivities(newActivities);
       toast.success("Comment posted successfully.");
@@ -145,6 +193,7 @@ export default function TaskDetailPage() {
       toast.error(message);
       setCommentError(message);
     } finally {
+      setIsUploadingAttachment(false);
       setIsPostingComment(false);
     }
   };
@@ -316,18 +365,95 @@ export default function TaskDetailPage() {
         <Card className="p-6">
           <h3 className="font-semibold mb-4">Add Comment</h3>
           <div className="space-y-3">
-            <textarea
-              value={comment}
-              onChange={(event) => {
-                setComment(event.target.value);
-                if (commentError) setCommentError(null);
-              }}
-              placeholder="Write a comment for this task..."
-              disabled={!canComment || isPostingComment}
-              maxLength={COMMENT_MAX_LENGTH}
-              rows={6}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-            />
+            <div className="flex items-center gap-2">
+              <textarea
+                value={comment}
+                onChange={(event) => {
+                  setComment(event.target.value);
+                  if (commentError) setCommentError(null);
+                }}
+                placeholder="Write a comment for this task..."
+                disabled={!canComment || isPostingComment}
+                maxLength={COMMENT_MAX_LENGTH}
+                rows={4}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
+            <div className="space-y-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                disabled={!canComment || isPostingComment}
+                onChange={(event) => {
+                  const files = Array.from(event.target.files || []);
+                  const maxFiles = 10;
+                  // Append newly selected files to existing selection
+                  const combined = [...selectedAttachments, ...files];
+                  if (combined.length > maxFiles) {
+                    setSelectedAttachments(combined.slice(0, maxFiles));
+                    toast.error(
+                      `Maximum ${maxFiles} files allowed; extra files were ignored.`,
+                    );
+                  } else {
+                    setSelectedAttachments(combined);
+                  }
+                  // Reset the native input so selecting the same file again will fire onChange
+                  // and so users can add files in multiple clicks.
+                  try {
+                    // Clear the value in a safe way
+                    event.target.value = "";
+                  } catch {
+                    /* ignore */
+                  }
+                  if (commentError) setCommentError(null);
+                }}
+                className="hidden"
+              />
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!canComment || isPostingComment}
+                >
+                  Attach File(s)
+                </Button>
+
+                {selectedAttachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedAttachments.map((file, idx) => (
+                      <div
+                        key={`${file.name}-${file.size}-${idx}`}
+                        className="flex items-center justify-between rounded-md border border-dashed px-3 py-2 text-sm text-gray-700"
+                      >
+                        <div>
+                          <p className="font-medium">{file.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setSelectedAttachments(
+                              selectedAttachments.filter((_, i) => i !== idx),
+                            )
+                          }
+                          disabled={isPostingComment}
+                          className="text-red-600 hover:bg-red-600 hover:text-white"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             <p className="text-xs text-gray-500 text-right">
               {comment.length}/{COMMENT_MAX_LENGTH}
             </p>
@@ -342,13 +468,15 @@ export default function TaskDetailPage() {
             <Button
               type="button"
               onClick={handleAddComment}
-              disabled={!canComment || isPostingComment}
+              disabled={
+                !canComment || isPostingComment || isUploadingAttachment
+              }
               className="w-full"
             >
-              {isPostingComment && (
+              {(isPostingComment || isUploadingAttachment) && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}
-              Post Comment
+              {isUploadingAttachment ? "Uploading..." : "Post Comment"}
             </Button>
           </div>
         </Card>
@@ -438,6 +566,16 @@ export default function TaskDetailPage() {
                           {activity.comment}
                         </p>
                       )}
+                      {activity.attachments.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {activity.attachments.map((attachment) => (
+                            <AttachmentLink
+                              key={attachment.id}
+                              attachment={attachment}
+                            />
+                          ))}
+                        </div>
+                      )}
                       <p className="mt-1 text-xs text-gray-500">
                         {format(
                           new Date(activity.created_at),
@@ -451,6 +589,45 @@ export default function TaskDetailPage() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function AttachmentLink({ attachment }: { attachment: TaskAttachment }) {
+  return (
+    <div className="flex w-40 flex-col items-center text-center sm:w-44">
+      <div className="flex w-full items-center justify-center">
+        <Image
+          src="/file.png"
+          loading="eager"
+          alt=""
+          width={100}
+          height={100}
+          className="h-18 w-18"
+        />
+      </div>
+
+      <p className="mt-3 w-full break-words text-sm font-medium leading-5 text-foreground">
+        {attachment.file_name}
+      </p>
+
+      <p className="mt-1 text-xs text-muted-foreground">
+        {(attachment.size / 1024).toFixed(1)} KB
+      </p>
+
+      <div className="mt-3 flex items-center justify-center gap-2">
+        {attachment.download_url ? (
+          <a
+            href={attachment.download_url}
+            download={attachment.file_name}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-blue-100 hover:text-blue-700"
+            aria-label={`Download ${attachment.file_name}`}
+            title="Download"
+          >
+            <Download className="h-5 w-5" />
+          </a>
+        ) : null}
       </div>
     </div>
   );
