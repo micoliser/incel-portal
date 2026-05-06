@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.urls import reverse
@@ -8,7 +9,7 @@ from rest_framework import status
 from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
-from tasks.models import Task, TaskActivity
+from tasks.models import Task, TaskActivity, TaskAttachment
 
 
 class TasksApiTests(BaseAPITestCase):
@@ -575,7 +576,7 @@ class TasksApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('comment', response.data)
+        self.assertIn('comment', response.data['error']['details'])
 
     def test_comment_must_not_exceed_200_characters(self):
         task = Task.objects.create(
@@ -593,7 +594,7 @@ class TasksApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('comment', response.data)
+        self.assertIn('comment', response.data['error']['details'])
 
     def test_comments_can_be_added_after_completion_and_show_in_timeline(self):
         task = Task.objects.create(
@@ -630,3 +631,88 @@ class TasksApiTests(BaseAPITestCase):
         notification = comment_notifications.first()
         self.assertEqual(notification.title, f'New comment on task {task.title}')
         self.assertIn('made a new comment "Post completion note..."', notification.body)
+
+    def test_attachment_upload_url_returns_presigned_payload(self):
+        task = Task.objects.create(
+            title='Upload URL task',
+            description='Presigned uploads',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        with patch('tasks.views_api.generate_task_attachment_upload_url') as mock_upload_url:
+            mock_upload_url.return_value = {
+                'upload_url': 'https://uploads.example/object',
+                'object_key': f'task-attachments/{task.id}/sample.pdf',
+                'expires_in': 900,
+            }
+            response = self.client.post(
+                reverse('task-attachment-upload-url', kwargs={'pk': task.id}),
+                {
+                    'file_name': 'sample.pdf',
+                    'content_type': 'application/pdf',
+                    'size': 12345,
+                },
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['object_key'], f'task-attachments/{task.id}/sample.pdf')
+        self.assertEqual(response.data['upload_url'], 'https://uploads.example/object')
+
+    def test_comment_with_attachment_creates_attachment_and_timeline_entry(self):
+        task = Task.objects.create(
+            title='Attachment comment task',
+            description='Comment with a file',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+        object_key = f'task-attachments/{task.id}/report.pdf'
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {
+                'comment': 'Here is the report.',
+                'attachment_object_key': object_key,
+                'attachment_file_name': 'report.pdf',
+                'attachment_content_type': 'application/pdf',
+                'attachment_size': 2048,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNotNone(response.data['attachments'][0]['download_url'])
+        self.assertIn('report.pdf', response.data['attachments'][0]['download_url'])
+        self.assertEqual(TaskAttachment.objects.filter(activity__task=task).count(), 1)
+
+        activities_response = self.client.get(reverse('task-activities', kwargs={'pk': task.id}))
+        self.assertEqual(activities_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(activities_response.data[0]['attachments'][0]['file_name'], 'report.pdf')
+        self.assertIsNotNone(activities_response.data[0]['attachments'][0]['download_url'])
+
+    def test_comment_with_attachment_rejects_key_for_other_task(self):
+        task = Task.objects.create(
+            title='Attachment validation task',
+            description='Attachment key must belong to the task',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {
+                'comment': 'Trying to attach a file.',
+                'attachment_object_key': 'task-attachments/not-this-task/file.pdf',
+                'attachment_file_name': 'file.pdf',
+                'attachment_content_type': 'application/pdf',
+                'attachment_size': 1024,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(TaskActivity.objects.filter(task=task).count(), 0)
