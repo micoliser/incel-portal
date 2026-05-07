@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Trash } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, Eye, EyeOff, Pencil, Plus, Trash } from "lucide-react";
 import { toast } from "sonner";
 
+import { UsersSkeleton } from "@/components/skeletons/users-skeleton";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiClient } from "@/lib/api-client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 type User = {
   id: number;
@@ -31,107 +33,238 @@ type Department = {
   name: string;
 };
 
+type UserFormState = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  department_id: string;
+  password: string;
+  confirm_password: string;
+  reset_password: boolean;
+  new_password: string;
+  confirm_new_password: string;
+};
+
+const initialFormState: UserFormState = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  department_id: "",
+  password: "",
+  confirm_password: "",
+  reset_password: false,
+  new_password: "",
+  confirm_new_password: "",
+};
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [totalUsers, setTotalUsers] = useState<number>(0);
+  const [totalDepartments, setTotalDepartments] = useState<number>(0);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string | "">("");
   const [loading, setLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const isRequestInFlightRef = useRef(false);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [statusConfirmUser, setStatusConfirmUser] = useState<User | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
-  const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-    department_id: "",
-    password: "",
-    confirm_password: "",
-  });
+  const [form, setForm] = useState<UserFormState>(initialFormState);
   const [formErrors, setFormErrors] = useState<
     Record<string, string | undefined>
   >({});
+  const [createApiError, setCreateApiError] = useState("");
+  const [editApiError, setEditApiError] = useState("");
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [isUpdatingUser, setIsUpdatingUser] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        setLoading(true);
-        const [depsResp, usersResp] = await Promise.all([
-          apiClient.get("/organization/departments"),
-          apiClient.get("/admin/users", {
-            params: { q: search, department_id: departmentFilter || undefined },
-          }),
-        ]);
-        setDepartments(depsResp.data || []);
-        const u = usersResp.data.results || usersResp.data;
-        setUsers(u || []);
+        if (currentPage === 1) {
+          setLoading(true);
+        } else {
+          setIsLoadingMore(true);
+        }
+
+        isRequestInFlightRef.current = true;
+
+        const [depsResp, filteredUsersResp, totalUsersResp] = await Promise.all(
+          [
+            apiClient.get("/organization/departments"),
+            apiClient.get("/admin/users", {
+              params: {
+                q: search,
+                department_id: departmentFilter || undefined,
+                page: currentPage,
+                page_size: 20,
+              },
+            }),
+            apiClient.get("/admin/users"),
+          ],
+        );
+
+        const depsData = depsResp.data || [];
+        const depsList = Array.isArray(depsData)
+          ? depsData
+          : depsData.results || [];
+        setDepartments(depsList);
+
+        const usersData = filteredUsersResp.data || {};
+        const results = Array.isArray(usersData.results)
+          ? usersData.results
+          : Array.isArray(usersData)
+            ? usersData
+            : [];
+
+        setUsers((current) =>
+          currentPage === 1 ? results : [...current, ...results],
+        );
+        setHasNextPage(
+          Boolean(usersData && (usersData.next_page || usersData.next)),
+        );
+
+        const totalUsersData = totalUsersResp.data || {};
+        const totalCount =
+          typeof totalUsersData.count === "number"
+            ? totalUsersData.count
+            : Array.isArray(totalUsersData.results)
+              ? totalUsersData.results.length
+              : Array.isArray(totalUsersData)
+                ? totalUsersData.length
+                : 0;
+
+        setTotalUsers(totalCount);
+        setTotalDepartments(depsList.length);
       } catch (err) {
+        console.error(err);
         toast.error("Failed to load users.");
       } finally {
+        isRequestInFlightRef.current = false;
         setLoading(false);
+        setIsLoadingMore(false);
       }
     }
 
     void load();
+  }, [search, departmentFilter, currentPage]);
+
+  useEffect(() => {
+    // Reset to first page when search or filter change
+    setUsers([]);
+    setCurrentPage(1);
+    setHasNextPage(false);
   }, [search, departmentFilter]);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (!hasNextPage || loading || isLoadingMore) return;
+
+    const element = loadMoreRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting || isRequestInFlightRef.current) return;
+        setCurrentPage((p) => p + 1);
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasNextPage, loading, isLoadingMore]);
+
+  useEffect(() => {
     if (isCreateOpen) {
-      // Ensure create form is fresh when opened
       resetForm();
     }
   }, [isCreateOpen]);
 
   function resetForm() {
-    setForm({
-      first_name: "",
-      last_name: "",
-      email: "",
-      department_id: "",
-      password: "",
-      confirm_password: "",
-    });
+    setForm(initialFormState);
     setEditingUser(null);
     setFormErrors({});
+    setCreateApiError("");
+    setEditApiError("");
+    setShowCreatePassword(false);
+    setShowNewPassword(false);
   }
 
   function isValidEmail(value: string) {
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
   }
 
-  function validateCreateForm(values: typeof form) {
+  function validateCreateForm(values: UserFormState) {
     const errors: Record<string, string> = {};
+
     if (!values.first_name.trim()) {
       errors.first_name = "First name is required.";
     }
+
     if (!values.email.trim()) {
       errors.email = "Email is required.";
     } else if (!isValidEmail(values.email.trim())) {
       errors.email = "Enter a valid email address.";
     }
+
     if (!values.password) {
       errors.password = "Password is required.";
     } else if (values.password.length < 8) {
       errors.password = "Password must be at least 8 characters.";
     }
+
     if (values.password !== values.confirm_password) {
       errors.confirm_password = "Passwords do not match.";
     }
+
     return errors;
   }
 
-  function validateEditForm(values: typeof form) {
+  function validateEditForm(values: UserFormState) {
     const errors: Record<string, string> = {};
+
     if (!values.first_name.trim()) {
       errors.first_name = "First name is required.";
     }
+
     if (!values.email.trim()) {
       errors.email = "Email is required.";
     } else if (!isValidEmail(values.email.trim())) {
       errors.email = "Enter a valid email address.";
     }
+
+    if (values.reset_password) {
+      if (!values.new_password) {
+        errors.new_password = "New password is required.";
+      } else if (values.new_password.length < 8) {
+        errors.new_password = "Password must be at least 8 characters.";
+      }
+
+      if (values.new_password !== values.confirm_new_password) {
+        errors.confirm_new_password = "Passwords do not match.";
+      }
+    }
+
     return errors;
   }
 
@@ -139,26 +272,34 @@ export default function UsersPage() {
     e.preventDefault();
     const errors = validateCreateForm(form);
     setFormErrors(errors);
+    setCreateApiError("");
 
     if (Object.keys(errors).length > 0) {
       return;
     }
 
     try {
+      setIsCreatingUser(true);
       const payload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         department_id: form.department_id || null,
-        password: form.password || undefined,
+        password: form.password,
       };
       const resp = await apiClient.post("/admin/users", payload);
-      setUsers((s) => [resp.data, ...s]);
+      setUsers((current) => [resp.data, ...current]);
+      setTotalUsers((current) => current + 1);
       setIsCreateOpen(false);
       resetForm();
       toast.success("User created.");
-    } catch (err) {
+    } catch (error) {
+      setCreateApiError(
+        extractApiErrorMessage(error, "Failed to create user."),
+      );
       toast.error("Failed to create user.");
+    } finally {
+      setIsCreatingUser(false);
     }
   }
 
@@ -171,165 +312,293 @@ export default function UsersPage() {
       department_id: user.department_id || "",
       password: "",
       confirm_password: "",
+      reset_password: false,
+      new_password: "",
+      confirm_new_password: "",
     });
-    // Clear any previous form errors when editing
     setFormErrors({});
+    setEditApiError("");
+    setShowCreatePassword(false);
+    setShowNewPassword(false);
     setIsEditOpen(true);
   }
 
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault();
-    if (!editingUser) return;
+
+    if (!editingUser) {
+      return;
+    }
+
+    const hasEditChanges =
+      form.first_name.trim() !== (editingUser.first_name || "") ||
+      form.last_name.trim() !== (editingUser.last_name || "") ||
+      form.email.trim() !== (editingUser.email || "") ||
+      (form.department_id || "") !== (editingUser.department_id || "") ||
+      (form.reset_password &&
+        (form.new_password.length > 0 || form.confirm_new_password.length > 0));
+
+    if (!hasEditChanges) {
+      toast.info("No changes detected.");
+      return;
+    }
+
     const errors = validateEditForm(form);
     setFormErrors(errors);
+    setEditApiError("");
 
     if (Object.keys(errors).length > 0) {
       return;
     }
 
     try {
+      setIsUpdatingUser(true);
       const payload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         department_id: form.department_id || null,
+        reset_password: form.reset_password,
+        ...(form.reset_password
+          ? {
+              new_password: form.new_password,
+              confirm_password: form.confirm_new_password,
+            }
+          : {}),
       };
+
       const resp = await apiClient.patch(
         `/admin/users/${editingUser.id}`,
         payload,
       );
-      setUsers((s) => s.map((u) => (u.id === resp.data.id ? resp.data : u)));
+      setUsers((current) =>
+        current.map((user) => (user.id === resp.data.id ? resp.data : user)),
+      );
       setIsEditOpen(false);
       resetForm();
       toast.success("User updated.");
-    } catch (err) {
+    } catch (error) {
+      setEditApiError(extractApiErrorMessage(error, "Failed to update user."));
       toast.error("Failed to update user.");
+    } finally {
+      setIsUpdatingUser(false);
     }
   }
 
-  async function handleDisable(user: User) {
-    if (!confirm(`Disable user ${user.email}? This prevents login.`)) return;
-    try {
-      const resp = await apiClient.patch(`/admin/users/${user.id}/status`, {
-        is_active: false,
-      });
-      setUsers((s) => s.map((u) => (u.id === resp.data.id ? resp.data : u)));
-      toast.success("User disabled.");
-    } catch (err) {
-      toast.error("Failed to disable user.");
+  function requestStatusToggle(user: User) {
+    setStatusConfirmUser(user);
+  }
+
+  async function confirmStatusToggle() {
+    if (!statusConfirmUser) {
+      return;
     }
+
+    const nextIsActive = !statusConfirmUser.is_active;
+
+    try {
+      setIsUpdatingStatus(true);
+      const resp = await apiClient.patch(
+        `/admin/users/${statusConfirmUser.id}/status`,
+        {
+          is_active: nextIsActive,
+        },
+      );
+      setUsers((current) =>
+        current.map((item) => (item.id === resp.data.id ? resp.data : item)),
+      );
+      toast.success(nextIsActive ? "User enabled." : "User disabled.");
+      setStatusConfirmUser(null);
+    } catch {
+      toast.error(
+        nextIsActive ? "Failed to enable user." : "Failed to disable user.",
+      );
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  }
+
+  function userDisplayName(user: User) {
+    const fullName = `${user.first_name || ""} ${user.last_name || ""}`.trim();
+    return fullName || "Unknown user";
   }
 
   const departmentMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    departments.forEach((d) => (m[d.id] = d.name));
-    return m;
+    const map: Record<string, string> = {};
+    departments.forEach((department) => {
+      map[department.id] = department.name;
+    });
+    return map;
   }, [departments]);
+
+  const activeFilterCount = useMemo(() => {
+    return departmentFilter ? 1 : 0;
+  }, [departmentFilter]);
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold">Users</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage workspace users.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Search by name"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-            className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
-          >
-            <option value="">All departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="mr-2 size-4" /> Create
-          </Button>
-        </div>
+      <div className="mx-auto mb-4 w-full max-w-2xl">
+        <Input
+          id="users-search"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder="Search by first or last name..."
+          className="h-11 rounded-full px-5 text-base"
+        />
       </div>
 
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full table-auto">
-            <thead>
-              <tr className="text-left text-sm text-muted-foreground">
-                <th className="px-4 py-3">First name</th>
-                <th className="px-4 py-3">Last name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Department</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="p-6">
-                    Loading...
-                  </td>
+      <div className="mb-2 flex items-center justify-center">
+        <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} active
+        </span>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+        <Button
+          type="button"
+          variant={departmentFilter === "" ? "default" : "outline"}
+          className="rounded-full"
+          onClick={() => setDepartmentFilter("")}
+        >
+          All Departments
+        </Button>
+        {departments.map((department) => {
+          const isActive = departmentFilter === department.id;
+          return (
+            <Button
+              key={department.id}
+              type="button"
+              variant={isActive ? "default" : "outline"}
+              className="rounded-full"
+              onClick={() => setDepartmentFilter(department.id)}
+            >
+              {department.name}
+            </Button>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={() => setIsCreateOpen(true)}>
+          <Plus className="mr-2 size-4" /> Create User
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Total users</p>
+            <p className="text-2xl font-semibold">{totalUsers}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Departments</p>
+            <p className="text-2xl font-semibold">{totalDepartments}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Avg users / dept</p>
+            <p className="text-2xl font-semibold">
+              {totalDepartments > 0
+                ? (totalUsers / totalDepartments).toFixed(1)
+                : "—"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {loading ? (
+        <UsersSkeleton />
+      ) : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto">
+              <thead>
+                <tr className="text-left text-sm text-muted-foreground">
+                  <th className="px-4 py-3">First name</th>
+                  <th className="px-4 py-3">Last name</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Department</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
-              ) : users.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="p-6">
-                    No users found.
-                  </td>
-                </tr>
-              ) : (
-                users.map((user) => (
-                  <tr key={user.id} className="border-t">
-                    <td className="px-4 py-3 font-medium text-base">
-                      {user.first_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-base">
-                      {user.last_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-base">
-                      {user.email}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-base">
-                      {user.department_id
-                        ? (departmentMap[user.department_id] ??
-                          user.department_id)
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEdit(user)}
-                          aria-label="Edit user"
-                        >
-                          <Pencil className="size-5 text-blue-400/90" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDisable(user)}
-                          aria-label="Disable user"
-                        >
-                          <Trash className="size-5 text-red-400/90" />
-                        </Button>
-                      </div>
+              </thead>
+              <tbody>
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-6">
+                      No users found.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                ) : (
+                  users.map((user) => (
+                    <tr key={user.id} className="border-t">
+                      <td className="px-4 py-3 font-medium text-base">
+                        {user.first_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-base">
+                        {user.last_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-base">
+                        {user.email}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-base">
+                        {user.department_id
+                          ? (departmentMap[user.department_id] ??
+                            user.department_id)
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            user.is_active
+                              ? "rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                              : "rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-600 dark:bg-rose-500/15 dark:text-rose-400"
+                          }
+                        >
+                          {user.is_active ? "Active" : "Disabled"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEdit(user)}
+                            aria-label="Edit user"
+                          >
+                            <Pencil className="size-5 text-blue-400/90" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => requestStatusToggle(user)}
+                            aria-label={
+                              user.is_active ? "Disable user" : "Enable user"
+                            }
+                          >
+                            {user.is_active ? (
+                              <Trash className="size-5 text-red-400/90" />
+                            ) : (
+                              <CheckCircle2 className="size-5 text-emerald-500/90" />
+                            )}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {hasNextPage && <div ref={loadMoreRef} className="h-8" />}
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
@@ -340,6 +609,15 @@ export default function UsersPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4 py-2" noValidate>
+            {createApiError ? (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {createApiError}
+              </div>
+            ) : null}
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="first_name">First name</Label>
               <Input
@@ -347,7 +625,11 @@ export default function UsersPage() {
                 value={form.first_name}
                 onChange={(e) => {
                   setForm({ ...form, first_name: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, first_name: undefined }));
+                  setFormErrors((current) => ({
+                    ...current,
+                    first_name: undefined,
+                  }));
+                  setCreateApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.first_name)}
@@ -366,7 +648,11 @@ export default function UsersPage() {
                 value={form.last_name}
                 onChange={(e) => {
                   setForm({ ...form, last_name: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, last_name: undefined }));
+                  setFormErrors((current) => ({
+                    ...current,
+                    last_name: undefined,
+                  }));
+                  setCreateApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.last_name)}
@@ -385,7 +671,11 @@ export default function UsersPage() {
                 value={form.email}
                 onChange={(e) => {
                   setForm({ ...form, email: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, email: undefined }));
+                  setFormErrors((current) => ({
+                    ...current,
+                    email: undefined,
+                  }));
+                  setCreateApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.email)}
@@ -399,17 +689,37 @@ export default function UsersPage() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={form.password}
-                onChange={(e) => {
-                  setForm({ ...form, password: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, password: undefined }));
-                }}
-                className="mt-2"
-                aria-invalid={Boolean(formErrors.password)}
-              />
+              <div className="relative mt-2">
+                <Input
+                  id="password"
+                  type={showCreatePassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => {
+                    setForm({ ...form, password: e.target.value });
+                    setFormErrors((current) => ({
+                      ...current,
+                      password: undefined,
+                    }));
+                    setCreateApiError("");
+                  }}
+                  className="pr-10"
+                  aria-invalid={Boolean(formErrors.password)}
+                />
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap outline-none select-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-muted/50"
+                  onClick={() => setShowCreatePassword((current) => !current)}
+                  aria-label={
+                    showCreatePassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showCreatePassword ? (
+                    <EyeOff className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
               {formErrors.password ? (
                 <p className="mt-1 text-xs text-destructive">
                   {formErrors.password}
@@ -425,10 +735,11 @@ export default function UsersPage() {
                 value={form.confirm_password}
                 onChange={(e) => {
                   setForm({ ...form, confirm_password: e.target.value });
-                  setFormErrors((curr) => ({
-                    ...curr,
+                  setFormErrors((current) => ({
+                    ...current,
                     confirm_password: undefined,
                   }));
+                  setCreateApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.confirm_password)}
@@ -445,28 +756,33 @@ export default function UsersPage() {
               <select
                 id="department"
                 value={form.department_id}
-                onChange={(e) =>
-                  setForm({ ...form, department_id: e.target.value })
-                }
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20 mt-2"
+                onChange={(e) => {
+                  setForm({ ...form, department_id: e.target.value });
+                  setCreateApiError("");
+                }}
+                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
               >
                 <option value="">None</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
                   </option>
                 ))}
               </select>
             </div>
+
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setIsCreateOpen(false)}
+                disabled={isCreatingUser}
               >
                 Cancel
               </Button>
-              <Button type="submit">Create</Button>
+              <Button type="submit" disabled={isCreatingUser}>
+                {isCreatingUser ? "Creating..." : "Create"}
+              </Button>
             </div>
           </form>
         </DialogContent>
@@ -479,6 +795,15 @@ export default function UsersPage() {
             <DialogDescription>Edit selected user.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEdit} className="space-y-4 py-2" noValidate>
+            {editApiError ? (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {editApiError}
+              </div>
+            ) : null}
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="edit_first_name">First name</Label>
               <Input
@@ -486,7 +811,11 @@ export default function UsersPage() {
                 value={form.first_name}
                 onChange={(e) => {
                   setForm({ ...form, first_name: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, first_name: undefined }));
+                  setFormErrors((current) => ({
+                    ...current,
+                    first_name: undefined,
+                  }));
+                  setEditApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.first_name)}
@@ -505,7 +834,11 @@ export default function UsersPage() {
                 value={form.last_name}
                 onChange={(e) => {
                   setForm({ ...form, last_name: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, last_name: undefined }));
+                  setFormErrors((current) => ({
+                    ...current,
+                    last_name: undefined,
+                  }));
+                  setEditApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.last_name)}
@@ -524,7 +857,11 @@ export default function UsersPage() {
                 value={form.email}
                 onChange={(e) => {
                   setForm({ ...form, email: e.target.value });
-                  setFormErrors((curr) => ({ ...curr, email: undefined }));
+                  setFormErrors((current) => ({
+                    ...current,
+                    email: undefined,
+                  }));
+                  setEditApiError("");
                 }}
                 className="mt-2"
                 aria-invalid={Boolean(formErrors.email)}
@@ -541,30 +878,185 @@ export default function UsersPage() {
               <select
                 id="edit_department"
                 value={form.department_id}
-                onChange={(e) =>
-                  setForm({ ...form, department_id: e.target.value })
-                }
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20 mt-2"
+                onChange={(e) => {
+                  setForm({ ...form, department_id: e.target.value });
+                  setEditApiError("");
+                }}
+                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
               >
                 <option value="">None</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
                   </option>
                 ))}
               </select>
             </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Reset password</p>
+                  <p className="text-xs text-muted-foreground">
+                    Set a new password for this user.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={form.reset_password ? "outline" : "secondary"}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      reset_password: !current.reset_password,
+                      new_password: current.reset_password
+                        ? ""
+                        : current.new_password,
+                      confirm_new_password: current.reset_password
+                        ? ""
+                        : current.confirm_new_password,
+                    }))
+                  }
+                >
+                  {form.reset_password ? "Cancel reset" : "Reset password"}
+                </Button>
+              </div>
+
+              {form.reset_password ? (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="edit_new_password">New password</Label>
+                    <div className="relative mt-2">
+                      <Input
+                        id="edit_new_password"
+                        type={showNewPassword ? "text" : "password"}
+                        value={form.new_password}
+                        onChange={(e) => {
+                          setForm({ ...form, new_password: e.target.value });
+                          setFormErrors((current) => ({
+                            ...current,
+                            new_password: undefined,
+                          }));
+                          setEditApiError("");
+                        }}
+                        className="pr-10"
+                        aria-invalid={Boolean(formErrors.new_password)}
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap outline-none select-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-muted/50"
+                        onClick={() =>
+                          setShowNewPassword((current) => !current)
+                        }
+                        aria-label={
+                          showNewPassword ? "Hide password" : "Show password"
+                        }
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="size-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="size-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+                    {formErrors.new_password ? (
+                      <p className="mt-1 text-xs text-destructive">
+                        {formErrors.new_password}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="edit_confirm_new_password">
+                      Confirm password
+                    </Label>
+                    <Input
+                      id="edit_confirm_new_password"
+                      type="password"
+                      value={form.confirm_new_password}
+                      onChange={(e) => {
+                        setForm({
+                          ...form,
+                          confirm_new_password: e.target.value,
+                        });
+                        setFormErrors((current) => ({
+                          ...current,
+                          confirm_new_password: undefined,
+                        }));
+                        setEditApiError("");
+                      }}
+                      className="mt-2"
+                      aria-invalid={Boolean(formErrors.confirm_new_password)}
+                    />
+                    {formErrors.confirm_new_password ? (
+                      <p className="mt-1 text-xs text-destructive">
+                        {formErrors.confirm_new_password}
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setIsEditOpen(false)}
+                disabled={isUpdatingUser}
               >
                 Cancel
               </Button>
-              <Button type="submit">Save</Button>
+              <Button type="submit" disabled={isUpdatingUser}>
+                {isUpdatingUser ? "Saving..." : "Save"}
+              </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(statusConfirmUser)}
+        onOpenChange={(open) => {
+          if (!open && !isUpdatingStatus) {
+            setStatusConfirmUser(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {statusConfirmUser?.is_active ? "Disable user" : "Enable user"}
+            </DialogTitle>
+            <DialogDescription>
+              {statusConfirmUser
+                ? `Are you sure you want to ${
+                    statusConfirmUser.is_active ? "disable" : "enable"
+                  } user ${userDisplayName(statusConfirmUser)} (${statusConfirmUser.email || "no-email"})?`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setStatusConfirmUser(null)}
+              disabled={isUpdatingStatus}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant={statusConfirmUser?.is_active ? "destructive" : "default"}
+              onClick={confirmStatusToggle}
+              disabled={isUpdatingStatus}
+            >
+              {isUpdatingStatus
+                ? "Please wait..."
+                : statusConfirmUser?.is_active
+                  ? "Disable"
+                  : "Enable"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

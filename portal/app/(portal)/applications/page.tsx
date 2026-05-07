@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { ApplicationsSkeleton } from "@/components/skeletons/applications-skeleton";
 import { apiClient } from "@/lib/api-client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 type ApplicationRecord = {
   id: string;
@@ -271,6 +272,49 @@ function sameStringList(a: string[], b: string[]) {
   return left.every((value, index) => value === right[index]);
 }
 
+function extractPaginatedResults<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+
+  if (payload && typeof payload === "object") {
+    const results = (payload as { results?: unknown }).results;
+    if (Array.isArray(results)) {
+      return results as T[];
+    }
+  }
+
+  return [];
+}
+
+async function fetchAllAdminUsers() {
+  const collectedUsers: UserOption[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await apiClient.get("/admin/users", {
+      params: { page },
+    });
+    const payload = response.data as
+      | { results?: UserOption[]; next_page?: number | null }
+      | UserOption[];
+    collectedUsers.push(...extractPaginatedResults<UserOption>(payload));
+
+    const nextPage =
+      !Array.isArray(payload) && payload && typeof payload === "object"
+        ? (payload.next_page ?? null)
+        : null;
+
+    if (!nextPage) {
+      break;
+    }
+
+    page = nextPage;
+  }
+
+  return collectedUsers;
+}
+
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -322,6 +366,8 @@ export default function ApplicationsPage() {
   >({});
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [createApiError, setCreateApiError] = useState("");
+  const [manageApiError, setManageApiError] = useState("");
   const [form, setForm] = useState<FormState>(initialForm);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const manageFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -356,11 +402,11 @@ export default function ApplicationsPage() {
         }
 
         if (admin) {
-          const [usersResponse, rolesResponse] = await Promise.all([
-            apiClient.get("/admin/users"),
+          const [usersList, rolesResponse] = await Promise.all([
+            fetchAllAdminUsers(),
             apiClient.get("/organization/roles"),
           ]);
-          setUsers(usersResponse.data as UserOption[]);
+          setUsers(usersList);
           setRoles(rolesResponse.data as RoleOption[]);
         }
       } catch (error) {
@@ -659,6 +705,7 @@ export default function ApplicationsPage() {
     }
 
     setFormErrors((current) => ({ ...current, [name]: undefined }));
+    setCreateApiError("");
   }
 
   function toggleDepartment(departmentId: string) {
@@ -672,6 +719,7 @@ export default function ApplicationsPage() {
       };
     });
     setFormErrors((current) => ({ ...current, department_ids: undefined }));
+    setCreateApiError("");
   }
 
   function toggleDepartmentFilter(departmentId: string) {
@@ -687,6 +735,7 @@ export default function ApplicationsPage() {
     const file = event.target.files?.[0] ?? null;
     setForm((current) => ({ ...current, logoFile: file }));
     setFormErrors((current) => ({ ...current, logoFile: undefined }));
+    setCreateApiError("");
     setIsLogoDragging(false);
   }
 
@@ -706,6 +755,7 @@ export default function ApplicationsPage() {
 
     setForm((current) => ({ ...current, logoFile: file }));
     setFormErrors((current) => ({ ...current, logoFile: undefined }));
+    setCreateApiError("");
   }
 
   async function uploadLogoAndGetPublicUrl(slug: string, file: File) {
@@ -748,6 +798,7 @@ export default function ApplicationsPage() {
 
   async function handleCreateApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setCreateApiError("");
 
     const errors = {
       ...validateCreateStepOne(form),
@@ -794,6 +845,9 @@ export default function ApplicationsPage() {
       setCreateStep(1);
       toast.success("Application created successfully.");
     } catch (error) {
+      setCreateApiError(
+        extractApiErrorMessage(error, "Failed to create application."),
+      );
       toast.error(errorMessage(error, "Failed to create application."));
     } finally {
       setIsSubmitting(false);
@@ -889,6 +943,7 @@ export default function ApplicationsPage() {
     setOverrideReason("");
     setDenyUserId("");
     setDenyReason("");
+    setManageApiError("");
     setManageTab("edit");
     setIsManageOpen(true);
 
@@ -921,6 +976,7 @@ export default function ApplicationsPage() {
     setOverrideReason("");
     setDenyUserId("");
     setDenyReason("");
+    setManageApiError("");
   }
 
   function handleManageLogoChange(event: ChangeEvent<HTMLInputElement>) {
@@ -928,6 +984,7 @@ export default function ApplicationsPage() {
     setManageLogoFile(file);
     setIsManageLogoDragging(false);
     setManageFormErrors((current) => ({ ...current, logoFile: undefined }));
+    setManageApiError("");
   }
 
   function openManageFilePicker() {
@@ -946,6 +1003,7 @@ export default function ApplicationsPage() {
 
     setManageLogoFile(file);
     setManageFormErrors((current) => ({ ...current, logoFile: undefined }));
+    setManageApiError("");
   }
 
   function handleManageInputChange(
@@ -980,6 +1038,7 @@ export default function ApplicationsPage() {
     }
 
     setManageFormErrors((current) => ({ ...current, [name]: undefined }));
+    setManageApiError("");
   }
 
   function toggleManageDepartment(departmentId: string) {
@@ -1001,6 +1060,7 @@ export default function ApplicationsPage() {
       ...current,
       department_ids: undefined,
     }));
+    setManageApiError("");
   }
 
   async function saveManageChanges(section: ManageTab) {
@@ -1057,6 +1117,7 @@ export default function ApplicationsPage() {
     }
 
     try {
+      setManageApiError("");
       setIsSavingManage(true);
 
       let nextLogoUrl = manageForm.logo_url.trim() || null;
@@ -1114,6 +1175,9 @@ export default function ApplicationsPage() {
           : "Application access updated.",
       );
     } catch (error) {
+      setManageApiError(
+        extractApiErrorMessage(error, "Failed to update application."),
+      );
       toast.error(errorMessage(error, "Failed to update application."));
     } finally {
       setIsSavingManage(false);
@@ -1132,6 +1196,7 @@ export default function ApplicationsPage() {
     }
 
     try {
+      setManageApiError("");
       setIsGrantingAccess(true);
       const response = await apiClient.post(
         `/admin/applications/${manageTarget.id}/overrides`,
@@ -1158,6 +1223,9 @@ export default function ApplicationsPage() {
       setOverrideReason("");
       toast.success("Access granted.");
     } catch (error) {
+      setManageApiError(
+        extractApiErrorMessage(error, "Failed to grant access."),
+      );
       toast.error(errorMessage(error, "Failed to grant access."));
     } finally {
       setIsGrantingAccess(false);
@@ -1176,6 +1244,7 @@ export default function ApplicationsPage() {
     }
 
     try {
+      setManageApiError("");
       setIsRevokingAccess(true);
       const response = await apiClient.post(
         `/admin/applications/${manageTarget.id}/overrides`,
@@ -1202,6 +1271,9 @@ export default function ApplicationsPage() {
       setDenyReason("");
       toast.success("Access removed for selected user.");
     } catch (error) {
+      setManageApiError(
+        extractApiErrorMessage(error, "Failed to remove user access."),
+      );
       toast.error(errorMessage(error, "Failed to remove user access."));
     } finally {
       setIsRevokingAccess(false);
@@ -1288,6 +1360,7 @@ export default function ApplicationsPage() {
               setIsCreateOpen(true);
               setCreateStep(1);
               setFormErrors({});
+              setCreateApiError("");
             }}
           >
             <Plus className="mr-2 size-4" aria-hidden="true" />
@@ -1309,6 +1382,15 @@ export default function ApplicationsPage() {
               onSubmit={handleCreateApplication}
               noValidate
             >
+              {createApiError ? (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                >
+                  {createApiError}
+                </div>
+              ) : null}
+
               <div className="flex items-center gap-2">
                 <span
                   className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -1608,6 +1690,7 @@ export default function ApplicationsPage() {
                     setIsCreateOpen(false);
                     setCreateStep(1);
                     setFormErrors({});
+                    setCreateApiError("");
                   }}
                   disabled={isSubmitting}
                 >
@@ -1683,6 +1766,15 @@ export default function ApplicationsPage() {
                 Access Control
               </Button>
             </div>
+
+            {manageApiError ? (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {manageApiError}
+              </div>
+            ) : null}
 
             {manageTab === "edit" ? (
               <form
