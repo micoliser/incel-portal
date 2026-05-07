@@ -4,6 +4,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
 from rest_framework import permissions, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
@@ -60,6 +61,19 @@ class LoginView(APIView):
                 metadata={'email': email},
             )
             return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user.is_active:
+            log_audit(
+                action='AUTH_LOGIN_FAILED',
+                request=request,
+                target_type='User',
+                target_id=user.id,
+                metadata={'email': email, 'reason': 'disabled_account'},
+            )
+            return Response(
+                {'detail': 'This account has been disabled, contact HR or Admin.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         authenticated = authenticate(request=request, username=user.username, password=password)
         if authenticated is None:
@@ -257,6 +271,13 @@ class AdminUserListView(APIView):
             users = users.filter(search_query)
 
         users = users.order_by(Lower('username'))
+
+        paginator = AdminUserPagination()
+        page = paginator.paginate_queryset(users, request, view=self)
+        if page is not None:
+            serializer = UserWithProfileSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
         return Response(UserWithProfileSerializer(users, many=True).data)
 
     @transaction.atomic
@@ -307,6 +328,20 @@ class AdminUserListView(APIView):
         return Response(UserWithProfileSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
+class AdminUserPagination(PageNumberPagination):
+    page_size = 20
+
+
+    def get_paginated_response(self, data):
+        response = super().get_paginated_response(data)
+        response.data['page'] = self.page.number
+        response.data['page_size'] = self.page.paginator.per_page
+        response.data['total_pages'] = self.page.paginator.num_pages
+        response.data['next_page'] = self.page.next_page_number() if self.page.has_next() else None
+        response.data['previous_page'] = self.page.previous_page_number() if self.page.has_previous() else None
+        return response
+
+
 class AdminUserDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
 
@@ -334,6 +369,10 @@ class AdminUserDetailView(APIView):
         user.last_name = serializer.validated_data.get('last_name', '')
         user.save(update_fields=['email', 'username', 'first_name', 'last_name'])
 
+        if serializer.validated_data.get('reset_password'):
+            user.set_password(serializer.validated_data['new_password'])
+            user.save(update_fields=['password'])
+
         department_id = serializer.validated_data.get('department_id')
         department = Department.objects.filter(id=department_id).first() if department_id else None
 
@@ -355,7 +394,11 @@ class AdminUserDetailView(APIView):
             actor_user=request.user,
             target_type='User',
             target_id=user.id,
-            metadata={'email': user.email, 'department_id': department_id},
+            metadata={
+                'email': user.email,
+                'department_id': department_id,
+                'reset_password': bool(serializer.validated_data.get('reset_password')),
+            },
         )
 
         return Response(UserWithProfileSerializer(user).data)

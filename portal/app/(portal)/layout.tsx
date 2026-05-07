@@ -7,16 +7,30 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   AppWindow,
   CheckSquare2,
+  Eye,
+  EyeOff,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
   Moon,
   ScrollText,
   Sun,
+  Users,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { NotificationCenter } from "@/components/notification-center";
 import { cn } from "@/lib/utils";
 import {
@@ -25,12 +39,15 @@ import {
   getStoredRefreshToken,
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isAdmin, setIsAdmin] = useState(false);
   const [userInfo, setUserInfo] = useState<{
@@ -43,6 +60,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     department?: string | null;
     department_id?: number | null;
   } | null>(null);
+  const [changePasswordForm, setChangePasswordForm] = useState({
+    old_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
+  const [showChangeNewPassword, setShowChangeNewPassword] = useState(false);
+  const [changePasswordErrors, setChangePasswordErrors] = useState<
+    Record<string, string | undefined>
+  >({});
+  const [changePasswordApiError, setChangePasswordApiError] = useState("");
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("portal_theme");
@@ -115,20 +142,25 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           title: "Applications",
           subtitle: "Browse and manage internal application access.",
         }
-      : pathname === "/logs"
+      : pathname === "/users" || pathname.startsWith("/users")
         ? {
-            title: "Logs",
-            subtitle: "Review audit events and activity history.",
+            title: "Users",
+            subtitle: "Manage workspace users.",
           }
-        : pathname.startsWith("/tasks")
+        : pathname === "/logs"
           ? {
-              title: "Tasks",
-              subtitle: "Manage and track your tasks.",
+              title: "Logs",
+              subtitle: "Review audit events and activity history.",
             }
-          : {
-              title: "Dashboard",
-              subtitle: "Your portal workspace is ready.",
-            };
+          : pathname.startsWith("/tasks")
+            ? {
+                title: "Tasks",
+                subtitle: "Manage and track your tasks.",
+              }
+            : {
+                title: "Dashboard",
+                subtitle: "Your portal workspace is ready.",
+              };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
@@ -166,6 +198,70 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   function handleCloseSidebar() {
     setIsSidebarOpen(false);
+  }
+
+  function resetChangePasswordForm() {
+    setChangePasswordForm({
+      old_password: "",
+      new_password: "",
+      confirm_password: "",
+    });
+    setChangePasswordErrors({});
+    setChangePasswordApiError("");
+    setShowChangeNewPassword(false);
+  }
+
+  function validateChangePasswordForm() {
+    const errors: Record<string, string> = {};
+
+    if (!changePasswordForm.old_password) {
+      errors.old_password = "Old password is required.";
+    }
+
+    if (!changePasswordForm.new_password) {
+      errors.new_password = "New password is required.";
+    } else if (changePasswordForm.new_password.length < 8) {
+      errors.new_password = "Password must be at least 8 characters.";
+    }
+
+    if (
+      changePasswordForm.new_password !== changePasswordForm.confirm_password
+    ) {
+      errors.confirm_password = "Passwords do not match.";
+    }
+
+    return errors;
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+
+    const errors = validateChangePasswordForm();
+    setChangePasswordErrors(errors);
+    setChangePasswordApiError("");
+
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      await apiClient.post("/auth/change-password", {
+        old_password: changePasswordForm.old_password,
+        new_password: changePasswordForm.new_password,
+      });
+      resetChangePasswordForm();
+      setIsChangePasswordOpen(false);
+      setIsSidebarOpen(false);
+      toast.success("Password changed.");
+    } catch (error) {
+      setChangePasswordApiError(
+        extractApiErrorMessage(error, "Failed to change password."),
+      );
+      toast.error("Failed to change password.");
+    } finally {
+      setIsChangingPassword(false);
+    }
   }
 
   function handleToggleTheme() {
@@ -348,7 +444,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 )}
                 aria-hidden="true"
               />
-              <LayoutDashboard
+              <Users
                 className={cn(
                   "size-4 transition-transform duration-300",
                   pathname === "/users" ? "scale-110" : "group-hover:scale-105",
@@ -441,6 +537,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <Button
               type="button"
               variant="outline"
+              onClick={() => setIsChangePasswordOpen(true)}
+              className="border-border bg-card text-foreground hover:bg-muted"
+            >
+              <KeyRound className="mr-2 size-4" aria-hidden="true" />
+              Change password
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
               size="icon"
               onClick={handleToggleTheme}
               aria-label={
@@ -479,6 +585,153 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       <main className="h-screen overflow-y-auto px-5 pb-6 pt-56 sm:px-6 sm:pb-8 sm:pt-40 lg:ml-72 lg:pt-36">
         {children}
       </main>
+
+      <Dialog
+        open={isChangePasswordOpen}
+        onOpenChange={(open) => {
+          setIsChangePasswordOpen(open);
+          if (!open) {
+            resetChangePasswordForm();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change password</DialogTitle>
+            <DialogDescription>
+              Update your login password for the portal.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={handleChangePassword}
+            className="space-y-4 py-2"
+            noValidate
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="change_old_password">Old password</Label>
+              <Input
+                id="change_old_password"
+                type="password"
+                value={changePasswordForm.old_password}
+                onChange={(event) => {
+                  setChangePasswordForm((current) => ({
+                    ...current,
+                    old_password: event.target.value,
+                  }));
+                  setChangePasswordErrors((current) => ({
+                    ...current,
+                    old_password: undefined,
+                  }));
+                  setChangePasswordApiError("");
+                }}
+                className="mt-2"
+                aria-invalid={Boolean(changePasswordErrors.old_password)}
+              />
+              {changePasswordErrors.old_password ? (
+                <p className="mt-1 text-xs text-destructive">
+                  {changePasswordErrors.old_password}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="change_new_password">New password</Label>
+              <div className="relative mt-2">
+                <Input
+                  id="change_new_password"
+                  type={showChangeNewPassword ? "text" : "password"}
+                  value={changePasswordForm.new_password}
+                  onChange={(event) => {
+                    setChangePasswordForm((current) => ({
+                      ...current,
+                      new_password: event.target.value,
+                    }));
+                    setChangePasswordErrors((current) => ({
+                      ...current,
+                      new_password: undefined,
+                    }));
+                    setChangePasswordApiError("");
+                  }}
+                  className="pr-10"
+                  aria-invalid={Boolean(changePasswordErrors.new_password)}
+                />
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap outline-none select-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-muted/50"
+                  onClick={() =>
+                    setShowChangeNewPassword((current) => !current)
+                  }
+                  aria-label={
+                    showChangeNewPassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showChangeNewPassword ? (
+                    <EyeOff className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              {changePasswordErrors.new_password ? (
+                <p className="mt-1 text-xs text-destructive">
+                  {changePasswordErrors.new_password}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="change_confirm_password">Confirm password</Label>
+              <Input
+                id="change_confirm_password"
+                type="password"
+                value={changePasswordForm.confirm_password}
+                onChange={(event) => {
+                  setChangePasswordForm((current) => ({
+                    ...current,
+                    confirm_password: event.target.value,
+                  }));
+                  setChangePasswordErrors((current) => ({
+                    ...current,
+                    confirm_password: undefined,
+                  }));
+                  setChangePasswordApiError("");
+                }}
+                className="mt-2"
+                aria-invalid={Boolean(changePasswordErrors.confirm_password)}
+              />
+              {changePasswordErrors.confirm_password ? (
+                <p className="mt-1 text-xs text-destructive">
+                  {changePasswordErrors.confirm_password}
+                </p>
+              ) : null}
+            </div>
+
+            {changePasswordApiError ? (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {changePasswordApiError}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsChangePasswordOpen(false)}
+                disabled={isChangingPassword}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isChangingPassword}>
+                {isChangingPassword ? "Saving..." : "Change password"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

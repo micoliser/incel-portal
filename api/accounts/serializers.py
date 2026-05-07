@@ -145,6 +145,9 @@ class UpdateAdminUserSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150, allow_blank=True)
     email = serializers.EmailField()
     department_id = serializers.UUIDField(allow_null=True, required=False)
+    reset_password = serializers.BooleanField(required=False, default=False)
+    new_password = serializers.CharField(required=False, write_only=True, allow_blank=False)
+    confirm_password = serializers.CharField(required=False, write_only=True, allow_blank=False)
 
     def validate_first_name(self, value):
         value = value.strip()
@@ -171,3 +174,28 @@ class UpdateAdminUserSerializer(serializers.Serializer):
         if not Department.objects.filter(id=value).exists():
             raise serializers.ValidationError('Department not found.')
         return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        if not attrs.get('reset_password'):
+            return attrs
+
+        new_password = attrs.get('new_password')
+        confirm_password = attrs.get('confirm_password')
+
+        if not new_password:
+            raise serializers.ValidationError({'new_password': 'New password is required.'})
+
+        if len(new_password) < 8:
+            raise serializers.ValidationError({'new_password': 'Password must be at least 8 characters.'})
+
+        if new_password != confirm_password:
+            raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
+
+        user_id = self.context.get('user_id')
+        email = attrs.get('email') or ''
+        candidate_user = User(username=str(email).strip().lower(), email=str(email).strip().lower())
+        validate_password(new_password, user=candidate_user)
+
+        return attrs
