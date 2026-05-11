@@ -279,14 +279,20 @@ class RecurringScheduleViewSet(ModelViewSet):
 
     def perform_update(self, serializer):
         schedule = serializer.save()
-        if schedule.is_active:
+        if schedule.is_active and not schedule.is_paused:
             schedule.next_run_at = calculate_next_run_at(schedule, reference=timezone.now())
             if schedule.end_at and schedule.next_run_at and schedule.next_run_at > schedule.end_at:
                 schedule.is_active = False
                 schedule.ended_at = schedule.ended_at or timezone.now()
                 schedule.next_run_at = None
+                schedule.is_paused = False
+                schedule.paused_at = None
+                schedule.paused_by = None
         else:
             schedule.next_run_at = None
+            schedule.is_paused = False
+            schedule.paused_at = None
+            schedule.paused_by = None
         schedule.save()
         log_audit(
             action='TASK_RECURRING_SCHEDULE_UPDATED',
@@ -303,6 +309,14 @@ class RecurringScheduleViewSet(ModelViewSet):
             },
         )
 
+    def _ensure_creator(self, schedule):
+        if self.request.user != schedule.assigned_by:
+            return Response(
+                {'detail': 'Only the schedule creator can update it.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
     @action(detail=True, methods=['post'], url_path='end')
     def end(self, request, pk=None):
         schedule = self.get_object()
@@ -310,6 +324,9 @@ class RecurringScheduleViewSet(ModelViewSet):
             return Response({'detail': 'Only the schedule creator can end it.'}, status=status.HTTP_403_FORBIDDEN)
 
         schedule.is_active = False
+        schedule.is_paused = False
+        schedule.paused_at = None
+        schedule.paused_by = None
         schedule.ended_at = timezone.now()
         schedule.ended_by = request.user
         schedule.next_run_at = None
@@ -323,7 +340,92 @@ class RecurringScheduleViewSet(ModelViewSet):
             metadata={
                 'title': schedule.title,
                 'assigned_by_id': schedule.assigned_by_id,
+                'assigned_to_id': schedule.assigned_to_id,
             },
         )
-        serializer = TaskActivitySerializer(activity)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(self.get_serializer(schedule).data)
+
+    @action(detail=True, methods=['post'], url_path='pause')
+    def pause(self, request, pk=None):
+        schedule = self.get_object()
+        if request.user != schedule.assigned_by:
+            return Response({'detail': 'Only the schedule creator can pause it.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if not schedule.is_active:
+            return Response({'detail': 'This recurring schedule has ended and cannot be paused.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if schedule.is_paused:
+            return Response(self.get_serializer(schedule).data)
+
+        now = timezone.now()
+        schedule.is_paused = True
+        schedule.paused_at = now
+        schedule.paused_by = request.user
+        schedule.save(update_fields=['is_paused', 'paused_at', 'paused_by', 'updated_at'])
+
+        log_audit(
+            action='TASK_RECURRING_SCHEDULE_PAUSED',
+            request=request,
+            target_type='recurring_schedule',
+            target_id=schedule.id,
+            metadata={
+                'title': schedule.title,
+                'assigned_by_id': schedule.assigned_by_id,
+                'assigned_to_id': schedule.assigned_to_id,
+            },
+        )
+
+        return Response(self.get_serializer(schedule).data)
+
+    @action(detail=True, methods=['post'], url_path='resume')
+    def resume(self, request, pk=None):
+        schedule = self.get_object()
+        if request.user != schedule.assigned_by:
+            return Response({'detail': 'Only the schedule creator can resume it.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if not schedule.is_active:
+            return Response({'detail': 'This recurring schedule has ended and cannot be resumed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not schedule.is_paused:
+            return Response(self.get_serializer(schedule).data)
+
+        now = timezone.now()
+        if schedule.end_at and schedule.end_at <= now:
+            return Response(
+                {'detail': 'This recurring schedule has expired and cannot be resumed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        next_run_at = calculate_next_run_at(schedule, reference=now)
+        if next_run_at is None:
+            return Response(
+                {'detail': 'No future runs remain for this recurring schedule.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if schedule.end_at and next_run_at > schedule.end_at:
+            return Response(
+                {'detail': 'No future runs remain before the end date.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        schedule.is_paused = False
+        schedule.paused_at = None
+        schedule.paused_by = None
+        schedule.next_run_at = next_run_at
+        schedule.save(update_fields=['is_paused', 'paused_at', 'paused_by', 'next_run_at', 'updated_at'])
+
+        log_audit(
+            action='TASK_RECURRING_SCHEDULE_RESUMED',
+            request=request,
+            target_type='recurring_schedule',
+            target_id=schedule.id,
+            metadata={
+                'title': schedule.title,
+                'assigned_by_id': schedule.assigned_by_id,
+                'assigned_to_id': schedule.assigned_to_id,
+                'next_run_at': next_run_at.isoformat(),
+            },
+        )
+
+        return Response(self.get_serializer(schedule).data)

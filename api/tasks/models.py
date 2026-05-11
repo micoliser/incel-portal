@@ -33,6 +33,15 @@ class RecurringSchedule(models.Model):
     end_at = models.DateTimeField(null=True, blank=True)
     next_run_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    is_paused = models.BooleanField(default=False)
+    paused_at = models.DateTimeField(null=True, blank=True)
+    paused_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='recurring_schedules_paused',
+    )
     ended_at = models.DateTimeField(null=True, blank=True)
     ended_by = models.ForeignKey(
         User,
@@ -47,7 +56,7 @@ class RecurringSchedule(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['is_active', 'next_run_at']),
+            models.Index(fields=['is_active', 'is_paused', 'next_run_at']),
             models.Index(fields=['assigned_by', 'is_active']),
             models.Index(fields=['assigned_to', 'is_active']),
         ]

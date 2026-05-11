@@ -9,12 +9,22 @@ import { toast } from "sonner";
 import {
   endRecurringSchedule,
   getRecurringScheduleDetail,
+  pauseRecurringSchedule,
+  resumeRecurringSchedule,
 } from "@/lib/api/tasks";
 import type { RecurringSchedule } from "@/lib/api/tasks";
 import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
+import { EditRecurringScheduleModal } from "@/components/edit-recurring-schedule-modal";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -46,6 +56,9 @@ export default function RecurringTaskDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [isEnding, setIsEnding] = useState(false);
+  const [isPausingOrResuming, setIsPausingOrResuming] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -83,6 +96,7 @@ export default function RecurringTaskDetailPage() {
       const updated = await endRecurringSchedule(schedule.id);
       setSchedule(updated);
       toast.success("Recurring task ended.");
+      setEndConfirmOpen(false);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to end recurring task";
@@ -90,6 +104,34 @@ export default function RecurringTaskDetailPage() {
       setError(message);
     } finally {
       setIsEnding(false);
+    }
+  };
+
+  const handlePauseResume = async () => {
+    if (!schedule) return;
+
+    try {
+      setIsPausingOrResuming(true);
+      const updated = schedule.is_paused
+        ? await resumeRecurringSchedule(schedule.id)
+        : await pauseRecurringSchedule(schedule.id);
+      setSchedule(updated);
+      toast.success(
+        updated.is_paused
+          ? "Recurring task paused."
+          : "Recurring task resumed.",
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : schedule.is_paused
+            ? "Failed to resume recurring task"
+            : "Failed to pause recurring task";
+      toast.error(message);
+      setError(message);
+    } finally {
+      setIsPausingOrResuming(false);
     }
   };
 
@@ -118,8 +160,18 @@ export default function RecurringTaskDetailPage() {
     );
   }
 
-  const canEnd =
+  const canManage =
     currentUserId === schedule.assigned_by.id && schedule.is_active;
+  const statusLabel = !schedule.is_active
+    ? "Ended"
+    : schedule.is_paused
+      ? "Paused"
+      : "Active";
+  const statusClasses = !schedule.is_active
+    ? "bg-gray-100 text-gray-700"
+    : schedule.is_paused
+      ? "bg-amber-100 text-amber-800"
+      : "bg-emerald-100 text-emerald-800";
 
   return (
     <div className="space-y-8">
@@ -139,13 +191,9 @@ export default function RecurringTaskDetailPage() {
           </p>
         </div>
         <span
-          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-            schedule.is_active
-              ? "bg-emerald-100 text-emerald-800"
-              : "bg-gray-100 text-gray-700"
-          }`}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${statusClasses}`}
         >
-          {schedule.is_active ? "Active" : "Ended"}
+          {statusLabel}
         </span>
       </div>
 
@@ -186,9 +234,14 @@ export default function RecurringTaskDetailPage() {
             <div>
               <p className="text-sm text-gray-600">Next Run</p>
               <p className="font-medium">
-                {schedule.next_run_at
-                  ? format(new Date(schedule.next_run_at), "MMM dd, yyyy HH:mm")
-                  : "N/A"}
+                {schedule.is_paused
+                  ? "Paused - resumes from the next calculated run after resume"
+                  : schedule.next_run_at
+                    ? format(
+                        new Date(schedule.next_run_at),
+                        "MMM dd, yyyy HH:mm",
+                      )
+                    : "N/A"}
               </p>
             </div>
             <div>
@@ -197,7 +250,30 @@ export default function RecurringTaskDetailPage() {
                 {schedule.deadline_offset_minutes} minutes
               </p>
             </div>
+            {schedule.is_paused ? (
+              <div>
+                <p className="text-sm text-gray-600">Paused At</p>
+                <p className="font-medium">
+                  {schedule.paused_at
+                    ? format(new Date(schedule.paused_at), "MMM dd, yyyy HH:mm")
+                    : "Paused"}
+                </p>
+              </div>
+            ) : null}
           </div>
+
+          {canManage ? (
+            <div className="mt-6">
+              <Button
+                type="button"
+                className="px-12"
+                variant="outline"
+                onClick={() => setIsEditOpen(true)}
+              >
+                Edit
+              </Button>
+            </div>
+          ) : null}
         </Card>
 
         <Card className="p-6">
@@ -229,6 +305,15 @@ export default function RecurringTaskDetailPage() {
                 {format(new Date(schedule.updated_at), "MMM dd, yyyy HH:mm")}
               </p>
             </div>
+            {schedule.paused_by ? (
+              <div>
+                <p className="text-gray-600">Paused By</p>
+                <p className="font-medium">{schedule.paused_by.full_name}</p>
+                <p className="text-xs text-gray-500">
+                  {schedule.paused_by.email}
+                </p>
+              </div>
+            ) : null}
             {schedule.ended_at ? (
               <div>
                 <p className="text-gray-600">Ended At</p>
@@ -239,22 +324,83 @@ export default function RecurringTaskDetailPage() {
             ) : null}
           </div>
 
-          {canEnd ? (
+          {canManage ? (
+            <div className="mt-6 space-y-3">
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  className="flex-1"
+                  variant="secondary"
+                  onClick={() => void handlePauseResume()}
+                  disabled={isPausingOrResuming}
+                >
+                  {isPausingOrResuming ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {schedule.is_paused ? "Resume" : "Pause"}
+                </Button>
+
+                <Button
+                  type="button"
+                  className="flex-1"
+                  variant="destructive"
+                  onClick={() => setEndConfirmOpen(true)}
+                  disabled={isEnding}
+                >
+                  {isEnding ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  End
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </Card>
+      </div>
+
+      <EditRecurringScheduleModal
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        schedule={schedule}
+        onSaved={(updated) => setSchedule(updated)}
+      />
+
+      <Dialog open={endConfirmOpen} onOpenChange={setEndConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End Recurring Task</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to end this recurring task? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 justify-end pt-4">
             <Button
               type="button"
-              className="mt-6 w-full"
+              variant="outline"
+              onClick={() => setEndConfirmOpen(false)}
+              disabled={isEnding}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
               variant="destructive"
               onClick={() => void handleEnd()}
               disabled={isEnding}
             >
               {isEnding ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              End Recurring Task
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Ending...
+                </>
+              ) : (
+                "End Task"
+              )}
             </Button>
-          ) : null}
-        </Card>
-      </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
