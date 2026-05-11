@@ -23,6 +23,7 @@ The platform provides role-aware internal workspace capabilities:
 - authentication and session management
 - application access and admin controls
 - task assignment, tracking, comments, and timeline
+- recurring task schedules with edit, pause, resume, and end lifecycles
 - in-app notifications and optional browser push alerts
 - audit log visibility for governance
 - organization metadata (roles/departments)
@@ -101,6 +102,9 @@ incel-portal/
 - status transition business rules
 - task activity timeline (created/status_change/comment)
 - task comments endpoint
+- recurring schedule CRUD and lifecycle actions
+- recurring occurrence generation worker
+- pause/resume semantics that stop and restart generation without backfilling missed runs
 
 5. notifications
 
@@ -154,6 +158,8 @@ Key model concepts:
 
 - Task: title, description, assigned_by, assigned_to, status, priority, deadline, completed_at
 - TaskActivity: task, user, activity_type, old_value, new_value, comment, created_at
+- RecurringSchedule: title, description, assigned_by, assigned_to, priority, frequency, interval, weekdays, times, timezone, deadline_offset_minutes, start_at, end_at, next_run_at, is_active, is_paused, paused_at, paused_by, ended_at, ended_by
+- RecurrenceOccurrence: schedule, scheduled_for, created_task
 
 Activity types currently in use:
 
@@ -171,6 +177,12 @@ Business rules:
 - comments are capped at 200 characters
 - comments remain allowed after task completion
 - assignment/status/comment events emit user notifications
+- recurring schedules are creator-managed after creation; assignee cannot be changed
+- recurring schedules validate timezone, weekday selection, time format, and interval values
+- recurring schedules cannot change start_at after the schedule has started
+- paused recurring schedules are skipped by the worker until resumed
+- resumed recurring schedules continue from the next calculated occurrence rather than replaying missed runs
+- ending a recurring schedule clears pause state and prevents future generation
 
 List behavior:
 
@@ -178,6 +190,13 @@ List behavior:
 - status filter (comma-separated)
 - priority filter (comma-separated)
 - server-side pagination (20 items per page)
+
+Recurring schedule behavior:
+
+- creator can view schedules they created and the assignee can view schedules assigned to them
+- task list page exposes recurring schedules created by the current user in a dedicated view
+- recurring schedule detail pages expose edit, pause/resume, and end controls only to the creator
+- recurring schedule worker generates tasks from scheduled occurrences and advances next_run_at after processing
 
 ### 4.7 Applications Domain Deep Dive
 
@@ -241,6 +260,7 @@ Protected (under app/(portal)):
 - /applications
 - /tasks
 - /tasks/[id]
+- /tasks/recurring/[id]
 - /logs
 
 Shared header component:
@@ -283,6 +303,7 @@ Task list page:
 - server-driven filtering
 - infinite scroll pagination
 - skeleton loading for list states
+- selected tab is reflected in the URL so the page restores the same task view after refresh or navigation
 
 Task detail page:
 
@@ -290,6 +311,14 @@ Task detail page:
 - comment composer with character counter (200 max)
 - success and failure toast notifications for comment posting
 - unified activity timeline showing created/status/comment events
+
+Recurring task detail page:
+
+- displays schedule metadata, assignment metadata, and lifecycle state
+- allows the creator to edit the schedule from a modal dialog
+- prevents assignee changes in the edit flow
+- disables start_at edits once the schedule has already started
+- provides pause, resume, and end actions with state-aware feedback
 
 ### 5.7 Notifications Frontend Pattern
 
@@ -376,6 +405,16 @@ Base URL:
 - PATCH /tasks/{id}
 - GET /tasks/{id}/activities
 - POST /tasks/{id}/comments
+
+### 6.7 Recurring schedules
+
+- GET /recurring-schedules
+- POST /recurring-schedules
+- GET /recurring-schedules/{id}
+- PATCH /recurring-schedules/{id}
+- POST /recurring-schedules/{id}/pause
+- POST /recurring-schedules/{id}/resume
+- POST /recurring-schedules/{id}/end
 
 Comment constraints:
 

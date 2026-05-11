@@ -53,6 +53,14 @@ export interface RecurringSchedule {
   end_at: string | null;
   next_run_at: string | null;
   is_active: boolean;
+  is_paused: boolean;
+  paused_at: string | null;
+  paused_by: {
+    id: number;
+    username: string;
+    full_name: string;
+    email: string;
+  } | null;
   ended_at: string | null;
   ended_by: {
     id: number;
@@ -267,6 +275,20 @@ export async function endRecurringSchedule(
   id: string,
 ): Promise<RecurringSchedule> {
   const response = await apiClient.post(`/recurring-schedules/${id}/end/`);
+  return response.data;
+}
+
+export async function pauseRecurringSchedule(
+  id: string,
+): Promise<RecurringSchedule> {
+  const response = await apiClient.post(`/recurring-schedules/${id}/pause/`);
+  return response.data;
+}
+
+export async function resumeRecurringSchedule(
+  id: string,
+): Promise<RecurringSchedule> {
+  const response = await apiClient.post(`/recurring-schedules/${id}/resume/`);
   return response.data;
 }
 

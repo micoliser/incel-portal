@@ -204,6 +204,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         write_only=True,
         source='assigned_to',
     )
+    paused_by = UserSimpleSerializer(read_only=True)
     ended_by = UserSimpleSerializer(read_only=True)
     weekdays = serializers.ListField(
         child=serializers.IntegerField(min_value=0, max_value=6),
@@ -237,6 +238,9 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             'end_at',
             'next_run_at',
             'is_active',
+            'is_paused',
+            'paused_at',
+            'paused_by',
             'ended_at',
             'ended_by',
             'created_at',
@@ -248,11 +252,21 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             'assigned_to',
             'next_run_at',
             'is_active',
+            'is_paused',
+            'paused_at',
+            'paused_by',
             'ended_at',
             'ended_by',
             'created_at',
             'updated_at',
         ]
+
+    def validate_assigned_to_id(self, value):
+        if self.instance and value != self.instance.assigned_to:
+            raise serializers.ValidationError(
+                'The assignee cannot be changed for an existing recurring schedule.'
+            )
+        return value
 
     def validate_timezone(self, value):
         timezone_name = str(value).strip() or 'UTC'
@@ -316,6 +330,12 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         end_at = attrs.get('end_at')
         if start_at and end_at and end_at < start_at:
             raise serializers.ValidationError({'end_at': 'End date must be after the start date.'})
+
+        if self.instance and start_at and start_at != self.instance.start_at:
+            if self.instance.start_at <= timezone.now():
+                raise serializers.ValidationError(
+                    {'start_at': 'Start date cannot be changed after the schedule has started.'}
+                )
 
         return attrs
 

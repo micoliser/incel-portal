@@ -17,6 +17,8 @@ The portal is designed to centralize internal work and access control. It lets u
 - view their dashboard
 - browse and open internal applications
 - create, update, and track tasks
+- create and manage recurring tasks with edit, pause, resume, and end actions
+- review recurring schedules from a dedicated detail page
 - add comments and follow task activity history
 - inspect audit logs
 - manage users, departments, and roles through admin endpoints
@@ -93,9 +95,13 @@ incel-portal/
 - Create tasks
 - View assigned tasks and created tasks
 - Filter tasks by view, status, and priority
+- Remember the selected task tab in the URL so it persists on refresh and when navigating away and back
 - Server-side pagination for task lists
 - Infinite scroll in the frontend task list
 - Task detail page with metadata and status controls
+- Dedicated recurring task detail page for schedules created by the user
+- Recurring task editing with assignee locking and start date protections once started
+- Recurring task pause, resume, and end controls
 - Status transitions with business rules
 - Task activity timeline
 - Comment support for assigner and assignee
@@ -159,6 +165,7 @@ The frontend lives in `portal/` and uses the Next.js App Router.
 - `/applications` - application browser and admin management tools
 - `/tasks` - task list with filters and infinite scroll
 - `/tasks/[id]` - task detail, status controls, comments, and activity timeline
+- `/tasks/recurring/[id]` - recurring task details, edit controls, pause/resume, and end actions
 - `/logs` - audit log viewer
 
 ### Frontend behavior
@@ -168,6 +175,7 @@ The frontend lives in `portal/` and uses the Next.js App Router.
 - The theme can be toggled between light and dark mode
 - The UI uses loading skeletons and toast notifications for better feedback
 - Tasks and applications are fetched from the backend API, not hardcoded
+- The tasks page persists the selected view in the URL so the tab is restored on refresh
 - Notification center polls unread counts and loads full notifications on demand
 - Browser push is enabled via a service worker at `portal/public/sw.js`
 
@@ -194,6 +202,8 @@ All API routes are mounted under:
 ```text
 /api/v1/
 ```
+
+The DRF router accepts routes with or without a trailing slash.
 
 There is also a health endpoint at:
 
@@ -254,6 +264,16 @@ There is also a health endpoint at:
 - `GET /api/v1/tasks/{id}/activities`
 - `POST /api/v1/tasks/{id}/comments`
 
+#### Recurring tasks
+
+- `GET /api/v1/recurring-schedules`
+- `POST /api/v1/recurring-schedules`
+- `GET /api/v1/recurring-schedules/{id}`
+- `PATCH /api/v1/recurring-schedules/{id}`
+- `POST /api/v1/recurring-schedules/{id}/pause`
+- `POST /api/v1/recurring-schedules/{id}/resume`
+- `POST /api/v1/recurring-schedules/{id}/end`
+
 #### Notifications
 
 - `GET /api/v1/notifications`
@@ -280,6 +300,17 @@ The task subsystem supports a richer workflow than basic CRUD:
 - comments can be added by the assigner or assignee
 - comments remain available after completion
 - assignment, status changes, and comments emit notifications
+
+Recurring schedule behavior:
+
+- recurring schedules are visible only to the creator and assignee
+- recurring schedule lists support creator and assignee scoped access
+- the creator can update recurring schedule details, but the assignee cannot be changed after creation
+- once a recurring schedule has started, the start date is no longer editable
+- paused schedules do not generate new tasks until resumed
+- resuming a paused schedule continues from the next calculated run time rather than backfilling missed runs
+- ending a recurring schedule is irreversible and clears pause state
+- recurring schedule updates and lifecycle actions emit audit logs
 
 ### Notification API behavior
 

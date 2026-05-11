@@ -24,6 +24,7 @@ def generate_recurring_task_occurrences() -> dict[str, int]:
     due_schedule_ids = list(
         RecurringSchedule.objects.filter(
             is_active=True,
+            is_paused=False,
             next_run_at__isnull=False,
             next_run_at__lte=now,
         )
@@ -75,7 +76,13 @@ def _process_schedule(*, schedule: RecurringSchedule, now) -> int:
         .first()
     )
 
-    start_after = latest_created or (schedule.start_at - timedelta(microseconds=1))
+    start_after = latest_created
+    if schedule.next_run_at:
+        next_run_cursor = schedule.next_run_at - timedelta(microseconds=1)
+        if start_after is None or next_run_cursor > start_after:
+            start_after = next_run_cursor
+    if start_after is None:
+        start_after = schedule.start_at - timedelta(microseconds=1)
     due_times = iter_schedule_occurrences(
         schedule,
         start_after=start_after,

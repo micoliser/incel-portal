@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { Loader2, Plus, AlertCircle } from "lucide-react";
@@ -44,6 +44,7 @@ const priorityFilterOptions: Array<{
 
 export default function TasksPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [createdRecurringSchedules, setCreatedRecurringSchedules] = useState<
     RecurringSchedule[]
@@ -56,7 +57,7 @@ export default function TasksPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [reloadToken, setReloadToken] = useState(0);
   const [activeView, setActiveView] = useState<"assigned" | "created">(
-    searchParams.get("filter") === "assigned-by-me" ? "created" : "assigned",
+    searchParams.get("view") === "created" ? "created" : "assigned",
   );
   const [selectedStatuses, setSelectedStatuses] = useState<Task["status"][]>(
     [],
@@ -238,6 +239,7 @@ export default function TasksPage() {
             className="rounded-md"
             onClick={() => {
               setActiveView("assigned");
+              router.push("?view=assigned");
             }}
           >
             Assigned to Me
@@ -248,6 +250,7 @@ export default function TasksPage() {
             className="rounded-md"
             onClick={() => {
               setActiveView("created");
+              router.push("?view=created");
             }}
           >
             Created by Me
@@ -344,15 +347,26 @@ export default function TasksPage() {
                         <p className="font-semibold leading-tight">
                           {schedule.title}
                         </p>
-                        <span
-                          className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                            schedule.is_active
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {schedule.is_active ? "Active" : "Ended"}
-                        </span>
+                        {(() => {
+                          const statusLabel = !schedule.is_active
+                            ? "Ended"
+                            : schedule.is_paused
+                              ? "Paused"
+                              : "Active";
+                          const statusClass = !schedule.is_active
+                            ? "bg-gray-100 text-gray-700"
+                            : schedule.is_paused
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-emerald-100 text-emerald-800";
+
+                          return (
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-semibold ${statusClass}`}
+                            >
+                              {statusLabel}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {schedule.frequency === "daily"
