@@ -8,3 +8,10 @@ class IsTaskAssignedOrAssigner(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         return request.user == obj.assigned_to or request.user == obj.assigned_by
+
+class IsRecurringScheduleAssignerOrAssignee(BasePermission):
+    def has_object_permission(self, request, view, obj):
+        if request.method in {'GET', 'HEAD', 'OPTIONS'}:
+            return request.user == obj.assigned_to or request.user == obj.assigned_by
+
+        return request.user == obj.assigned_by

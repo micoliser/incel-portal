@@ -7,8 +7,8 @@ import { format } from "date-fns";
 import { Loader2, Plus, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
-import { getTasks } from "@/lib/api/tasks";
-import type { Task } from "@/lib/api/tasks";
+import { getRecurringSchedules, getTasks } from "@/lib/api/tasks";
+import type { RecurringSchedule, Task } from "@/lib/api/tasks";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
@@ -45,6 +45,9 @@ const priorityFilterOptions: Array<{
 export default function TasksPage() {
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [createdRecurringSchedules, setCreatedRecurringSchedules] = useState<
+    RecurringSchedule[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -78,6 +81,31 @@ export default function TasksPage() {
 
     fetchProfile();
   }, []);
+
+  useEffect(() => {
+    const loadRecurringSchedules = async () => {
+      if (activeView !== "created" || currentUserId == null) {
+        setCreatedRecurringSchedules([]);
+        return;
+      }
+
+      try {
+        const response = await getRecurringSchedules();
+        const schedules = response.results.filter(
+          (item) => item.assigned_by.id === currentUserId,
+        );
+        setCreatedRecurringSchedules(schedules);
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to load recurring schedules";
+        toast.error(message);
+      }
+    };
+
+    void loadRecurringSchedules();
+  }, [activeView, currentUserId, reloadToken]);
 
   useEffect(() => {
     setTasks([]);
@@ -292,6 +320,62 @@ export default function TasksPage() {
       </div>
 
       <div>
+        {activeView === "created" && createdRecurringSchedules.length > 0 ? (
+          <div className="mb-6 space-y-3 rounded-lg border border-border p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Recurring Tasks You Created
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                {createdRecurringSchedules.length} total
+              </span>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {createdRecurringSchedules.map((schedule) => (
+                <Link
+                  key={schedule.id}
+                  href={`/tasks/recurring/${schedule.id}`}
+                  className="block"
+                >
+                  <Card className="h-full cursor-pointer p-4 hover:shadow-lg transition-shadow">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-semibold leading-tight">
+                          {schedule.title}
+                        </p>
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                            schedule.is_active
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {schedule.is_active ? "Active" : "Ended"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {schedule.frequency === "daily"
+                          ? `Every ${schedule.interval} day${schedule.interval === 1 ? "" : "s"}`
+                          : `Every ${schedule.interval} week${schedule.interval === 1 ? "" : "s"}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Next run:{" "}
+                        {schedule.next_run_at
+                          ? format(
+                              new Date(schedule.next_run_at),
+                              "MMM dd, yyyy HH:mm",
+                            )
+                          : "N/A"}
+                      </p>
+                    </div>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {tasks.length === 0 ? (
           <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
             <div className="space-y-2">

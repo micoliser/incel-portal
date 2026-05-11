@@ -1,11 +1,13 @@
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Task, TaskActivity, TaskAttachment
+from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment
 from .s3 import TaskAttachmentStorageError, generate_task_attachment_download_url
 
 
@@ -194,9 +196,138 @@ class TaskAttachmentSerializer(serializers.ModelSerializer):
         return payload['download_url']
 
 
+class RecurringScheduleSerializer(serializers.ModelSerializer):
+    assigned_by = UserSimpleSerializer(read_only=True)
+    assigned_to = UserSimpleSerializer(read_only=True)
+    assigned_to_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        write_only=True,
+        source='assigned_to',
+    )
+    ended_by = UserSimpleSerializer(read_only=True)
+    weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6),
+        required=False,
+        allow_empty=True,
+    )
+    times = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=False,
+    )
+    deadline_offset_minutes = serializers.IntegerField(required=False, min_value=0, default=0)
+
+    class Meta:
+        model = RecurringSchedule
+        fields = [
+            'id',
+            'title',
+            'description',
+            'assigned_by',
+            'assigned_to',
+            'assigned_to_id',
+            'priority',
+            'frequency',
+            'interval',
+            'weekdays',
+            'times',
+            'timezone',
+            'deadline_offset_minutes',
+            'start_at',
+            'end_at',
+            'next_run_at',
+            'is_active',
+            'ended_at',
+            'ended_by',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'assigned_by',
+            'assigned_to',
+            'next_run_at',
+            'is_active',
+            'ended_at',
+            'ended_by',
+            'created_at',
+            'updated_at',
+        ]
+
+    def validate_timezone(self, value):
+        timezone_name = str(value).strip() or 'UTC'
+        try:
+            ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError as exc:
+            raise serializers.ValidationError('Timezone is invalid.') from exc
+        return timezone_name
+
+    def validate_times(self, value):
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_time in value:
+            time_value = str(raw_time).strip()
+            try:
+                parsed = datetime.strptime(time_value, '%H:%M')
+            except ValueError as exc:
+                raise serializers.ValidationError('Times must use HH:MM format.') from exc
+
+            normalized_time = parsed.strftime('%H:%M')
+            if normalized_time in seen:
+                continue
+            seen.add(normalized_time)
+            normalized.append(normalized_time)
+
+        if not normalized:
+            raise serializers.ValidationError('At least one time is required.')
+
+        return normalized
+
+    def validate_weekdays(self, value):
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for raw_day in value:
+            weekday = int(raw_day)
+            if weekday in seen:
+                continue
+            seen.add(weekday)
+            normalized.append(weekday)
+        return normalized
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        current_user = getattr(request, 'user', None)
+        assigned_to = attrs.get('assigned_to')
+
+        if current_user and assigned_to == current_user:
+            raise serializers.ValidationError(
+                {'assigned_to_id': 'You cannot assign a recurring task to yourself.'}
+            )
+
+        if attrs.get('frequency') == 'weekly' and not attrs.get('weekdays'):
+            raise serializers.ValidationError(
+                {'weekdays': 'Weekly recurring tasks require at least one weekday.'}
+            )
+
+        if attrs.get('interval', 1) < 1:
+            raise serializers.ValidationError({'interval': 'Interval must be at least 1.'})
+
+        start_at = attrs.get('start_at')
+        end_at = attrs.get('end_at')
+        if start_at and end_at and end_at < start_at:
+            raise serializers.ValidationError({'end_at': 'End date must be after the start date.'})
+
+        return attrs
+
+    def create(self, validated_data):
+        validated_data['assigned_by'] = self.context['request'].user
+        return super().create(validated_data)
+
+
 class TaskSerializer(serializers.ModelSerializer):
     assigned_by = UserSimpleSerializer(read_only=True)
     assigned_to = UserSimpleSerializer(read_only=True)
+    recurrence_schedule = serializers.PrimaryKeyRelatedField(read_only=True)
     assigned_by_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(), write_only=True, source='assigned_by', required=False
     )
@@ -217,11 +348,20 @@ class TaskSerializer(serializers.ModelSerializer):
             'status',
             'priority',
             'deadline',
+            'recurrence_schedule',
+            'recurrence_scheduled_for',
             'created_at',
             'updated_at',
             'completed_at',
         ]
-        read_only_fields = ['created_at', 'updated_at', 'completed_at', 'assigned_by']
+        read_only_fields = [
+            'created_at',
+            'updated_at',
+            'completed_at',
+            'assigned_by',
+            'recurrence_schedule',
+            'recurrence_scheduled_for',
+        ]
 
     def validate(self, attrs):
         request = self.context.get('request')
