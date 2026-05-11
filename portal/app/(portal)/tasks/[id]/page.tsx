@@ -280,6 +280,29 @@ export default function TaskDetailPage() {
               <p className="font-medium">{task.assigned_to.full_name}</p>
               <p className="text-xs text-gray-500">{task.assigned_to.email}</p>
             </div>
+            {task.recurrence_schedule ? (
+              <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <p className="font-semibold">Recurring schedule</p>
+                <p className="mt-1">
+                  This task is created from a recurring schedule.
+                </p>
+                {task.recurrence_scheduled_for ? (
+                  <p className="mt-1 text-xs text-blue-700">
+                    Scheduled for{" "}
+                    {format(
+                      new Date(task.recurrence_scheduled_for),
+                      "MMM dd, yyyy HH:mm",
+                    )}
+                  </p>
+                ) : null}
+                <Link
+                  href={`/tasks/recurring/${task.recurrence_schedule}`}
+                  className="mt-2 inline-block text-xs font-semibold text-blue-700 hover:text-blue-800"
+                >
+                  View recurring task details
+                </Link>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-600">Priority</p>

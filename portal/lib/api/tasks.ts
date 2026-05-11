@@ -19,9 +19,49 @@ export interface Task {
   status: "pending" | "in_progress" | "completed";
   priority: "low" | "medium" | "high";
   deadline: string | null;
+  recurrence_schedule: string | null;
+  recurrence_scheduled_for: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+}
+
+export interface RecurringSchedule {
+  id: string;
+  title: string;
+  description: string;
+  assigned_by: {
+    id: number;
+    username: string;
+    full_name: string;
+    email: string;
+  };
+  assigned_to: {
+    id: number;
+    username: string;
+    full_name: string;
+    email: string;
+  };
+  priority: Task["priority"];
+  frequency: "daily" | "weekly";
+  interval: number;
+  weekdays: number[];
+  times: string[];
+  timezone: string;
+  deadline_offset_minutes: number;
+  start_at: string;
+  end_at: string | null;
+  next_run_at: string | null;
+  is_active: boolean;
+  ended_at: string | null;
+  ended_by: {
+    id: number;
+    username: string;
+    full_name: string;
+    email: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TaskActivity {
@@ -73,6 +113,21 @@ export interface CreateTaskPayload {
   deadline?: string;
 }
 
+export interface CreateRecurringSchedulePayload {
+  title: string;
+  description?: string;
+  assigned_to_id: number;
+  priority: "low" | "medium" | "high";
+  frequency: "daily" | "weekly";
+  interval: number;
+  weekdays: number[];
+  times: string[];
+  timezone: string;
+  deadline_offset_minutes: number;
+  start_at: string;
+  end_at?: string | null;
+}
+
 export interface GetTasksParams {
   view?: "assigned" | "created";
   status?: Task["status"][];
@@ -104,6 +159,28 @@ export interface TaskListResponse {
   next: string | null;
   previous: string | null;
   results: Task[];
+}
+
+export interface RecurringScheduleListResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: RecurringSchedule[];
+}
+
+function extractListResults<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+
+  if (payload && typeof payload === "object") {
+    const results = (payload as { results?: unknown }).results;
+    if (Array.isArray(results)) {
+      return results as T[];
+    }
+  }
+
+  return [];
 }
 
 export async function getTasks(
@@ -139,6 +216,57 @@ export async function getTaskDetail(id: string): Promise<Task> {
 
 export async function createTask(payload: CreateTaskPayload): Promise<Task> {
   const response = await apiClient.post("/tasks/", payload);
+  return response.data;
+}
+
+export async function getRecurringSchedules(): Promise<RecurringScheduleListResponse> {
+  const response = await apiClient.get("/recurring-schedules/");
+  const results = extractListResults<RecurringSchedule>(response.data);
+
+  if (Array.isArray(response.data)) {
+    return {
+      count: results.length,
+      next: null,
+      previous: null,
+      results,
+    };
+  }
+
+  return {
+    ...(response.data as RecurringScheduleListResponse),
+    results,
+  };
+}
+
+export async function createRecurringSchedule(
+  payload: CreateRecurringSchedulePayload,
+): Promise<RecurringSchedule> {
+  const response = await apiClient.post("/recurring-schedules/", payload);
+  return response.data;
+}
+
+export async function updateRecurringSchedule(
+  id: string,
+  payload: Partial<CreateRecurringSchedulePayload>,
+): Promise<RecurringSchedule> {
+  const response = await apiClient.patch(
+    `/recurring-schedules/${id}/`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getRecurringScheduleDetail(
+  id: string,
+): Promise<RecurringSchedule> {
+  const response = await apiClient.get(`/recurring-schedules/${id}/`);
+  return response.data;
+}
+
+export async function endRecurringSchedule(
+  id: string,
+): Promise<RecurringSchedule> {
+  const response = await apiClient.post(`/recurring-schedules/${id}/end/`);
   return response.data;
 }
 

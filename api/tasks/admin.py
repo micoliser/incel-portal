@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Task, TaskActivity
+from .models import RecurrenceOccurrence, RecurringSchedule, Task, TaskActivity
 
 
 @admin.register(Task)
@@ -15,4 +15,20 @@ class TaskActivityAdmin(admin.ModelAdmin):
     list_display = ['task', 'user', 'activity_type', 'created_at']
     list_filter = ['activity_type', 'created_at']
     search_fields = ['task__title', 'comment']
+    readonly_fields = ['created_at']
+
+
+@admin.register(RecurringSchedule)
+class RecurringScheduleAdmin(admin.ModelAdmin):
+    list_display = ['title', 'assigned_by', 'assigned_to', 'frequency', 'interval', 'is_active', 'next_run_at']
+    list_filter = ['frequency', 'is_active', 'created_at']
+    search_fields = ['title', 'description']
+    readonly_fields = ['created_at', 'updated_at', 'next_run_at', 'ended_at']
+
+
+@admin.register(RecurrenceOccurrence)
+class RecurrenceOccurrenceAdmin(admin.ModelAdmin):
+    list_display = ['schedule', 'scheduled_for', 'created_task', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['schedule__title']
     readonly_fields = ['created_at']

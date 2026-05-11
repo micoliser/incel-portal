@@ -9,7 +9,7 @@ from django.utils import timezone
 from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
-from .models import Task, TaskActivity, TaskAttachment
+from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment
 from .s3 import (
     TaskAttachmentStorageError,
     build_task_attachment_key_prefix,
@@ -18,10 +18,12 @@ from .s3 import (
 from .serializers import (
     TaskAttachmentUploadRequestSerializer,
     TaskCommentCreateSerializer,
+    RecurringScheduleSerializer,
     TaskSerializer,
     TaskActivitySerializer,
 )
-from .permissions import IsTaskAssignedOrAssigner
+from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
+from .services import calculate_next_run_at, create_task_with_side_effects
 import logging
 
 logger = logging.getLogger(__name__)
@@ -84,39 +86,16 @@ class TaskViewSet(ModelViewSet):
         return [IsAuthenticated(), IsTaskAssignedOrAssigner()]
 
     def perform_create(self, serializer):
-        task = serializer.save(assigned_by=self.request.user)
-        TaskActivity.objects.create(
-            task=task,
-            user=self.request.user,
-            activity_type='created',
-            comment=f'Task created by {self.request.user.get_full_name()}',
-        )
-        log_audit(
-            action='TASK_CREATED',
+        task = create_task_with_side_effects(
+            assigner=self.request.user,
+            assignee=serializer.validated_data['assigned_to'],
+            title=serializer.validated_data['title'],
+            description=serializer.validated_data.get('description', ''),
+            priority=serializer.validated_data['priority'],
+            deadline=serializer.validated_data['deadline'],
             request=self.request,
-            target_type='task',
-            target_id=task.id,
-            metadata={
-                'title': task.title,
-                'assigned_by_id': task.assigned_by_id,
-                'assigned_to_id': task.assigned_to_id,
-                'priority': task.priority,
-                'status': task.status,
-            },
         )
-        create_notification(
-            recipient=task.assigned_to,
-            actor=self.request.user,
-            notification_type=Notification.TYPE_TASK_ASSIGNED,
-            title='New Task',
-            body=f'You were assigned: {task.title} by {_display_name(self.request.user)}',
-            link_url=f'/tasks/{task.id}',
-            payload={
-                'task_id': task.id,
-                'status': task.status,
-                'priority': task.priority,
-            },
-        )
+        serializer.instance = task
 
     def perform_update(self, serializer):
         old_task = self.get_object()
@@ -252,7 +231,98 @@ class TaskViewSet(ModelViewSet):
             link_url=f'/tasks/{task.id}',
             payload={
                 'task_id': task.id,
-                'comment': serializer.validated_data['comment'],
+                'comment_id': str(activity.id),
+            },
+        )
+
+        response_serializer = TaskActivitySerializer(activity)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class RecurringSchedulePagination(PageNumberPagination):
+    page_size = 20
+
+
+class RecurringScheduleViewSet(ModelViewSet):
+    serializer_class = RecurringScheduleSerializer
+    permission_classes = [IsAuthenticated, IsRecurringScheduleAssignerOrAssignee]
+    pagination_class = RecurringSchedulePagination
+
+    def get_queryset(self):
+        user = self.request.user
+        return RecurringSchedule.objects.filter(
+            models.Q(assigned_to=user) | models.Q(assigned_by=user)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        schedule = serializer.save(assigned_by=self.request.user)
+        schedule.next_run_at = calculate_next_run_at(schedule, reference=timezone.now())
+        if schedule.end_at and schedule.next_run_at and schedule.next_run_at > schedule.end_at:
+            schedule.is_active = False
+            schedule.ended_at = schedule.ended_at or timezone.now()
+            schedule.next_run_at = None
+        schedule.save()
+        log_audit(
+            action='TASK_RECURRING_SCHEDULE_CREATED',
+            request=self.request,
+            target_type='recurring_schedule',
+            target_id=schedule.id,
+            metadata={
+                'title': schedule.title,
+                'assigned_by_id': schedule.assigned_by_id,
+                'assigned_to_id': schedule.assigned_to_id,
+                'frequency': schedule.frequency,
+                'interval': schedule.interval,
+                'timezone': schedule.timezone,
+            },
+        )
+
+    def perform_update(self, serializer):
+        schedule = serializer.save()
+        if schedule.is_active:
+            schedule.next_run_at = calculate_next_run_at(schedule, reference=timezone.now())
+            if schedule.end_at and schedule.next_run_at and schedule.next_run_at > schedule.end_at:
+                schedule.is_active = False
+                schedule.ended_at = schedule.ended_at or timezone.now()
+                schedule.next_run_at = None
+        else:
+            schedule.next_run_at = None
+        schedule.save()
+        log_audit(
+            action='TASK_RECURRING_SCHEDULE_UPDATED',
+            request=self.request,
+            target_type='recurring_schedule',
+            target_id=schedule.id,
+            metadata={
+                'title': schedule.title,
+                'assigned_by_id': schedule.assigned_by_id,
+                'assigned_to_id': schedule.assigned_to_id,
+                'frequency': schedule.frequency,
+                'interval': schedule.interval,
+                'timezone': schedule.timezone,
+            },
+        )
+
+    @action(detail=True, methods=['post'], url_path='end')
+    def end(self, request, pk=None):
+        schedule = self.get_object()
+        if request.user != schedule.assigned_by:
+            return Response({'detail': 'Only the schedule creator can end it.'}, status=status.HTTP_403_FORBIDDEN)
+
+        schedule.is_active = False
+        schedule.ended_at = timezone.now()
+        schedule.ended_by = request.user
+        schedule.next_run_at = None
+        schedule.save()
+
+        log_audit(
+            action='TASK_RECURRING_SCHEDULE_ENDED',
+            request=request,
+            target_type='recurring_schedule',
+            target_id=schedule.id,
+            metadata={
+                'title': schedule.title,
+                'assigned_by_id': schedule.assigned_by_id,
             },
         )
         serializer = TaskActivitySerializer(activity)
