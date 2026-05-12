@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        color: #333;
+        line-height: 1.6;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+      }
+      .header {
+        text-align: center;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #f0f0f0;
+      }
+      .header h1 {
+        color: #27ae60;
+        margin: 0;
+        font-size: 24px;
+      }
+      .success-badge {
+        display: inline-block;
+        background-color: #27ae60;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        margin-top: 10px;
+      }
+      .content {
+        padding: 20px 0;
+      }
+      .task-details {
+        background-color: #f0fdf4;
+        border-left: 4px solid #27ae60;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+      }
+      .task-details p {
+        margin: 8px 0;
+      }
+      .label {
+        font-weight: bold;
+        color: #2c3e50;
+      }
+      .cta-button {
+        display: inline-block;
+        background-color: #27ae60;
+        color: white;
+        padding: 12px 30px;
+        text-decoration: none;
+        border-radius: 4px;
+        margin: 20px 0;
+        text-align: center;
+      }
+      .footer {
+        border-top: 2px solid #f0f0f0;
+        padding-top: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>✓ Task Completed</h1>
+        <div class="success-badge">Task marked as complete</div>
+      </div>
+
+      <div class="content">
+        {% if recipient_type == 'assigner' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          Great news! {{ assignee_name }} has completed the task you assigned:
+          <strong>{{ task_name }}</strong>
+        </p>
+        {% else %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          Excellent work! You have successfully completed your task:
+          <strong>{{ task_name }}</strong>
+        </p>
+        {% endif %}
+
+        <div class="task-details">
+          <p><span class="label">Task:</span> {{ task_name }}</p>
+          {% if description %}
+          <p><span class="label">Description:</span> {{ description }}</p>
+          {% endif %} {% if recipient_type == 'assigner' %}
+          <p><span class="label">Completed by:</span> {{ completed_by }}</p>
+          {% endif %}
+        </div>
+
+        {% if recipient_type == 'assigner' %}
+        <p>Review the task details to see the work that was completed.</p>
+        {% else %}
+        <p>
+          Thank you for completing this task! Your contributions are valuable to
+          the team.
+        </p>
+        {% endif %}
+
+        <a
+          href="https://workspace.incelgroup.com/tasks/{{ task_id }}"
+          class="cta-button"
+          >View Task Details</a
+        >
+      </div>
+
+      <div class="footer">
+        <p>© 2026 Incel Portal. All rights reserved.</p>
+        <p>
+          This is an automated email, please do not reply directly to this
+          message.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

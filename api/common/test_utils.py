@@ -24,7 +24,9 @@ class BaseAPITestCase(APITestCase):
         self.staff_user = User.objects.create_user(
             username='staff@example.com',
             email='staff@example.com',
-            password='StaffStrongPass123!'
+            password='StaffStrongPass123!',
+            first_name='Staff',
+            last_name='Member',
         )
 
         StaffProfile.objects.create(user=self.admin_user, role=self.role_ed, department=self.dep_eng)

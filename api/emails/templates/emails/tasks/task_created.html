@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        color: #333;
+        line-height: 1.6;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+      }
+      .header {
+        text-align: center;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #f0f0f0;
+      }
+      .header h1 {
+        color: #2c3e50;
+        margin: 0;
+        font-size: 24px;
+      }
+      .content {
+        padding: 20px 0;
+      }
+      .task-details {
+        background-color: #f9f9f9;
+        border-left: 4px solid #3498db;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+      }
+      .task-details p {
+        margin: 8px 0;
+      }
+      .label {
+        font-weight: bold;
+        color: #2c3e50;
+      }
+      .cta-button {
+        display: inline-block;
+        background-color: #3498db;
+        color: white;
+        padding: 12px 30px;
+        text-decoration: none;
+        border-radius: 4px;
+        margin: 20px 0;
+        text-align: center;
+      }
+      .footer {
+        border-top: 2px solid #f0f0f0;
+        padding-top: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #999;
+      }
+      .priority-high {
+        color: #e74c3c;
+        font-weight: bold;
+      }
+      .priority-medium {
+        color: #f39c12;
+        font-weight: bold;
+      }
+      .priority-low {
+        color: #27ae60;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>
+          {% if recipient_type == 'assigner' %}Task Created{% else %}You've Been
+          Assigned a Task{% endif %}
+        </h1>
+      </div>
+
+      <div class="content">
+        {% if recipient_type == 'assigner' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          You have created a new task and assigned it to
+          <strong>{{ assignee_name }}</strong>.
+        </p>
+        {% else %}
+        <p>Hi {{ recipient_name }},</p>
+        <p><strong>{{ assigner_name }}</strong> has assigned you a new task.</p>
+        {% endif %}
+
+        <div class="task-details">
+          <p><span class="label">Task:</span> {{ task_name }}</p>
+          {% if description %}
+          <p><span class="label">Description:</span> {{ description }}</p>
+          {% endif %} {% if due_date %}
+          <p>
+            <span class="label">Due Date:</span> {{ due_date|date:"M d, Y" }}
+          </p>
+          {% endif %} {% if priority %}
+          <p>
+            <span class="label">Priority:</span>
+            <span class="priority-{{ priority|lower }}">{{ priority }}</span>
+          </p>
+          {% endif %}
+        </div>
+
+        {% if recipient_type == 'assigner' %}
+        <p>Please check back soon for updates on this task's progress.</p>
+        {% else %}
+        <p>
+          Please review the task details and keep the task updated as you work
+          on it.
+        </p>
+        {% endif %}
+
+        <a
+          href="https://workspace.incelgroup.com/tasks/{{ task_id }}"
+          class="cta-button"
+          >View Task</a
+        >
+
+        <p>
+          If you have any questions, please reach out to your team members or
+          administrator.
+        </p>
+      </div>
+
+      <div class="footer">
+        <p>© 2026 Incel Portal. All rights reserved.</p>
+        <p>
+          This is an automated email, please do not reply directly to this
+          message.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
