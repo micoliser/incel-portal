@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework import status
+from unittest.mock import patch
 
 from accounts.models import StaffProfile
 from applications.models import AuditLog, InternalApplication
@@ -83,6 +84,20 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.staff_user.refresh_from_db()
         self.assertTrue(self.staff_user.check_password('EvenStrongerPass123!'))
+
+    @patch('accounts.views_api.UserEmailManager.send_password_changed_email')
+    def test_change_password_sends_email(self, mock_send_email):
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('auth-change-password'),
+            {'old_password': 'StaffStrongPass123!', 'new_password': 'EvenStrongerPass123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(mock_send_email.called)
+        _, kwargs = mock_send_email.call_args
+        self.assertEqual(kwargs.get('action'), 'changed')
 
     def test_change_password_fails_with_incorrect_old_password(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
@@ -376,3 +391,32 @@ class AccountsApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('accounts.views_api.UserEmailManager.send_password_changed_email')
+    def test_admin_password_reset_sends_temp_password_email(self, mock_send_email):
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
+        payload = {
+            'first_name': self.staff_user.first_name,
+            'last_name': self.staff_user.last_name,
+            'email': self.staff_user.email,
+            'department_id': self.dep_eng.id,
+            'reset_password': True,
+            'new_password': 'N9!vQ2@tLm7#',
+            'confirm_password': 'N9!vQ2@tLm7#',
+        }
+
+        response = self.client.patch(
+            reverse('admin-users-detail', kwargs={'user_id': self.staff_user.id}),
+            payload,
+            format='json',
+        )
+
+        
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.staff_user.refresh_from_db()
+        self.assertTrue(self.staff_user.check_password('N9!vQ2@tLm7#'))
+        self.assertTrue(mock_send_email.called)
+        _, kwargs = mock_send_email.call_args
+        self.assertEqual(kwargs.get('action'), 'reset')
+        self.assertEqual(kwargs.get('temporary_password'), 'N9!vQ2@tLm7#')

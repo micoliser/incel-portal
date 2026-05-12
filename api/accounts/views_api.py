@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
+import logging
 from rest_framework import permissions, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -27,7 +28,11 @@ from applications.audit import log_audit
 from applications.models import InternalApplication
 from common.access import can_user_access_application
 from common.permissions import IsGlobalAccessUser, has_admin_access, has_global_access
+from emails.services.user_emails import UserEmailManager
 from organization.models import Department, Role
+
+
+logger = logging.getLogger(__name__)
 
 
 def _profile_or_none(user):
@@ -148,6 +153,14 @@ class ChangePasswordView(APIView):
 
         request.user.set_password(new_password)
         request.user.save(update_fields=['password'])
+
+        try:
+            UserEmailManager.send_password_changed_email(
+                request.user,
+                action='changed',
+            )
+        except Exception as exc:
+            logger.error("Failed to send password changed email: %s", str(exc))
 
         tokens = _jwt_payload_for_user(request.user)
         log_audit(
@@ -316,6 +329,15 @@ class AdminUserListView(APIView):
             is_active=True,
         )
 
+        try:
+            UserEmailManager.send_user_created_email(
+                user,
+                serializer.validated_data['password'],
+            )
+        except Exception:
+            # User creation should not fail if email delivery fails.
+            pass
+
         log_audit(
             action='ADMIN_USER_CREATED',
             request=request,
@@ -370,8 +392,17 @@ class AdminUserDetailView(APIView):
         user.save(update_fields=['email', 'username', 'first_name', 'last_name'])
 
         if serializer.validated_data.get('reset_password'):
-            user.set_password(serializer.validated_data['new_password'])
+            temporary_password = serializer.validated_data['new_password']
+            user.set_password(temporary_password)
             user.save(update_fields=['password'])
+            try:
+                UserEmailManager.send_password_changed_email(
+                    user,
+                    action='reset',
+                    temporary_password=temporary_password,
+                )
+            except Exception as exc:
+                logger.error("Failed to send password reset email: %s", str(exc))
 
         department_id = serializer.validated_data.get('department_id')
         department = Department.objects.filter(id=department_id).first() if department_id else None
