@@ -1,6 +1,9 @@
+import logging
 from typing import List, Dict, Any
 from emails.services.base_email_service import BaseEmailService
 from emails.config import EmailType
+
+logger = logging.getLogger(__name__)
 
 
 class TaskCreatedEmailService(BaseEmailService):
@@ -50,6 +53,18 @@ class RecurringTaskCreatedEmailService(BaseEmailService):
 
 class TaskEmailManager:
     """Manager for task-related emails."""
+
+    @staticmethod
+    def _send_to_recipient(service, recipient_email: str, context: Dict[str, Any], task_id: str, label: str) -> None:
+        if not recipient_email:
+            logger.error("Task %s %s email skipped because recipient email is empty", task_id, label)
+            return
+
+        sent = service.send([recipient_email], context)
+        if sent:
+            logger.info("Task %s %s email queued/sent to %s", task_id, label, recipient_email)
+        else:
+            logger.error("Task %s %s email failed for %s", task_id, label, recipient_email)
 
     @staticmethod
     def send_task_created_emails(task: Any) -> None:
@@ -111,13 +126,25 @@ class TaskEmailManager:
 
         # Send to assigner
         try:
-            service.send([getattr(created_by, 'email', '')], assigner_context)
+            TaskEmailManager._send_to_recipient(
+                service,
+                getattr(created_by, 'email', ''),
+                assigner_context,
+                task_id,
+                'assigner',
+            )
         except Exception as e:
             logger.error(f"Failed to send assigner email for task {task_id}: {str(e)}")
 
         # Send to assignee
         try:
-            service.send([getattr(assigned_to, 'email', '')], assignee_context)
+            TaskEmailManager._send_to_recipient(
+                service,
+                getattr(assigned_to, 'email', ''),
+                assignee_context,
+                task_id,
+                'assignee',
+            )
         except Exception as e:
             logger.error(f"Failed to send assignee email for task {task_id}: {str(e)}")
 
@@ -158,8 +185,8 @@ class TaskEmailManager:
         }
 
         service = TaskCompletedEmailService()
-        service.send([created_by.email], assigner_context)
-        service.send([completed_by.email], assignee_context)
+        TaskEmailManager._send_to_recipient(service, created_by.email, assigner_context, str(task.id), 'assigner')
+        TaskEmailManager._send_to_recipient(service, completed_by.email, assignee_context, str(task.id), 'assignee')
 
     @staticmethod
     def send_recurring_task_created_emails(task: Any) -> None:
@@ -201,5 +228,5 @@ class TaskEmailManager:
         }
 
         service = RecurringTaskCreatedEmailService()
-        service.send([created_by.email], assigner_context)
-        service.send([assigned_to.email], assignee_context)
+        TaskEmailManager._send_to_recipient(service, created_by.email, assigner_context, str(task.id), 'assigner')
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, assignee_context, str(task.id), 'assignee')
