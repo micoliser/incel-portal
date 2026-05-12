@@ -1,7 +1,5 @@
 # Production deployment-only files (not needed for CI image builds)
-.env
-.env.backend
-.env.frontend
+.env*
 docker-compose.yml
 DEPLOYMENT.md
 deployment/
