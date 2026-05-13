@@ -149,6 +149,14 @@ class ChangePasswordView(APIView):
         new_password = serializer.validated_data['new_password']
 
         if not request.user.check_password(old_password):
+            log_audit(
+                action='AUTH_PASSWORD_CHANGE_FAILED',
+                request=request,
+                actor_user=request.user,
+                target_type='User',
+                target_id=request.user.id,
+                metadata={'reason': 'incorrect_old_password'},
+            )
             return Response({'detail': 'Old password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
 
         request.user.set_password(new_password)
@@ -395,6 +403,17 @@ class AdminUserDetailView(APIView):
             temporary_password = serializer.validated_data['new_password']
             user.set_password(temporary_password)
             user.save(update_fields=['password'])
+            log_audit(
+                action='ADMIN_USER_PASSWORD_RESET',
+                request=request,
+                actor_user=request.user,
+                target_type='User',
+                target_id=user.id,
+                metadata={
+                    'email': user.email,
+                    'temporary_password_provided': True,
+                },
+            )
             try:
                 UserEmailManager.send_password_changed_email(
                     user,

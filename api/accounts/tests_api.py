@@ -108,6 +108,13 @@ class AccountsApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action='AUTH_PASSWORD_CHANGE_FAILED',
+                target_type='User',
+                target_id=str(self.staff_user.id),
+            ).exists()
+        )
 
     def test_me_endpoint_returns_profile(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
@@ -416,6 +423,13 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.staff_user.refresh_from_db()
         self.assertTrue(self.staff_user.check_password('N9!vQ2@tLm7#'))
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action='ADMIN_USER_PASSWORD_RESET',
+                target_type='User',
+                target_id=str(self.staff_user.id),
+            ).exists()
+        )
         self.assertTrue(mock_send_email.called)
         _, kwargs = mock_send_email.call_args
         self.assertEqual(kwargs.get('action'), 'reset')

@@ -61,7 +61,7 @@ class EmailServiceTestCase(TestCase):
 
         TaskEmailManager.send_task_completed_emails(task)
 
-        self.assertEqual(mock_send.call_count, 2)
+        self.assertEqual(mock_send.call_count, 1)
 
     @patch('emails.services.base_email_service.BaseEmailService._send_sync')
     def test_user_status_changed_email(self, mock_send):

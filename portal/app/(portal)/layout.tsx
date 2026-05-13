@@ -35,6 +35,7 @@ import { NotificationCenter } from "@/components/notification-center";
 import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
+  buildLoginPath,
   getStoredAccessToken,
   getStoredRefreshToken,
 } from "@/lib/auth";
@@ -87,9 +88,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
     const accessToken = getStoredAccessToken();
     const refreshToken = getStoredRefreshToken();
+    const search =
+      typeof window !== "undefined" ? (window.location.search ?? "") : "";
+    const currentPath = `${pathname}${search}`;
 
     if (!accessToken || !refreshToken) {
-      router.replace("/");
+      router.replace(buildLoginPath(currentPath));
       return;
     }
 
@@ -123,7 +127,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       } catch (error) {
         if (axios.isAxiosError(error) && error.response) {
           clearStoredTokens();
-          router.replace("/");
+          router.replace(buildLoginPath(currentPath));
           return;
         }
         setUserInfo(null);
@@ -134,7 +138,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     }
 
     void loadUserContext();
-  }, [router]);
+  }, [pathname, router]);
 
   const pageHeader =
     pathname === "/applications"
