@@ -96,19 +96,6 @@ class TaskEmailManager:
             )
             return
 
-        # Context for assigner
-        assigner_context = {
-            'task_id': task_id,
-            'task_name': task_name,
-            'recipient_type': 'assigner',
-            'recipient_name': getattr(created_by, 'get_full_name', lambda: None)() or getattr(created_by, 'username', ''),
-            'assignee_name': getattr(assigned_to, 'get_full_name', lambda: None)() or getattr(assigned_to, 'username', ''),
-            'description': description,
-            'due_date': due_date,
-            'priority': priority,
-            'is_recurring': False,
-        }
-
         # Context for assignee
         assignee_context = {
             'task_id': task_id,
@@ -124,19 +111,7 @@ class TaskEmailManager:
 
         service = TaskCreatedEmailService()
 
-        # Send to assigner
-        try:
-            TaskEmailManager._send_to_recipient(
-                service,
-                getattr(created_by, 'email', ''),
-                assigner_context,
-                task_id,
-                'assigner',
-            )
-        except Exception as e:
-            logger.error(f"Failed to send assigner email for task {task_id}: {str(e)}")
-
-        # Send to assignee
+        # Send only to assignee
         try:
             TaskEmailManager._send_to_recipient(
                 service,
@@ -173,20 +148,8 @@ class TaskEmailManager:
             or completed_by.username,
         }
 
-        assignee_context = {
-            'task_id': str(task.id),
-            'task_name': task.title,
-            'recipient_type': 'assignee',
-            'recipient_name': completed_by.get_full_name()
-            or completed_by.username,
-            'assigner_name': created_by.get_full_name()
-            or created_by.username,
-            'description': task.description,
-        }
-
         service = TaskCompletedEmailService()
         TaskEmailManager._send_to_recipient(service, created_by.email, assigner_context, str(task.id), 'assigner')
-        TaskEmailManager._send_to_recipient(service, completed_by.email, assignee_context, str(task.id), 'assignee')
 
     @staticmethod
     def send_recurring_task_created_emails(task: Any) -> None:
@@ -200,19 +163,6 @@ class TaskEmailManager:
                 f"TaskEmailManager: missing created_by or assigned_to for recurring task {getattr(task, 'id', getattr(task, 'pk', ''))}"
             )
             return
-
-        assigner_context = {
-            'task_id': str(task.id),
-            'task_name': task.title,
-            'recipient_type': 'assigner',
-            'recipient_name': created_by.get_full_name()
-            or created_by.username,
-            'assignee_name': assigned_to.get_full_name()
-            or assigned_to.username,
-            'description': task.description,
-            'recurrence_pattern': recurrence_pattern,
-            'is_recurring': True,
-        }
 
         assignee_context = {
             'task_id': str(task.id),
@@ -228,5 +178,4 @@ class TaskEmailManager:
         }
 
         service = RecurringTaskCreatedEmailService()
-        TaskEmailManager._send_to_recipient(service, created_by.email, assigner_context, str(task.id), 'assigner')
         TaskEmailManager._send_to_recipient(service, assigned_to.email, assignee_context, str(task.id), 'assignee')

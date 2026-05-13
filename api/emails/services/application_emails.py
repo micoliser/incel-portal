@@ -52,6 +52,7 @@ class ApplicationEmailManager:
             'application_id': str(application.id),
             'application_name': application.name,
             'application_url': application.app_url,
+            'applications_page_url': 'https://workspace.incelgroup.com/applications',
             'description': application.description,
             'logo_url': application.logo_url,
         }
@@ -122,6 +123,7 @@ class ApplicationEmailManager:
             'application_id': str(application.id),
             'application_name': application.name,
             'application_url': application.app_url,
+            'applications_page_url': 'https://workspace.incelgroup.com/applications',
             'description': application.description,
             'logo_url': application.logo_url,
         }

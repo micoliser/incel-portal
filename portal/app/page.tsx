@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   clearStoredTokens,
+  getSafeReturnPath,
   hasStoredTokens,
   setStoredTokens,
 } from "@/lib/auth";
@@ -35,9 +36,17 @@ export default function Home() {
     password?: string;
   }>({});
 
+  function getReturnToPath() {
+    if (typeof window === "undefined") return null;
+
+    const nextParam = new URLSearchParams(window.location.search).get("next");
+    return getSafeReturnPath(nextParam);
+  }
+
   useEffect(() => {
     if (hasStoredTokens()) {
-      router.replace("/dashboard");
+      const returnTo = getReturnToPath();
+      router.replace(returnTo ?? "/dashboard");
       return;
     }
 
@@ -96,7 +105,8 @@ export default function Home() {
 
       clearStoredTokens();
       setStoredTokens(tokens.access, tokens.refresh);
-      router.replace("/dashboard");
+      const returnTo = getReturnToPath();
+      router.replace(returnTo ?? "/dashboard");
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const responseData = error.response?.data as
