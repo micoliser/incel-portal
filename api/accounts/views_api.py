@@ -352,7 +352,14 @@ class AdminUserListView(APIView):
             actor_user=request.user,
             target_type='User',
             target_id=user.id,
-            metadata={'email': email, 'role_code': role.code, 'department_id': department.id},
+            metadata={
+                'email': email,
+                'role_id': role.id,
+                'role_code': role.code,
+                'role_name': role.name,
+                'department_id': department.id,
+                'department_name': department.name,
+            },
         )
 
         return Response(UserWithProfileSerializer(user).data, status=status.HTTP_201_CREATED)
@@ -447,6 +454,7 @@ class AdminUserDetailView(APIView):
             metadata={
                 'email': user.email,
                 'department_id': department_id,
+                'department_name': department.name if department else None,
                 'reset_password': bool(serializer.validated_data.get('reset_password')),
             },
         )
@@ -485,7 +493,7 @@ class AdminUserRoleUpdateView(APIView):
             actor_user=request.user,
             target_type='User',
             target_id=user.id,
-            metadata={'role_id': role.id, 'role_code': role.code},
+            metadata={'role_id': role.id, 'role_code': role.code, 'role_name': role.name},
         )
 
         return Response(UserWithProfileSerializer(user).data)
@@ -523,7 +531,7 @@ class AdminUserDepartmentUpdateView(APIView):
             actor_user=request.user,
             target_type='User',
             target_id=user.id,
-            metadata={'department_id': department_id},
+            metadata={'department_id': department_id, 'department_name': department.name},
         )
 
         return Response(UserWithProfileSerializer(user).data)
@@ -558,7 +566,7 @@ class AdminUserStatusUpdateView(APIView):
             actor_user=request.user,
             target_type='User',
             target_id=user.id,
-            metadata={'is_active': is_active},
+            metadata={'is_active': is_active, 'email': user.email},
         )
 
         return Response(UserWithProfileSerializer(user).data)

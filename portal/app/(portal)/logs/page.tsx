@@ -28,8 +28,11 @@ type AuditLogEntry = {
   actor_user?: number | null;
   actor_username?: string | null;
   action: string;
+  action_label?: string;
   target_type?: string;
   target_id?: string;
+  target_label?: string;
+  message?: string;
   metadata_json?: unknown;
   ip_address?: string | null;
   created_at: string;
@@ -84,6 +87,13 @@ function formatMetadata(metadata: unknown) {
   } catch {
     return String(metadata);
   }
+}
+
+function shortId(value: string) {
+  if (!value) {
+    return "-";
+  }
+  return value.slice(0, 8);
 }
 
 function isAdmin(permission: PermissionPayload | null) {
@@ -744,13 +754,11 @@ export default function LogsPage() {
             <table className="min-w-full divide-y divide-border text-sm">
               <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">ID</th>
                   <th className="px-3 py-2 font-semibold">Timestamp</th>
                   <th className="px-3 py-2 font-semibold">Actor</th>
-                  <th className="px-3 py-2 font-semibold">Action</th>
-                  <th className="px-3 py-2 font-semibold">Target</th>
+                  <th className="px-3 py-2 font-semibold">Event</th>
                   <th className="px-3 py-2 font-semibold">IP Address</th>
-                  <th className="px-3 py-2 font-semibold">Metadata</th>
+                  <th className="px-3 py-2 font-semibold">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border bg-background">
@@ -758,7 +766,7 @@ export default function LogsPage() {
                   <tr>
                     <td
                       className="px-3 py-6 text-center text-muted-foreground"
-                      colSpan={7}
+                      colSpan={5}
                     >
                       No audit logs found.
                     </td>
@@ -766,9 +774,6 @@ export default function LogsPage() {
                 ) : (
                   logs.map((log) => (
                     <tr key={log.id} className="align-top">
-                      <td className="px-3 py-3 font-medium text-foreground">
-                        {log.id}
-                      </td>
                       <td className="px-3 py-3 text-muted-foreground">
                         {formatDate(log.created_at)}
                       </td>
@@ -776,19 +781,46 @@ export default function LogsPage() {
                         {log.actor_username || "system"}
                       </td>
                       <td className="px-3 py-3 text-foreground">
-                        {log.action}
-                      </td>
-                      <td className="px-3 py-3 text-muted-foreground">
-                        {log.target_type || "-"}
-                        {log.target_id ? ` (${log.target_id})` : ""}
+                        <p className="font-medium text-foreground">
+                          {log.message || log.action_label || log.action}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {log.action_label || log.action}
+                        </p>
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">
                         {log.ip_address || "-"}
                       </td>
-                      <td className="max-w-[380px] px-3 py-3 text-muted-foreground">
-                        <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border bg-muted/40 px-2 py-1 text-xs">
-                          {formatMetadata(log.metadata_json)}
-                        </div>
+                      <td className="max-w-[420px] px-3 py-3 text-muted-foreground">
+                        <details className="rounded border border-border bg-muted/30 px-2 py-1 text-xs">
+                          <summary className="cursor-pointer select-none text-muted-foreground">
+                            View technical details
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <p>
+                              <span className="font-medium text-foreground">
+                                Log ID:
+                              </span>{" "}
+                              <span title={log.id}>{shortId(log.id)}</span>
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">
+                                Action code:
+                              </span>{" "}
+                              {log.action}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">
+                                Target:
+                              </span>{" "}
+                              {log.target_label || log.target_type || "-"}
+                              {log.target_id ? ` (${log.target_id})` : ""}
+                            </p>
+                            <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border bg-muted/40 px-2 py-1">
+                              {formatMetadata(log.metadata_json)}
+                            </div>
+                          </div>
+                        </details>
                       </td>
                     </tr>
                   ))
