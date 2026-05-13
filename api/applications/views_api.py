@@ -280,7 +280,11 @@ class AdminApplicationCreateView(APIView):
             actor_user=request.user,
             target_type='InternalApplication',
             target_id=app.id,
-            metadata={'department_ids': department_ids},
+            metadata={
+                'application_id': app.id,
+                'application_name': app.name,
+                'department_ids': department_ids,
+            },
         )
 
         return Response(InternalApplicationSerializer(app).data, status=status.HTTP_201_CREATED)
@@ -357,7 +361,11 @@ class AdminApplicationUpdateDeleteView(APIView):
             actor_user=request.user,
             target_type='InternalApplication',
             target_id=app.id,
-            metadata={'department_ids': department_ids},
+            metadata={
+                'application_id': app.id,
+                'application_name': app.name,
+                'department_ids': department_ids,
+            },
         )
 
         return Response(InternalApplicationSerializer(app).data)
@@ -422,7 +430,11 @@ class AdminApplicationDepartmentsView(APIView):
             actor_user=request.user,
             target_type='InternalApplication',
             target_id=app.id,
-            metadata={'department_ids': department_ids},
+            metadata={
+                'application_id': app.id,
+                'application_name': app.name,
+                'department_ids': department_ids,
+            },
         )
 
         return Response(InternalApplicationSerializer(app).data)
@@ -467,7 +479,13 @@ class AdminApplicationOverridesCreateView(APIView):
             actor_user=request.user,
             target_type='ApplicationAccessOverride',
             target_id=override.id,
-            metadata={'application_id': app.id, 'user_id': user.id, 'effect': override.effect},
+            metadata={
+                'application_id': app.id,
+                'application_name': app.name,
+                'user_id': user.id,
+                'user_email': user.email,
+                'effect': override.effect,
+            },
         )
 
         return Response(AccessOverrideSerializer(override).data, status=status.HTTP_201_CREATED)
@@ -494,7 +512,7 @@ class AdminApplicationOverrideDeleteView(APIView):
             actor_user=request.user,
             target_type='ApplicationAccessOverride',
             target_id=deleted_override_id,
-            metadata={'application_id': app.id},
+            metadata={'application_id': app.id, 'application_name': app.name},
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)

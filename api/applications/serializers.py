@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from applications.audit_messages import action_label, build_message, target_label
 from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication
 from applications.models import RecentApplication
 from organization.models import Department
@@ -130,6 +131,9 @@ class SetApplicationDepartmentsSerializer(serializers.Serializer):
 
 class AuditLogSerializer(serializers.ModelSerializer):
     actor_username = serializers.SerializerMethodField()
+    action_label = serializers.SerializerMethodField()
+    target_label = serializers.SerializerMethodField()
+    message = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
@@ -138,8 +142,11 @@ class AuditLogSerializer(serializers.ModelSerializer):
             'actor_user',
             'actor_username',
             'action',
+            'action_label',
             'target_type',
             'target_id',
+            'target_label',
+            'message',
             'metadata_json',
             'ip_address',
             'created_at',
@@ -150,6 +157,20 @@ class AuditLogSerializer(serializers.ModelSerializer):
         if not obj.actor_user:
             return None
         return obj.actor_user.username
+
+    def get_action_label(self, obj):
+        return action_label(obj.action)
+
+    def get_target_label(self, obj):
+        return target_label(obj.target_type, obj.target_id)
+
+    def get_message(self, obj):
+        return build_message(
+            obj.action,
+            obj.metadata_json,
+            target_type=obj.target_type,
+            target_id=obj.target_id,
+        )
 
 
 class RecentApplicationSerializer(serializers.ModelSerializer):
