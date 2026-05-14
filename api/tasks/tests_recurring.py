@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from applications.models import AuditLog
+from emails.services.task_emails import TaskEmailManager
 from common.test_utils import BaseAPITestCase
 from tasks.models import RecurrenceOccurrence, RecurringSchedule, Task
 from tasks.services import calculate_next_run_at
@@ -236,13 +237,15 @@ class RecurringScheduleApiTests(BaseAPITestCase):
         schedule = self.create_schedule_record()
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
-        pause_response = self.client.post(
-            reverse('recurring-schedule-pause', kwargs={'pk': schedule.id}),
-            {},
-            format='json',
-        )
+        with patch.object(TaskEmailManager, 'send_recurring_task_paused_emails') as mock_send:
+            pause_response = self.client.post(
+                reverse('recurring-schedule-pause', kwargs={'pk': schedule.id}),
+                {},
+                format='json',
+            )
 
         self.assertEqual(pause_response.status_code, status.HTTP_200_OK)
+        mock_send.assert_called_once()
         schedule.refresh_from_db()
         self.assertTrue(schedule.is_paused)
         self.assertIsNotNone(schedule.paused_at)
@@ -281,14 +284,16 @@ class RecurringScheduleApiTests(BaseAPITestCase):
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
         with patch('tasks.views_api.calculate_next_run_at', return_value=expected_next_run_at) as mock_next_run:
-            response = self.client.post(
-                reverse('recurring-schedule-resume', kwargs={'pk': schedule.id}),
-                {},
-                format='json',
-            )
+            with patch.object(TaskEmailManager, 'send_recurring_task_resumed_emails') as mock_send:
+                response = self.client.post(
+                    reverse('recurring-schedule-resume', kwargs={'pk': schedule.id}),
+                    {},
+                    format='json',
+                )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         mock_next_run.assert_called_once()
+        mock_send.assert_called_once()
         schedule.refresh_from_db()
         self.assertFalse(schedule.is_paused)
         self.assertIsNone(schedule.paused_at)
@@ -331,13 +336,15 @@ class RecurringScheduleApiTests(BaseAPITestCase):
         )
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
-        response = self.client.post(
-            reverse('recurring-schedule-end', kwargs={'pk': schedule.id}),
-            {},
-            format='json',
-        )
+        with patch.object(TaskEmailManager, 'send_recurring_task_ended_emails') as mock_send:
+            response = self.client.post(
+                reverse('recurring-schedule-end', kwargs={'pk': schedule.id}),
+                {},
+                format='json',
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_called_once()
         schedule.refresh_from_db()
         self.assertFalse(schedule.is_active)
         self.assertFalse(schedule.is_paused)
@@ -352,6 +359,36 @@ class RecurringScheduleApiTests(BaseAPITestCase):
             ).count(),
             1,
         )
+
+    def test_update_schedule_notifies_assignee_when_schedule_changes(self):
+        schedule = self.create_schedule_record()
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        with patch.object(TaskEmailManager, 'send_recurring_task_updated_emails') as mock_send:
+            response = self.client.patch(
+                reverse('recurring-schedule-detail', kwargs={'pk': schedule.id}),
+                {'title': 'Recurring title updated'},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_called_once()
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.title, 'Recurring title updated')
+
+    def test_update_schedule_without_changes_does_not_send_email(self):
+        schedule = self.create_schedule_record()
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        with patch.object(TaskEmailManager, 'send_recurring_task_updated_emails') as mock_send:
+            response = self.client.patch(
+                reverse('recurring-schedule-detail', kwargs={'pk': schedule.id}),
+                {'title': schedule.title},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_not_called()
 
 
 class RecurringScheduleWorkerTests(BaseAPITestCase):

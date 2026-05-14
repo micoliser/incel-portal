@@ -9,6 +9,7 @@ from django.utils import timezone
 from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
+from emails.services.task_emails import TaskEmailManager
 from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment
 from .s3 import (
     TaskAttachmentStorageError,
@@ -278,6 +279,7 @@ class RecurringScheduleViewSet(ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        previous_state = self._recurring_schedule_notification_state(serializer.instance)
         schedule = serializer.save()
         if schedule.is_active and not schedule.is_paused:
             schedule.next_run_at = calculate_next_run_at(schedule, reference=timezone.now())
@@ -294,6 +296,8 @@ class RecurringScheduleViewSet(ModelViewSet):
             schedule.paused_at = None
             schedule.paused_by = None
         schedule.save()
+        if self._recurring_schedule_notification_state(schedule) != previous_state:
+            TaskEmailManager.send_recurring_task_updated_emails(schedule)
         log_audit(
             action='TASK_RECURRING_SCHEDULE_UPDATED',
             request=self.request,
@@ -308,6 +312,22 @@ class RecurringScheduleViewSet(ModelViewSet):
                 'timezone': schedule.timezone,
             },
         )
+
+    @staticmethod
+    def _recurring_schedule_notification_state(schedule):
+        return {
+            'title': schedule.title,
+            'description': schedule.description,
+            'priority': schedule.priority,
+            'frequency': schedule.frequency,
+            'interval': schedule.interval,
+            'weekdays': list(schedule.weekdays or []),
+            'times': list(schedule.times or []),
+            'timezone': schedule.timezone,
+            'deadline_offset_minutes': schedule.deadline_offset_minutes,
+            'start_at': schedule.start_at,
+            'end_at': schedule.end_at,
+        }
 
     def _ensure_creator(self, schedule):
         if self.request.user != schedule.assigned_by:
@@ -331,6 +351,8 @@ class RecurringScheduleViewSet(ModelViewSet):
         schedule.ended_by = request.user
         schedule.next_run_at = None
         schedule.save()
+
+        TaskEmailManager.send_recurring_task_ended_emails(schedule)
 
         log_audit(
             action='TASK_RECURRING_SCHEDULE_ENDED',
@@ -362,6 +384,8 @@ class RecurringScheduleViewSet(ModelViewSet):
         schedule.paused_at = now
         schedule.paused_by = request.user
         schedule.save(update_fields=['is_paused', 'paused_at', 'paused_by', 'updated_at'])
+
+        TaskEmailManager.send_recurring_task_paused_emails(schedule)
 
         log_audit(
             action='TASK_RECURRING_SCHEDULE_PAUSED',
@@ -414,6 +438,8 @@ class RecurringScheduleViewSet(ModelViewSet):
         schedule.paused_by = None
         schedule.next_run_at = next_run_at
         schedule.save(update_fields=['is_paused', 'paused_at', 'paused_by', 'next_run_at', 'updated_at'])
+
+        TaskEmailManager.send_recurring_task_resumed_emails(schedule)
 
         log_audit(
             action='TASK_RECURRING_SCHEDULE_RESUMED',
