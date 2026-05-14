@@ -51,6 +51,50 @@ class RecurringTaskCreatedEmailService(BaseEmailService):
         return f"You've been assigned a recurring task: {task_name}"
 
 
+class RecurringTaskUpdatedEmailService(BaseEmailService):
+    """Send email when a recurring task is updated."""
+
+    email_type = EmailType.RECURRING_TASK_UPDATED
+    template_name = "emails/tasks/recurring_task_status_changed.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Recurring Task')
+        return f"Recurring task updated: {task_name}"
+
+
+class RecurringTaskPausedEmailService(BaseEmailService):
+    """Send email when a recurring task is paused."""
+
+    email_type = EmailType.RECURRING_TASK_PAUSED
+    template_name = "emails/tasks/recurring_task_status_changed.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Recurring Task')
+        return f"Recurring task paused: {task_name}"
+
+
+class RecurringTaskResumedEmailService(BaseEmailService):
+    """Send email when a recurring task is resumed."""
+
+    email_type = EmailType.RECURRING_TASK_RESUMED
+    template_name = "emails/tasks/recurring_task_status_changed.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Recurring Task')
+        return f"Recurring task resumed: {task_name}"
+
+
+class RecurringTaskEndedEmailService(BaseEmailService):
+    """Send email when a recurring task is ended."""
+
+    email_type = EmailType.RECURRING_TASK_ENDED
+    template_name = "emails/tasks/recurring_task_status_changed.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Recurring Task')
+        return f"Recurring task ended: {task_name}"
+
+
 class TaskEmailManager:
     """Manager for task-related emails."""
 
@@ -179,3 +223,102 @@ class TaskEmailManager:
 
         service = RecurringTaskCreatedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, assignee_context, str(task.id), 'assignee')
+
+    @staticmethod
+    def _build_recurring_schedule_context(schedule: Any, recipient_type: str, event_label: str) -> Dict[str, Any]:
+        assigned_by = getattr(schedule, 'assigned_by', None)
+        assigned_to = getattr(schedule, 'assigned_to', None)
+
+        return {
+            'schedule_id': str(getattr(schedule, 'id', getattr(schedule, 'pk', ''))),
+            'task_name': getattr(schedule, 'title', 'Recurring Task'),
+            'recipient_type': recipient_type,
+            'recipient_name': getattr(assigned_to, 'get_full_name', lambda: None)() or getattr(assigned_to, 'username', '') if assigned_to else '',
+            'assigner_name': getattr(assigned_by, 'get_full_name', lambda: None)() or getattr(assigned_by, 'username', '') if assigned_by else '',
+            'description': getattr(schedule, 'description', ''),
+            'frequency': getattr(schedule, 'frequency', ''),
+            'interval': getattr(schedule, 'interval', 1),
+            'timezone': getattr(schedule, 'timezone', 'UTC'),
+            'start_at': getattr(schedule, 'start_at', None),
+            'end_at': getattr(schedule, 'end_at', None),
+            'next_run_at': getattr(schedule, 'next_run_at', None),
+            'is_active': getattr(schedule, 'is_active', True),
+            'is_paused': getattr(schedule, 'is_paused', False),
+            'event_label': event_label,
+        }
+
+    @staticmethod
+    def send_recurring_task_updated_emails(schedule: Any) -> None:
+        assigned_to = getattr(schedule, 'assigned_to', None)
+        if not assigned_to:
+            from emails import logger as emails_logger
+
+            emails_logger.error(
+                f"TaskEmailManager: missing assigned_to for recurring schedule update {getattr(schedule, 'id', getattr(schedule, 'pk', ''))}"
+            )
+            return
+
+        context = TaskEmailManager._build_recurring_schedule_context(
+            schedule,
+            recipient_type='assignee',
+            event_label='edited',
+        )
+        service = RecurringTaskUpdatedEmailService()
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+
+    @staticmethod
+    def send_recurring_task_paused_emails(schedule: Any) -> None:
+        assigned_to = getattr(schedule, 'assigned_to', None)
+        if not assigned_to:
+            from emails import logger as emails_logger
+
+            emails_logger.error(
+                f"TaskEmailManager: missing assigned_to for recurring schedule pause {getattr(schedule, 'id', getattr(schedule, 'pk', ''))}"
+            )
+            return
+
+        context = TaskEmailManager._build_recurring_schedule_context(
+            schedule,
+            recipient_type='assignee',
+            event_label='paused',
+        )
+        service = RecurringTaskPausedEmailService()
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+
+    @staticmethod
+    def send_recurring_task_resumed_emails(schedule: Any) -> None:
+        assigned_to = getattr(schedule, 'assigned_to', None)
+        if not assigned_to:
+            from emails import logger as emails_logger
+
+            emails_logger.error(
+                f"TaskEmailManager: missing assigned_to for recurring schedule resume {getattr(schedule, 'id', getattr(schedule, 'pk', ''))}"
+            )
+            return
+
+        context = TaskEmailManager._build_recurring_schedule_context(
+            schedule,
+            recipient_type='assignee',
+            event_label='resumed',
+        )
+        service = RecurringTaskResumedEmailService()
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+
+    @staticmethod
+    def send_recurring_task_ended_emails(schedule: Any) -> None:
+        assigned_to = getattr(schedule, 'assigned_to', None)
+        if not assigned_to:
+            from emails import logger as emails_logger
+
+            emails_logger.error(
+                f"TaskEmailManager: missing assigned_to for recurring schedule end {getattr(schedule, 'id', getattr(schedule, 'pk', ''))}"
+            )
+            return
+
+        context = TaskEmailManager._build_recurring_schedule_context(
+            schedule,
+            recipient_type='assignee',
+            event_label='ended',
+        )
+        service = RecurringTaskEndedEmailService()
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
