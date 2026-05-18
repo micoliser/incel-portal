@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -185,6 +186,10 @@ CELERY_BEAT_SCHEDULE = {
     'generate-recurring-task-occurrences': {
         'task': 'tasks.generate_recurring_task_occurrences',
         'schedule': 60.0,
+    },
+    'generate-weekly-summaries': {
+        'task': 'tasks.generate_weekly_summaries',
+        'schedule': crontab(hour=0, minute=0, day_of_week=1),  # Every Monday at 00:00
     },
 }
 

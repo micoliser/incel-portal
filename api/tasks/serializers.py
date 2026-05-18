@@ -428,3 +428,110 @@ class TaskSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+
+class WeeklySummarySerializer(serializers.Serializer):
+    """Serializer for weekly summary data - flattens summary_data fields"""
+    week_start_date = serializers.DateField()
+    week_end_date = serializers.DateField()
+    # Include user information for shared views
+    user_id = serializers.SerializerMethodField()
+    user_name = serializers.SerializerMethodField()
+    
+    # Task metrics
+    tasks_created = serializers.SerializerMethodField()
+    tasks_assigned = serializers.SerializerMethodField()
+    tasks_completed = serializers.SerializerMethodField()
+    completion_rate_percent = serializers.SerializerMethodField()
+    on_time_completion_rate_percent = serializers.SerializerMethodField()
+    
+    # High priority metrics
+    high_priority_tasks = serializers.SerializerMethodField()
+    high_priority_completed = serializers.SerializerMethodField()
+    
+    # Engagement metrics
+    comments_added = serializers.SerializerMethodField()
+    files_attached = serializers.SerializerMethodField()
+    recurring_schedules_created = serializers.SerializerMethodField()
+    active_recurring_schedules = serializers.SerializerMethodField()
+    
+    # Breakdowns
+    priority_distribution = serializers.SerializerMethodField()
+    status_distribution = serializers.SerializerMethodField()
+    
+    # Summary message
+    summary_message = serializers.SerializerMethodField()
+    
+    def get_field_from_summary_data(self, obj, field_name):
+        """Extract field from summary_data JSON"""
+        summary_data = obj.summary_data or {}
+        return summary_data.get(field_name)
+
+    def get_user_id(self, obj):
+        try:
+            return obj.user.id
+        except Exception:
+            return None
+
+    def get_user_name(self, obj):
+        try:
+            full = obj.user.get_full_name()
+            if full:
+                return full
+            return obj.user.username
+        except Exception:
+            return None
+    
+    def get_tasks_created(self, obj):
+        return self.get_field_from_summary_data(obj, 'tasks_created')
+    
+    def get_tasks_assigned(self, obj):
+        return self.get_field_from_summary_data(obj, 'tasks_assigned')
+    
+    def get_tasks_completed(self, obj):
+        return self.get_field_from_summary_data(obj, 'tasks_completed')
+    
+    def get_completion_rate_percent(self, obj):
+        return self.get_field_from_summary_data(obj, 'completion_rate_percent')
+    
+    def get_on_time_completion_rate_percent(self, obj):
+        return self.get_field_from_summary_data(obj, 'on_time_completion_rate_percent')
+    
+    def get_high_priority_tasks(self, obj):
+        return self.get_field_from_summary_data(obj, 'high_priority_tasks')
+    
+    def get_high_priority_completed(self, obj):
+        return self.get_field_from_summary_data(obj, 'high_priority_completed')
+    
+    def get_comments_added(self, obj):
+        return self.get_field_from_summary_data(obj, 'comments_added')
+    
+    def get_files_attached(self, obj):
+        return self.get_field_from_summary_data(obj, 'files_attached')
+    
+    def get_recurring_schedules_created(self, obj):
+        return self.get_field_from_summary_data(obj, 'recurring_schedules_created')
+    
+    def get_active_recurring_schedules(self, obj):
+        return self.get_field_from_summary_data(obj, 'active_recurring_schedules')
+    
+    def get_priority_distribution(self, obj):
+        return self.get_field_from_summary_data(obj, 'priority_distribution') or {}
+    
+    def get_status_distribution(self, obj):
+        return self.get_field_from_summary_data(obj, 'status_distribution') or {}
+    
+    def get_summary_message(self, obj):
+        return self.get_field_from_summary_data(obj, 'summary_message')
+
+
+class WeeklySummaryListSerializer(serializers.Serializer):
+    """Serializer for listing available weeks"""
+    week_start_date = serializers.DateField()
+    week_end_date = serializers.DateField()
+    created_at = serializers.DateTimeField()
+
+
+class WeeklySummaryShareSerializer(serializers.Serializer):
+    """Serializer for creating a share link"""
+    share_link = serializers.CharField(read_only=True)

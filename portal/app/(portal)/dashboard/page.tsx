@@ -34,7 +34,11 @@ import {
 import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
 import { PageErrorCard } from "@/components/page-error-card";
 import { apiClient } from "@/lib/api-client";
-import { Task } from "@/lib/api/tasks";
+import {
+  Task,
+  TaskDashboardSummaryResponse,
+  getTaskDashboardSummary,
+} from "@/lib/api/tasks";
 
 type MeProfile = {
   id?: number;
@@ -67,13 +71,6 @@ type DashboardApplication = {
   logo_url?: string | null;
   can_access?: boolean;
   reason?: string;
-};
-
-type DashboardTasksResponse = {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: Task[];
 };
 
 type RecentApplicationResponse = {
@@ -112,7 +109,8 @@ export default function DashboardPage() {
   const [recentApps, setRecentApps] = useState<DashboardApplication[] | null>(
     null,
   );
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskSummary, setTaskSummary] =
+    useState<TaskDashboardSummaryResponse | null>(null);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -122,14 +120,12 @@ export default function DashboardPage() {
           profileResponse,
           permissionsResponse,
           applicationsResponse,
-          tasksResponse,
+          dashboardSummaryResponse,
         ] = await Promise.all([
           apiClient.get("/me"),
           apiClient.get("/me/permissions"),
           apiClient.get("/applications"),
-          apiClient.get("/tasks", {
-            params: { page: 1 },
-          }),
+          getTaskDashboardSummary(),
         ]);
 
         setProfile(profileResponse.data as MeProfile);
@@ -146,8 +142,8 @@ export default function DashboardPage() {
           // silently ignore recent apps failure; dashboard will fall back to defaults
           setRecentApps(null);
         }
-        const tasksData = tasksResponse.data as DashboardTasksResponse;
-        setTasks(tasksData.results);
+
+        setTaskSummary(dashboardSummaryResponse);
       } catch (error) {
         const message = axios.isAxiosError(error)
           ? ((error.response?.data?.detail as string | undefined) ??
@@ -180,75 +176,30 @@ export default function DashboardPage() {
   const hasGlobalAccess = Boolean(permissions?.has_global_access);
   const isAdmin = isAdminRole(permissions?.role_code, isSuperuser);
 
-  // Task calculations
-  const assignedToMeTasks = useMemo(
-    () => tasks.filter((task) => task.assigned_to.id === (profile?.id ?? -1)),
-    [tasks, profile?.id],
-  );
+  const assignedToMeTasks = taskSummary?.assigned_to.tasks ?? [];
+  const assignedByMeTasks = taskSummary?.assigned_by.tasks ?? [];
 
-  const pendingTasks = useMemo(
-    () => assignedToMeTasks.filter((task) => task.status === "pending"),
-    [assignedToMeTasks],
-  );
-  const inProgressTasks = useMemo(
-    () => assignedToMeTasks.filter((task) => task.status === "in_progress"),
-    [assignedToMeTasks],
-  );
-  const completedTasks = useMemo(
-    () => assignedToMeTasks.filter((task) => task.status === "completed"),
-    [assignedToMeTasks],
-  );
+  const assignedToMeTasksCount = taskSummary?.assigned_to.count ?? 0;
+  const pendingTasks = taskSummary?.assigned_to.pending ?? 0;
+  const inProgressTasks = taskSummary?.assigned_to.in_progress ?? 0;
+  const completedTasks = taskSummary?.assigned_to.completed ?? 0;
+  const highPriorityTasks = taskSummary?.assigned_to.high_priority ?? 0;
+  const overdueOrDueSoonTasks =
+    taskSummary?.assigned_to.due_soon_or_overdue ?? 0;
 
-  const highPriorityTasks = useMemo(
-    () =>
-      assignedToMeTasks.filter(
-        (task) => task.priority === "high" && task.status !== "completed",
-      ),
-    [assignedToMeTasks],
-  );
+  const assignedByMeTasksCount = taskSummary?.assigned_by.count ?? 0;
+  const pendingAssignedByMe = taskSummary?.assigned_by.pending ?? 0;
+  const inProgressAssignedByMe = taskSummary?.assigned_by.in_progress ?? 0;
+  const completedAssignedByMe = taskSummary?.assigned_by.completed ?? 0;
+  const highPriorityAssignedByMe = taskSummary?.assigned_by.high_priority ?? 0;
+  const overdueOrDueSoonAssignedByMe =
+    taskSummary?.assigned_by.due_soon_or_overdue ?? 0;
 
-  const overdueOrDueSoonTasks = useMemo(() => {
-    return assignedToMeTasks.filter((task) => {
-      if (!task.deadline || task.status === "completed") return false;
-      const deadline = new Date(task.deadline);
-      return isPast(deadline) || isDueWithinDays(deadline, 3);
-    });
-  }, [assignedToMeTasks]);
-
-  // Tasks the current user assigned to others
-  const assignedByMeTasks = useMemo(
-    () => tasks.filter((task) => task.assigned_by.id === (profile?.id ?? -1)),
-    [tasks, profile?.id],
-  );
-
-  const pendingAssignedByMe = useMemo(
-    () => assignedByMeTasks.filter((task) => task.status === "pending"),
-    [assignedByMeTasks],
-  );
-  const inProgressAssignedByMe = useMemo(
-    () => assignedByMeTasks.filter((task) => task.status === "in_progress"),
-    [assignedByMeTasks],
-  );
-  const completedAssignedByMe = useMemo(
-    () => assignedByMeTasks.filter((task) => task.status === "completed"),
-    [assignedByMeTasks],
-  );
-
-  const highPriorityAssignedByMe = useMemo(
-    () =>
-      assignedByMeTasks.filter(
-        (task) => task.priority === "high" && task.status !== "completed",
-      ),
-    [assignedByMeTasks],
-  );
-
-  const overdueOrDueSoonAssignedByMe = useMemo(() => {
-    return assignedByMeTasks.filter((task) => {
-      if (!task.deadline || task.status === "completed") return false;
-      const deadline = new Date(task.deadline);
-      return isPast(deadline) || isDueWithinDays(deadline, 3);
-    });
-  }, [assignedByMeTasks]);
+  const totalTasks = taskSummary?.total.count ?? 0;
+  const totalPendingTasks = taskSummary?.total.pending ?? 0;
+  const totalInProgressTasks = taskSummary?.total.in_progress ?? 0;
+  const totalCompletedTasks = taskSummary?.total.completed ?? 0;
+  const totalOverdueTasks = taskSummary?.total.overdue ?? 0;
 
   const accessibleApps = useMemo(
     () =>
@@ -274,25 +225,25 @@ export default function DashboardPage() {
     ? [
         {
           title: "Assigned Tasks",
-          value: assignedToMeTasks.length,
+          value: assignedToMeTasksCount,
           description: "Total tasks assigned to you.",
           icon: ListTodo,
         },
         {
           title: "Pending",
-          value: pendingTasks.length,
+          value: pendingTasks,
           description: "Tasks not yet started.",
           icon: AlertCircle,
         },
         {
           title: "In Progress",
-          value: inProgressTasks.length,
+          value: inProgressTasks,
           description: "Tasks you're actively working on.",
           icon: Clock,
         },
         {
           title: "High Priority",
-          value: highPriorityTasks.length,
+          value: highPriorityTasks,
           description: "Urgent tasks needing attention.",
           icon: Zap,
         },
@@ -301,25 +252,25 @@ export default function DashboardPage() {
       ? [
           {
             title: "Assigned Tasks",
-            value: assignedToMeTasks.length,
+            value: assignedToMeTasksCount,
             description: "Total tasks assigned to you.",
             icon: ListTodo,
           },
           {
             title: "In Progress",
-            value: inProgressTasks.length,
+            value: inProgressTasks,
             description: "Tasks you're currently working on.",
             icon: Clock,
           },
           {
             title: "Due Soon",
-            value: overdueOrDueSoonTasks.length,
+            value: overdueOrDueSoonTasks,
             description: "Tasks due within 3 days or overdue.",
             icon: Calendar,
           },
           {
             title: "Completed",
-            value: completedTasks.length,
+            value: completedTasks,
             description: "Tasks you've finished.",
             icon: CheckCircle,
           },
@@ -327,25 +278,25 @@ export default function DashboardPage() {
       : [
           {
             title: "Assigned Tasks",
-            value: assignedToMeTasks.length,
+            value: assignedToMeTasksCount,
             description: "Total tasks assigned to you.",
             icon: ListTodo,
           },
           {
             title: "Pending",
-            value: pendingTasks.length,
+            value: pendingTasks,
             description: "Tasks not yet started.",
             icon: AlertCircle,
           },
           {
             title: "In Progress",
-            value: inProgressTasks.length,
+            value: inProgressTasks,
             description: "Tasks you're actively working on.",
             icon: Clock,
           },
           {
             title: "High Priority",
-            value: highPriorityTasks.length,
+            value: highPriorityTasks,
             description: "Urgent tasks needing attention.",
             icon: Zap,
           },
@@ -493,11 +444,11 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Your assigned tasks</CardTitle>
             <CardDescription>
-              {`You have ${assignedToMeTasks.length} tasks assigned to you.`}
+              {`You have ${assignedToMeTasksCount} tasks assigned to you.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {assignedToMeTasks.length === 0 ? (
+            {assignedToMeTasksCount === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60">
                 <p>No tasks assigned to you right now. Great work!</p>
               </div>
@@ -590,13 +541,13 @@ export default function DashboardPage() {
                     </div>
                   );
                 })}
-                {assignedToMeTasks.length > 5 && (
+                {assignedToMeTasksCount > 5 && (
                   <Button
                     variant="outline"
                     className="w-full"
                     onClick={() => router.push("/tasks")}
                   >
-                    View all {assignedToMeTasks.length} tasks
+                    View all {assignedToMeTasksCount} tasks
                   </Button>
                 )}
               </div>
@@ -608,11 +559,11 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Tasks you assigned</CardTitle>
             <CardDescription>
-              You have {assignedByMeTasks.length} tasks assigned to others.
+              You have {assignedByMeTasksCount} tasks assigned to others.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {assignedByMeTasks.length === 0 ? (
+            {assignedByMeTasksCount === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60">
                 <p>No tasks assigned by you right now.</p>
               </div>
@@ -705,13 +656,13 @@ export default function DashboardPage() {
                     </div>
                   );
                 })}
-                {assignedByMeTasks.length > 5 && (
+                {assignedByMeTasksCount > 5 && (
                   <Button
                     variant="outline"
                     className="w-full"
                     onClick={() => router.push("/tasks?filter=assigned-by-me")}
                   >
-                    View all {assignedByMeTasks.length} tasks
+                    View all {assignedByMeTasksCount} tasks
                   </Button>
                 )}
               </div>
@@ -733,7 +684,7 @@ export default function DashboardPage() {
                       Total Assigned
                     </span>
                     <span className="text-2xl font-bold text-foreground">
-                      {assignedToMeTasks.length}
+                      {assignedToMeTasksCount}
                     </span>
                   </p>
                 </div>
@@ -743,7 +694,7 @@ export default function DashboardPage() {
                       Pending
                     </span>
                     <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                      {pendingTasks.length}
+                      {pendingTasks}
                     </span>
                   </p>
                 </div>
@@ -753,7 +704,7 @@ export default function DashboardPage() {
                       In Progress
                     </span>
                     <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                      {inProgressTasks.length}
+                      {inProgressTasks}
                     </span>
                   </p>
                 </div>
@@ -763,18 +714,18 @@ export default function DashboardPage() {
                       Completed
                     </span>
                     <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                      {completedTasks.length}
+                      {completedTasks}
                     </span>
                   </p>
                 </div>
-                {overdueOrDueSoonTasks.length > 0 && (
+                {overdueOrDueSoonTasks > 0 && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/25">
                     <p className="flex items-center justify-between">
                       <span className="text-sm font-medium text-amber-700 dark:text-amber-200">
                         Due Soon/Overdue
                       </span>
                       <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                        {overdueOrDueSoonTasks.length}
+                        {overdueOrDueSoonTasks}
                       </span>
                     </p>
                   </div>
@@ -790,7 +741,7 @@ export default function DashboardPage() {
                           Total Tasks
                         </span>
                         <span className="text-lg font-bold text-foreground">
-                          {tasks.length}
+                          {totalTasks}
                         </span>
                       </p>
                     </div>
@@ -800,7 +751,7 @@ export default function DashboardPage() {
                           Pending
                         </span>
                         <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                          {tasks.filter((t) => t.status === "pending").length}
+                          {totalPendingTasks}
                         </span>
                       </p>
                     </div>
@@ -810,10 +761,7 @@ export default function DashboardPage() {
                           In Progress
                         </span>
                         <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                          {
-                            tasks.filter((t) => t.status === "in_progress")
-                              .length
-                          }
+                          {totalInProgressTasks}
                         </span>
                       </p>
                     </div>
@@ -823,7 +771,7 @@ export default function DashboardPage() {
                           Completed
                         </span>
                         <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                          {tasks.filter((t) => t.status === "completed").length}
+                          {totalCompletedTasks}
                         </span>
                       </p>
                     </div>
@@ -833,13 +781,7 @@ export default function DashboardPage() {
                           Overdue
                         </span>
                         <span className="text-lg font-bold text-red-600 dark:text-red-400">
-                          {
-                            tasks.filter((t) => {
-                              if (!t.deadline || t.status === "completed")
-                                return false;
-                              return isPast(new Date(t.deadline));
-                            }).length
-                          }
+                          {totalOverdueTasks}
                         </span>
                       </p>
                     </div>
@@ -854,7 +796,7 @@ export default function DashboardPage() {
                       Total Assigned
                     </span>
                     <span className="text-2xl font-bold text-foreground">
-                      {assignedToMeTasks.length}
+                      {assignedToMeTasksCount}
                     </span>
                   </p>
                 </div>
@@ -864,7 +806,7 @@ export default function DashboardPage() {
                       Pending
                     </span>
                     <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                      {pendingTasks.length}
+                      {pendingTasks}
                     </span>
                   </p>
                 </div>
@@ -874,7 +816,7 @@ export default function DashboardPage() {
                       In Progress
                     </span>
                     <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                      {inProgressTasks.length}
+                      {inProgressTasks}
                     </span>
                   </p>
                 </div>
@@ -884,18 +826,18 @@ export default function DashboardPage() {
                       Completed
                     </span>
                     <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                      {completedTasks.length}
+                      {completedTasks}
                     </span>
                   </p>
                 </div>
-                {overdueOrDueSoonTasks.length > 0 && (
+                {overdueOrDueSoonTasks > 0 && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/25">
                     <p className="flex items-center justify-between">
                       <span className="text-sm font-medium text-amber-700 dark:text-amber-200">
                         Due Soon/Overdue
                       </span>
                       <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                        {overdueOrDueSoonTasks.length}
+                        {overdueOrDueSoonTasks}
                       </span>
                     </p>
                   </div>
@@ -925,7 +867,7 @@ export default function DashboardPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <img
-                          src={application.logo_url ?? '/vercel.svg'}
+                          src={application.logo_url ?? "/vercel.svg"}
                           alt={`${application.name} logo`}
                           className="h-10 w-10 rounded-md object-cover bg-muted"
                         />
@@ -1021,7 +963,7 @@ export default function DashboardPage() {
                     System snapshot
                   </p>
                   <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
-                    <li>• {pluralize(tasks.length, "task")} in the system</li>
+                    <li>• {pluralize(totalTasks, "task")} in the system</li>
                     <li>
                       • {pluralize(applications.length, "application")}{" "}
                       available
@@ -1053,26 +995,19 @@ export default function DashboardPage() {
                   </p>
                   <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
                     <li>
-                      • You have{" "}
-                      {pluralize(pendingTasks.length, "pending task")}
+                      • You have {pluralize(pendingTasks, "pending task")}
                     </li>
+                    <li>• {pluralize(inProgressTasks, "task")} in progress</li>
                     <li>
-                      • {pluralize(inProgressTasks.length, "task")} in progress
-                    </li>
-                    <li>
-                      •{" "}
-                      {pluralize(
-                        highPriorityTasks.length,
-                        "high-priority task",
-                      )}
+                      • {pluralize(highPriorityTasks, "high-priority task")}
                     </li>
                   </ul>
                 </div>
-                {overdueOrDueSoonTasks.length > 0 && (
+                {overdueOrDueSoonTasks > 0 && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/25">
                     <p className="text-sm font-semibold text-amber-800 dark:text-amber-100">
-                      ⚠️ {pluralize(overdueOrDueSoonTasks.length, "task")} due
-                      soon or overdue
+                      ⚠️ {pluralize(overdueOrDueSoonTasks, "task")} due soon or
+                      overdue
                     </p>
                     <p className="mt-1 text-sm text-amber-700 dark:text-amber-200">
                       Review and update these before the deadline.

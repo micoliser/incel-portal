@@ -168,3 +168,45 @@ class TaskAttachment(models.Model):
 
     def __str__(self):
         return self.file_name
+
+
+class WeeklySummary(models.Model):
+    """Pre-calculated weekly summary for a user"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='weekly_summaries')
+    week_start_date = models.DateField()  # Monday of that week
+    week_end_date = models.DateField()    # Sunday
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Summary metrics stored as JSON
+    summary_data = models.JSONField(default=dict)
+    
+    class Meta:
+        unique_together = ('user', 'week_start_date')
+        ordering = ['-week_start_date']
+        indexes = [
+            models.Index(fields=['user', '-week_start_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - Week of {self.week_start_date}"
+
+
+class WeeklySummaryShare(models.Model):
+    """Tracks who can view whose summary - public link sharing"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    summary = models.ForeignKey(WeeklySummary, on_delete=models.CASCADE, related_name='shares')
+    shared_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='summaries_shared')
+    share_token = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiration
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['share_token']),
+            models.Index(fields=['shared_by', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Share of {self.summary} by {self.shared_by.username}"

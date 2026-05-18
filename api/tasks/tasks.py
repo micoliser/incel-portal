@@ -132,4 +132,53 @@ def _create_task_for_occurrence(*, schedule: RecurringSchedule, occurrence: Recu
     )
     occurrence.created_task = task
     occurrence.save(update_fields=['created_task'])
+    
+    return 1
+
+
+@shared_task(name='tasks.generate_weekly_summaries')
+def generate_weekly_summaries() -> dict[str, int]:
+    """Generate weekly summaries for all users every Monday at 00:00"""
+    from datetime import datetime, date
+    from django.contrib.auth.models import User
+    from .models import WeeklySummary
+    from .services import calculate_user_weekly_summary
+    
+    # Calculate the previous week (Monday to Sunday)
+    today = date.today()
+    # Monday is 0, Sunday is 6
+    days_since_monday = today.weekday()
+    week_start = today - timedelta(days=days_since_monday + 7)  # Start of last week
+    week_end = week_start + timedelta(days=6)  # Sunday of last week
+    
+    summaries_created = 0
+    errors = 0
+    
+    # Generate summary for all active users
+    active_users = User.objects.filter(is_active=True)
+    
+    for user in active_users:
+        try:
+            summary_data = calculate_user_weekly_summary(user, week_start, week_end)
+            
+            WeeklySummary.objects.update_or_create(
+                user=user,
+                week_start_date=week_start,
+                defaults={
+                    'week_end_date': week_end,
+                    'summary_data': summary_data,
+                }
+            )
+            summaries_created += 1
+        except Exception as e:
+            logger.error(f'Error generating summary for user {user.id}: {str(e)}')
+            errors += 1
+    
+    logger.info(
+        f'Weekly summaries generated: {summaries_created} created, {errors} errors'
+    )
+    return {
+        'summaries_created': summaries_created,
+        'errors': errors,
+    }
     return 1
