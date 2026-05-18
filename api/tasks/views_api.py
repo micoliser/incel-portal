@@ -1,16 +1,18 @@
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import ModelViewSet, ViewSet
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from django.db import models
+from django.db.models import Count, Q
 from django.utils import timezone
+from datetime import timedelta
 from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
 from emails.services.task_emails import TaskEmailManager
-from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment
+from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary, WeeklySummaryShare
 from .s3 import (
     TaskAttachmentStorageError,
     build_task_attachment_key_prefix,
@@ -22,10 +24,13 @@ from .serializers import (
     RecurringScheduleSerializer,
     TaskSerializer,
     TaskActivitySerializer,
+    WeeklySummarySerializer,
+    WeeklySummaryListSerializer,
 )
 from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
 from .services import calculate_next_run_at, create_task_with_side_effects
 import logging
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +55,80 @@ class TaskViewSet(ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = TaskPagination
+
+    @action(detail=False, methods=['get'])
+    def dashboard(self, request):
+        """GET /tasks/dashboard/ - Dashboard task summary for the current user."""
+        user = request.user
+        now = timezone.now()
+        due_soon_cutoff = now + timedelta(days=3)
+
+        base_queryset = Task.objects.filter(
+            models.Q(assigned_to=user) | models.Q(assigned_by=user)
+        ).distinct()
+
+        assigned_to_queryset = base_queryset.filter(assigned_to=user)
+        assigned_by_queryset = base_queryset.filter(assigned_by=user)
+
+        def build_bucket(queryset):
+            counts = queryset.aggregate(
+                count=Count('id'),
+                pending=Count('id', filter=Q(status='pending')),
+                in_progress=Count('id', filter=Q(status='in_progress')),
+                completed=Count('id', filter=Q(status='completed')),
+                high_priority=Count(
+                    'id',
+                    filter=Q(priority='high') & ~Q(status='completed'),
+                ),
+                due_soon_or_overdue=Count(
+                    'id',
+                    filter=Q(deadline__isnull=False)
+                    & ~Q(status='completed')
+                    & Q(deadline__lte=due_soon_cutoff),
+                ),
+            )
+
+            tasks = TaskSerializer(
+                queryset.select_related('assigned_by', 'assigned_to')[:5],
+                many=True,
+            ).data
+
+            return {
+                'count': counts['count'] or 0,
+                'pending': counts['pending'] or 0,
+                'in_progress': counts['in_progress'] or 0,
+                'completed': counts['completed'] or 0,
+                'high_priority': counts['high_priority'] or 0,
+                'due_soon_or_overdue': counts['due_soon_or_overdue'] or 0,
+                'tasks': tasks,
+            }
+
+        total_counts = base_queryset.aggregate(
+            count=Count('id'),
+            pending=Count('id', filter=Q(status='pending')),
+            in_progress=Count('id', filter=Q(status='in_progress')),
+            completed=Count('id', filter=Q(status='completed')),
+            overdue=Count(
+                'id',
+                filter=Q(deadline__isnull=False)
+                & ~Q(status='completed')
+                & Q(deadline__lt=now),
+            ),
+        )
+
+        return Response(
+            {
+                'assigned_to': build_bucket(assigned_to_queryset),
+                'assigned_by': build_bucket(assigned_by_queryset),
+                'total': {
+                    'count': total_counts['count'] or 0,
+                    'pending': total_counts['pending'] or 0,
+                    'in_progress': total_counts['in_progress'] or 0,
+                    'completed': total_counts['completed'] or 0,
+                    'overdue': total_counts['overdue'] or 0,
+                },
+            }
+        )
 
     def get_queryset(self):
         user = self.request.user
@@ -455,3 +534,112 @@ class RecurringScheduleViewSet(ModelViewSet):
         )
 
         return Response(self.get_serializer(schedule).data)
+
+
+class WeeklySummaryViewSet(ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'])
+    def available_weeks(self, request):
+        """GET /summaries/available-weeks/ - List available summary weeks"""
+        summaries = WeeklySummary.objects.filter(user=request.user).values(
+            'week_start_date', 'week_end_date', 'created_at'
+        ).order_by('-week_start_date')
+        return Response(summaries)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """GET /summaries/summary/?week_start_date=YYYY-MM-DD"""
+        week_start_date = request.query_params.get('week_start_date')
+        if not week_start_date:
+            return Response(
+                {'error': 'week_start_date query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            summary = WeeklySummary.objects.get(
+                user=request.user,
+                week_start_date=week_start_date
+            )
+            serializer = WeeklySummarySerializer(summary)
+            return Response(serializer.data)
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found for the specified week'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'])
+    def share(self, request):
+        """POST /summaries/share/ - Create a public share link"""
+        week_start_date = request.data.get('week_start_date')
+        if not week_start_date:
+            return Response(
+                {'error': 'week_start_date is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            summary = WeeklySummary.objects.get(
+                user=request.user,
+                week_start_date=week_start_date
+            )
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found for the specified week'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generate secure token
+        share_token = secrets.token_urlsafe(48)
+        share = WeeklySummaryShare.objects.create(
+            summary=summary,
+            shared_by=request.user,
+            share_token=share_token
+        )
+
+        log_audit(
+            action='WEEKLY_SUMMARY_SHARED',
+            request=request,
+            target_type='weekly_summary',
+            target_id=summary.id,
+            metadata={
+                'share_token': share_token,
+                'week_start_date': str(week_start_date),
+            },
+        )
+
+        return Response({
+            'share_link': f'/summaries?token={share_token}',
+            'share_token': share_token,
+            'created_at': share.created_at
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], permission_classes=[])
+    def shared(self, request):
+        """GET /summaries/shared/{share_token}/ - View shared summary (public)"""
+        share_token = request.query_params.get('token')
+        if not share_token:
+            return Response(
+                {'error': 'share_token is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            share = WeeklySummaryShare.objects.get(share_token=share_token)
+            
+            # Check if expired
+            if share.expires_at and share.expires_at < timezone.now():
+                return Response(
+                    {'error': 'Share link has expired'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            serializer = WeeklySummarySerializer(share.summary)
+            return Response(serializer.data)
+        except WeeklySummaryShare.DoesNotExist:
+            return Response(
+                {'error': 'Invalid share link'},
+                status=status.HTTP_404_NOT_FOUND
+            )

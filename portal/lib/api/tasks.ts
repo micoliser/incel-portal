@@ -169,6 +169,28 @@ export interface TaskListResponse {
   results: Task[];
 }
 
+export interface TaskDashboardBucket {
+  count: number;
+  pending: number;
+  in_progress: number;
+  completed: number;
+  high_priority: number;
+  due_soon_or_overdue: number;
+  tasks: Task[];
+}
+
+export interface TaskDashboardSummaryResponse {
+  assigned_to: TaskDashboardBucket;
+  assigned_by: TaskDashboardBucket;
+  total: {
+    count: number;
+    pending: number;
+    in_progress: number;
+    completed: number;
+    overdue: number;
+  };
+}
+
 export interface RecurringScheduleListResponse {
   count: number;
   next: string | null;
@@ -214,6 +236,11 @@ export async function getTasks(
     };
   }
 
+  return response.data;
+}
+
+export async function getTaskDashboardSummary(): Promise<TaskDashboardSummaryResponse> {
+  const response = await apiClient.get("/tasks/dashboard/");
   return response.data;
 }
 
