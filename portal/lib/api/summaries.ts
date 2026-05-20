@@ -1,6 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 
 export interface WeeklySummary {
+  id: string;
   week_start_date: string;
   week_end_date: string;
   user_id: string;
@@ -14,6 +15,7 @@ export interface WeeklySummary {
   high_priority_completed: number;
   comments_added: number;
   files_attached: number;
+  files_received: number;
   recurring_schedules_created: number;
   active_recurring_schedules: number;
   priority_distribution: Record<string, number>;
@@ -31,6 +33,30 @@ export interface ShareResponse {
   share_link: string;
   share_token: string;
   created_at: string;
+}
+
+export interface SummaryFileItem {
+  file_id: string;
+  file_name: string;
+  size: number;
+  content_type: string;
+  created_at: string;
+  created_by: string;
+  download_url: string;
+}
+
+export interface SummaryFilesTask {
+  task_id: string;
+  task_title: string;
+  task_created_at: string | null;
+  files: SummaryFileItem[];
+}
+
+export interface SummaryFilesResponse {
+  week_start: string;
+  week_end: string;
+  view_type: "sent" | "recieved";
+  tasks: SummaryFilesTask[];
 }
 
 export const summariesAPI = {
@@ -67,14 +93,158 @@ export const summariesAPI = {
   },
 
   /**
+   * Get public share status for a week
+   */
+  async getShareStatus(
+    weekStartDate: string,
+  ): Promise<{ shared: boolean; share_link?: string; share_token?: string }> {
+    const { data } = await apiClient.get("/summaries/share-status/", {
+      params: { week_start_date: weekStartDate },
+    });
+    return data;
+  },
+
+  /**
+   * Revoke a public share for a week
+   */
+  async revokeShare(weekStartDate: string) {
+    const { data } = await apiClient.post("/summaries/revoke-share/", {
+      week_start_date: weekStartDate,
+    });
+    return data;
+  },
+
+  /**
+   * Share a summary with a specific user (user-to-user share)
+   */
+  async shareWithUser(weekStartDate: string, userId: number) {
+    const { data } = await apiClient.post<ShareResponse>(
+      "/summaries/share-with-user/",
+      {
+        week_start_date: weekStartDate,
+        user_id: userId,
+      },
+    );
+    return data;
+  },
+
+  /**
+   * List user-to-user shares for a summary
+   */
+  async getUserShares(weekStartDate: string) {
+    const { data } = await apiClient.get("/summaries/user-shares/", {
+      params: { week_start_date: weekStartDate },
+    });
+    return data;
+  },
+
+  /**
+   * Revoke a user-to-user share
+   */
+  async revokeUserShare(weekStartDate: string, userId: number) {
+    const { data } = await apiClient.post("/summaries/revoke-user-share/", {
+      week_start_date: weekStartDate,
+      user_id: userId,
+    });
+    return data;
+  },
+
+  /**
    * Get a shared summary (public endpoint, no auth needed)
    */
-  async getSharedSummary(shareToken: string): Promise<WeeklySummary> {
-    const { data } = await apiClient.get<WeeklySummary>("/summaries/shared/", {
+  async getSharedSummary(
+    shareToken: string,
+  ): Promise<{ summary: WeeklySummary; historical?: WeeklySummary[] }> {
+    const { data } = await apiClient.get<{
+      summary: WeeklySummary;
+      historical?: WeeklySummary[];
+    }>("/summaries/shared/", {
       params: {
         token: shareToken,
       },
     });
+    return data;
+  },
+
+  /**
+   * Get week-over-week comparison metrics for a summary
+   */
+  async getComparisonMetrics(
+    weekStartDate: string,
+  ): Promise<Record<string, any>> {
+    const { data } = await apiClient.get<Record<string, any>>(
+      "/summaries/comparison-metrics/",
+      {
+        params: {
+          week_start_date: weekStartDate,
+        },
+      },
+    );
+    return data;
+  },
+
+  /**
+   * Get historical summaries (including the provided week) for the last N weeks
+   */
+  async getHistoricalSummaries(
+    weekStartDate: string,
+    weeks = 4,
+  ): Promise<WeeklySummary[]> {
+    const { data } = await apiClient.get<WeeklySummary[]>(
+      "/summaries/historical/",
+      {
+        params: {
+          week_start_date: weekStartDate,
+          weeks,
+        },
+      },
+    );
+    return data;
+  },
+
+  /**
+   * Get user's goals
+   */
+  async getGoals(): Promise<Record<string, any>[]> {
+    const { data } =
+      await apiClient.get<Record<string, any>[]>("/summaries/goals/");
+    return data;
+  },
+
+  /**
+   * Get goal progress for a specific week
+   */
+  async getGoalProgress(weekStartDate: string): Promise<Record<string, any>[]> {
+    const { data } = await apiClient.get<Record<string, any>[]>(
+      "/summaries/goal-progress/",
+      {
+        params: {
+          week_start_date: weekStartDate,
+        },
+      },
+    );
+    return data;
+  },
+
+  /**
+   * Get files for a specific summary, grouped by task
+   * @param summaryId - UUID of the weekly summary
+   * @param viewType - 'sent' for files attached by user, 'recieved' for files from others
+   */
+  async getWeekFiles(
+    summaryId: string,
+    viewType: "sent" | "recieved" = "sent",
+    token?: string,
+  ): Promise<SummaryFilesResponse> {
+    const params: Record<string, any> = { view: viewType };
+    if (token) params.token = token;
+
+    const { data } = await apiClient.get<SummaryFilesResponse>(
+      `/summaries/${summaryId}/files/`,
+      {
+        params,
+      },
+    );
     return data;
   },
 };

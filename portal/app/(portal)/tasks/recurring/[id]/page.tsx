@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -49,6 +49,7 @@ function formatScheduleSummary(schedule: RecurringSchedule): string {
 
 export default function RecurringTaskDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const scheduleId = String(params.id);
 
   const [schedule, setSchedule] = useState<RecurringSchedule | null>(null);
@@ -150,11 +151,9 @@ export default function RecurringTaskDetailPage() {
         message={error || "Recurring task not found"}
         onRetry={() => window.location.reload()}
         actions={
-          <Link href="/tasks">
-            <Button type="button" variant="outline">
-              Back to Tasks
-            </Button>
-          </Link>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Back to Tasks
+          </Button>
         }
       />
     );
@@ -175,13 +174,13 @@ export default function RecurringTaskDetailPage() {
 
   return (
     <div className="space-y-8">
-      <Link
-        href="/tasks"
+      <button
+        onClick={() => router.back()}
         className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Tasks
-      </Link>
+      </button>
 
       <div className="flex items-start justify-between gap-4">
         <div>

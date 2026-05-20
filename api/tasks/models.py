@@ -181,6 +181,19 @@ class WeeklySummary(models.Model):
     # Summary metrics stored as JSON
     summary_data = models.JSONField(default=dict)
     
+    # PHASE 2: Week-over-week comparison
+    previous_week_summary = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='next_week'
+    )
+    comparison_metrics = models.JSONField(
+        default=dict,
+        help_text="Week-over-week changes: delta_tasks, delta_completion_rate, etc."
+    )
+    
     class Meta:
         unique_together = ('user', 'week_start_date')
         ordering = ['-week_start_date']
@@ -210,3 +223,107 @@ class WeeklySummaryShare(models.Model):
 
     def __str__(self):
         return f"Share of {self.summary} by {self.shared_by.username}"
+
+
+# PHASE 2 MODELS
+
+class WeeklySummaryUserShare(models.Model):
+    """User-to-user explicit sharing of summaries"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    summary = models.ForeignKey(WeeklySummary, on_delete=models.CASCADE, related_name='user_shares')
+    shared_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='summaries_shared_by_me'
+    )
+    shared_with = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='summaries_shared_with_me'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Token allowing the recipient to open the shared summary. This token is user-scoped
+    # and should be validated against the `shared_with` user when consumed.
+    share_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    
+    class Meta:
+        unique_together = ('summary', 'shared_with')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['shared_with', '-created_at']),
+            models.Index(fields=['shared_by', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.shared_by.username} shared {self.summary} with {self.shared_with.username}"
+
+
+class SummaryExport(models.Model):
+    """Track PDF/CSV exports of summaries"""
+    EXPORT_FORMATS = [
+        ('pdf', 'PDF'),
+        ('csv', 'CSV'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    summary = models.ForeignKey(WeeklySummary, on_delete=models.CASCADE, related_name='exports')
+    exported_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='exported_summaries')
+    format = models.CharField(max_length=10, choices=EXPORT_FORMATS)
+    file_url = models.CharField(max_length=500)  # S3 or local file URL
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['exported_by', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.summary} exported as {self.format} by {self.exported_by.username}"
+
+
+class UserGoal(models.Model):
+    """Goal tracking for users to set targets and track progress"""
+    GOAL_METRICS = [
+        ('completion_rate', 'Completion Rate (%)'),
+        ('tasks_completed', 'Tasks Completed'),
+        ('high_priority_completed', 'High Priority Tasks Completed'),
+        ('on_time_completion_rate', 'On-Time Completion Rate (%)'),
+        ('comments_added', 'Comments Added'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='goals')
+    metric = models.CharField(max_length=50, choices=GOAL_METRICS)
+    target_value = models.FloatField()  # e.g., 90.0 for 90%
+    period_start = models.DateField()
+    period_end = models.DateField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.metric}: {self.target_value}"
+
+
+class OrganizationSummaryCache(models.Model):
+    """Cache organization-wide summaries to avoid expensive queries"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    week_start_date = models.DateField()
+    week_end_date = models.DateField()
+    summary_data = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('week_start_date',)
+        ordering = ['-week_start_date']
+    
+    def __str__(self):
+        return f"Org Summary - Week of {self.week_start_date}"

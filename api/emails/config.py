@@ -6,6 +6,7 @@ class EmailType(Enum):
     """Email types supported by the system."""
     TASK_CREATED = "task_created"
     TASK_COMPLETED = "task_completed"
+    WEEKLY_SUMMARY = "weekly_summary"
     RECURRING_TASK_CREATED = "recurring_task_created"
     RECURRING_TASK_UPDATED = "recurring_task_updated"
     RECURRING_TASK_PAUSED = "recurring_task_paused"

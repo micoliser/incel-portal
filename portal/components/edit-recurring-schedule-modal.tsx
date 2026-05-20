@@ -182,6 +182,8 @@ export function EditRecurringScheduleModal({
     end_at: "",
     deadline_offset_minutes: "0",
   });
+  const [deadlineOffsetHours, setDeadlineOffsetHours] = useState("0");
+  const [deadlineOffsetMins, setDeadlineOffsetMins] = useState("0");
   const deadlineMin = getDatetimeLocalMin();
   const hasStarted = Boolean(
     schedule && new Date(schedule.start_at) <= new Date(),
@@ -205,6 +207,10 @@ export function EditRecurringScheduleModal({
     });
     setFormErrors({});
     setApiError(null);
+    // sync hours/mins
+    const total = schedule.deadline_offset_minutes || 0;
+    setDeadlineOffsetHours(String(Math.floor(total / 60)));
+    setDeadlineOffsetMins(String(total % 60));
   }, [schedule, open]);
 
   const resetAndClose = () => {
@@ -293,7 +299,7 @@ export function EditRecurringScheduleModal({
         }
       }}
     >
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Recurring Task</DialogTitle>
           <DialogDescription>
@@ -594,35 +600,72 @@ export function EditRecurringScheduleModal({
               <div>
                 <div className="flex items-center gap-2">
                   <Label htmlFor="deadline_offset_minutes">
-                    Deadline Offset (minutes)
+                    Deadline Offset
                   </Label>
                   <div className="group relative">
                     <HelpCircle className="h-4 w-4 cursor-help text-muted-foreground" />
                     <div className="absolute bottom-full left-1/2 z-10 mb-2 hidden w-max -translate-x-1/2 whitespace-normal rounded bg-slate-900 px-2 py-1 text-xs text-white group-hover:block">
-                      Minutes added to the task creation time to set the
-                      deadline.
+                      Offset from task creation to deadline. Enter hours and
+                      minutes (hours may be 0).
                     </div>
                   </div>
                 </div>
-                <Input
-                  id="deadline_offset_minutes"
-                  type="number"
-                  min="0"
-                  value={formData.deadline_offset_minutes}
-                  onChange={(event) => {
-                    setFormData({
-                      ...formData,
-                      deadline_offset_minutes: event.target.value,
-                    });
-                    setFormErrors((current) => ({
-                      ...current,
-                      deadline_offset_minutes: undefined,
-                    }));
-                  }}
-                  disabled={submitting}
-                  className="mt-2"
-                  aria-invalid={Boolean(formErrors.deadline_offset_minutes)}
-                />
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="deadline_offset_hours"
+                      type="number"
+                      min="0"
+                      value={deadlineOffsetHours}
+                      onChange={(event) => {
+                        const h = event.target.value.replace(/[^0-9]/g, "");
+                        setDeadlineOffsetHours(h);
+                        const total =
+                          Number(h || 0) * 60 + Number(deadlineOffsetMins || 0);
+                        setFormData({
+                          ...formData,
+                          deadline_offset_minutes: String(total),
+                        });
+                        setFormErrors((current) => ({
+                          ...current,
+                          deadline_offset_minutes: undefined,
+                        }));
+                      }}
+                      disabled={submitting}
+                      className="w-20"
+                    />
+                    <span className="text-sm">h</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="deadline_offset_minutes"
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={deadlineOffsetMins}
+                      onChange={(event) => {
+                        let m = event.target.value.replace(/[^0-9]/g, "");
+                        if (m === "") m = "0";
+                        let mm = Number(m);
+                        if (mm > 59) mm = 59;
+                        setDeadlineOffsetMins(String(mm));
+                        const total =
+                          Number(deadlineOffsetHours || 0) * 60 + mm;
+                        setFormData({
+                          ...formData,
+                          deadline_offset_minutes: String(total),
+                        });
+                        setFormErrors((current) => ({
+                          ...current,
+                          deadline_offset_minutes: undefined,
+                        }));
+                      }}
+                      disabled={submitting}
+                      className="w-20"
+                    />
+                    <span className="text-sm">m</span>
+                  </div>
+                </div>
                 {formErrors.deadline_offset_minutes ? (
                   <p className="mt-1 text-xs text-destructive">
                     {formErrors.deadline_offset_minutes}

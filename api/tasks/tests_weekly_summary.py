@@ -23,6 +23,7 @@ def build_summary_data(**overrides):
         'high_priority_completed': 2,
         'comments_added': 9,
         'files_attached': 4,
+        'files_received': 2,
         'recurring_schedules_created': 2,
         'active_recurring_schedules': 5,
         'priority_distribution': {
@@ -85,6 +86,7 @@ class WeeklySummaryApiTests(BaseAPITestCase):
             high_priority_completed=4,
             comments_added=12,
             files_attached=7,
+            files_received=3,
             recurring_schedules_created=3,
             active_recurring_schedules=6,
             priority_distribution={'high': 5, 'medium': 4, 'low': 3},
@@ -112,6 +114,7 @@ class WeeklySummaryApiTests(BaseAPITestCase):
         self.assertEqual(response.data['high_priority_completed'], 4)
         self.assertEqual(response.data['comments_added'], 12)
         self.assertEqual(response.data['files_attached'], 7)
+        self.assertEqual(response.data['files_received'], 3)
         self.assertEqual(response.data['recurring_schedules_created'], 3)
         self.assertEqual(response.data['active_recurring_schedules'], 6)
         self.assertEqual(response.data['priority_distribution'], {'high': 5, 'medium': 4, 'low': 3})

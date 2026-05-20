@@ -1,8 +1,9 @@
 "use client";
 
 import axios from "axios";
-import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { formatDistanceToNow, format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import {
@@ -18,7 +19,9 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Eye,
 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +31,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { PageErrorCard } from "@/components/page-error-card";
 import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
 import {
@@ -35,11 +45,18 @@ import {
   WeeklySummary,
   AvailableWeek,
 } from "@/lib/api/summaries";
+import { MemoizedSummaryComparison } from "./components/SummaryComparison";
+import { MemoizedSummaryCharts } from "./components/SummaryCharts";
+import { MemoizedGoalTracker } from "./components/GoalTracker";
+import ShareWithUserModal from "./components/ShareWithUserModal";
 
 function SummariesContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const shareToken = searchParams.get("token");
+  const summaryId = searchParams.get("id");
   const isSharedView = !!shareToken;
+  const mainContentRef = useRef<HTMLDivElement | null>(null);
 
   const [availableWeeks, setAvailableWeeks] = useState<AvailableWeek[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
@@ -49,7 +66,17 @@ function SummariesContent() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [creatingShare, setCreatingShare] = useState(false);
   const [shares, setShares] = useState<Record<string, string>>({});
+  const [shareConfirmOpen, setShareConfirmOpen] = useState(false);
+  const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [loadingShareStatus, setLoadingShareStatus] = useState(false);
+  const [shareWithUserOpen, setShareWithUserOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [comparisonMetrics, setComparisonMetrics] = useState<any>(null);
+  const [goals, setGoals] = useState<any[]>([]);
+  const [goalProgress, setGoalProgress] = useState<Record<string, any>>({});
+  const [loadingPhase2, setLoadingPhase2] = useState(false);
+  const [historicalSummaries, setHistoricalSummaries] = useState<any[]>([]);
 
   // Fetch available weeks on mount (only for non-shared view)
   useEffect(() => {
@@ -65,12 +92,16 @@ function SummariesContent() {
         try {
           setLoading(true);
           const data = await summariesAPI.getSharedSummary(shareToken);
-          setSummary(data);
+          // data: { summary, historical? }
+          setSummary(data.summary || (data as any));
+          // set comparison metrics if present
+          if (data.summary && (data.summary as any).comparison_metrics) {
+            setComparisonMetrics((data.summary as any).comparison_metrics);
+          }
+          setHistoricalSummaries(data.historical || []);
           setError(null);
         } catch (err: any) {
-          if (err.response?.status === 403) {
-            setError("This share link has expired");
-          } else if (err.response?.status === 404) {
+          if (err.response?.status === 403 || err.response?.status === 404) {
             setError("Invalid share link");
           } else {
             setError("Failed to load the shared summary");
@@ -91,8 +122,12 @@ function SummariesContent() {
           setAvailableWeeks(weeks);
 
           if (weeks.length > 0) {
-            // Auto-select the most recent week
-            setSelectedWeek(weeks[0].week_start_date);
+            // Auto-select the most recent week, or prefer URL param if present
+            if (summaryId) {
+              setSelectedWeek(summaryId);
+            } else {
+              setSelectedWeek(weeks[0].week_start_date);
+            }
           }
         } catch (err) {
           setError("Failed to load available weeks");
@@ -110,18 +145,81 @@ function SummariesContent() {
   useEffect(() => {
     if (!selectedWeek) return;
 
+    // Load public share status for selected week
+    (async () => {
+      try {
+        setLoadingShareStatus(true);
+        const status = await summariesAPI.getShareStatus(selectedWeek);
+        if (status?.shared && status.share_token) {
+          setShares((prev) => ({
+            ...prev,
+            [selectedWeek]: `/summaries?token=${status.share_token}`,
+          }));
+        } else {
+          setShares((prev) => {
+            const copy = { ...prev };
+            delete copy[selectedWeek];
+            return copy;
+          });
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        setLoadingShareStatus(false);
+      }
+    })();
+
+    mainContentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
     const fetchSummary = async () => {
       try {
         setLoading(true);
         const summaryData = await summariesAPI.getSummary(selectedWeek);
         setSummary(summaryData);
         setError(null);
+
+        // Fetch Phase 2 data (comparisons, goals, goal progress)
+        setLoadingPhase2(true);
+        try {
+          // Fetch comparison metrics if available
+          const comparison =
+            await summariesAPI.getComparisonMetrics(selectedWeek);
+          setComparisonMetrics(comparison);
+        } catch (err) {
+          // Comparison may not exist for first week
+          setComparisonMetrics(null);
+        }
+
+        try {
+          // Fetch historical summaries (last 4 weeks) for charts
+          const historical = await summariesAPI.getHistoricalSummaries(
+            selectedWeek,
+            4,
+          );
+          setHistoricalSummaries(historical || []);
+        } catch (err) {
+          setHistoricalSummaries([]);
+        }
+
+        try {
+          // Fetch user goals
+          const userGoals = await summariesAPI.getGoals();
+          setGoals(userGoals);
+
+          // Fetch goal progress for the selected week
+          const progress = await summariesAPI.getGoalProgress(selectedWeek);
+          setGoalProgress(progress);
+        } catch (err) {
+          setGoals([]);
+          setGoalProgress({});
+        }
       } catch (err) {
         setError("Failed to load summary for the selected week");
         console.error(err);
         setSummary(null);
       } finally {
         setLoading(false);
+        setLoadingPhase2(false);
       }
     };
 
@@ -141,6 +239,7 @@ function SummariesContent() {
         [selectedWeek]: frontendPath,
       }));
       toast.success("Share link created! Copy it to share.");
+      setShareConfirmOpen(false);
     } catch (err) {
       toast.error("Failed to create share link");
       console.error(err);
@@ -192,17 +291,11 @@ function SummariesContent() {
   if (error && !summary) {
     if (isSharedView) {
       return (
-        <Card className="bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-900">
-          <CardHeader>
-            <CardTitle className="text-red-900 dark:text-red-300 flex items-center space-x-2">
-              <AlertCircle className="w-5 h-5" />
-              <span>Cannot Load Summary</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-red-700 dark:text-red-400">{error}</p>
-          </CardContent>
-        </Card>
+        <PageErrorCard
+          title="Cannot Load Summary"
+          message={error}
+          onRetry={() => window.location.reload()}
+        />
       );
     }
     return (
@@ -231,17 +324,28 @@ function SummariesContent() {
     );
   }
 
+  const gridTemplateColumns = isSharedView
+    ? "0px minmax(0, 1fr)"
+    : sidebarCollapsed
+      ? "3rem minmax(0, 1fr)"
+      : "16rem minmax(0, 1fr)";
+
   return (
-    <div className="flex h-[calc(100dvh-14rem)] sm:h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-9rem)] bg-transparent">
+    <div
+      className="grid h-[calc(100dvh-14rem)] bg-transparent transition-[grid-template-columns] duration-200 ease-out will-change-[grid-template-columns] sm:h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-9rem)]"
+      style={{ gridTemplateColumns }}
+    >
       {/* Sidebar - Week Navigation (only for non-shared view) */}
       {!isSharedView && (
         <aside
-          className={`sticky top-0 flex h-[calc(100dvh-14rem)] shrink-0 flex-col border-r border-t border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300 dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(9,15,26,0.98)_0%,rgba(4,8,15,0.98)_100%)] sm:h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-9rem)] ${
-            sidebarCollapsed ? "w-16" : "w-72"
-          }`}
+          className={`z-20 flex h-[calc(100dvh-14rem)] w-full flex-col overflow-hidden border-r border-t border-sidebar-border bg-sidebar text-sidebar-foreground dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(9,15,26,0.98)_0%,rgba(4,8,15,0.98)_100%)] sm:h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-9rem)]`}
         >
           {/* Toggle Button */}
-          <div className="flex items-center justify-between border-b border-sidebar-border px-3 py-3 dark:border-slate-700/70">
+          <div
+            className={`flex items-center border-b border-sidebar-border py-3 dark:border-slate-700/70 ${
+              sidebarCollapsed ? "justify-center px-1" : "justify-between px-3"
+            }`}
+          >
             {!sidebarCollapsed && (
               <span className="text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/60">
                 Weeks
@@ -249,7 +353,7 @@ function SummariesContent() {
             )}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="ml-auto rounded-lg p-1 hover:bg-muted dark:hover:bg-slate-700/50"
+              className="ml-auto rounded-lg p-1 transition-transform duration-150 hover:bg-muted dark:hover:bg-slate-700/50"
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {sidebarCollapsed ? (
@@ -267,7 +371,13 @@ function SummariesContent() {
                 {availableWeeks.map((week) => (
                   <button
                     key={week.week_start_date}
-                    onClick={() => setSelectedWeek(week.week_start_date)}
+                    onClick={() => {
+                      const url = shareToken
+                        ? `/summaries?id=${week.week_start_date}&token=${shareToken}`
+                        : `/summaries?id=${week.week_start_date}`;
+                      router.push(url);
+                      setSelectedWeek(week.week_start_date);
+                    }}
                     className={`w-full rounded-lg transition-colors ${
                       selectedWeek === week.week_start_date
                         ? "bg-accent text-accent-foreground shadow-sm"
@@ -306,7 +416,7 @@ function SummariesContent() {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={mainContentRef} className="col-start-2 min-w-0 overflow-y-auto">
         <div className="space-y-8 p-8">
           {/* Shared View Header (only shown for shared) */}
           {isSharedView && summary && (
@@ -328,17 +438,11 @@ function SummariesContent() {
           {loading && !summary ? (
             <DashboardSkeleton />
           ) : error && !summary ? (
-            <Card className="bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-900">
-              <CardHeader>
-                <CardTitle className="text-red-900 dark:text-red-300 flex items-center space-x-2">
-                  <AlertCircle className="w-5 h-5" />
-                  <span>Error Loading Summary</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-red-700 dark:text-red-400">{error}</p>
-              </CardContent>
-            </Card>
+            <PageErrorCard
+              title="Cannot Load Summary"
+              message={error}
+              onRetry={() => window.location.reload()}
+            />
           ) : !selectedWeek && !isSharedView ? (
             <Card className="bg-blue-50 dark:bg-slate-900 border-blue-200 dark:border-blue-900">
               <CardHeader>
@@ -374,6 +478,69 @@ function SummariesContent() {
                     </p>
                   </CardContent>
                 </Card>
+                <Dialog
+                  open={revokeConfirmOpen}
+                  onOpenChange={setRevokeConfirmOpen}
+                >
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Revoke Share Link</DialogTitle>
+                      <DialogDescription>
+                        Are you sure you want to revoke the share link? Users
+                        with the previous link will no longer be able to view
+                        this summary.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex gap-3 justify-end pt-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setRevokeConfirmOpen(false)}
+                        disabled={isRevoking}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={async () => {
+                          if (!selectedWeek) return;
+                          try {
+                            setIsRevoking(true);
+                            const resp =
+                              await summariesAPI.revokeShare(selectedWeek);
+                            if (resp?.revoked) {
+                              setShares((prev) => {
+                                const copy = { ...prev };
+                                delete copy[selectedWeek];
+                                return copy;
+                              });
+                              toast.success("Share link revoked");
+                              setRevokeConfirmOpen(false);
+                            } else {
+                              toast.error("Failed to revoke share");
+                            }
+                          } catch (e) {
+                            console.error(e);
+                            toast.error("Failed to revoke share");
+                          } finally {
+                            setIsRevoking(false);
+                          }
+                        }}
+                        disabled={isRevoking}
+                      >
+                        {isRevoking ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Revoking...
+                          </>
+                        ) : (
+                          "Revoke"
+                        )}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
                 <Card>
                   <CardHeader className="pb-3">
@@ -432,12 +599,49 @@ function SummariesContent() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <FileText className="w-5 h-5 text-green-500 dark:text-green-400" />
-                        <span className="text-gray-700 dark:text-slate-300">
-                          Files Attached
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-700 dark:text-slate-300">
+                            Files Attached
+                          </span>
+                          {summary.id && (
+                            <Link
+                              href={
+                                isSharedView && shareToken
+                                  ? `/summaries/${summary.id}/files?v=sent&token=${shareToken}`
+                                  : `/summaries/${summary.id}/files?v=sent`
+                              }
+                            >
+                              <Eye className="h-4 w-4 text-green-500 dark:text-green-400 cursor-pointer hover:text-green-700 dark:hover:text-green-300" />
+                            </Link>
+                          )}
+                        </div>
                       </div>
                       <span className="text-2xl font-bold">
                         {summary.files_attached}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <FileText className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-700 dark:text-slate-300">
+                            Files Received
+                          </span>
+                          {summary.id && (
+                            <Link
+                              href={
+                                isSharedView && shareToken
+                                  ? `/summaries/${summary.id}/files?v=recieved&token=${shareToken}`
+                                  : `/summaries/${summary.id}/files?v=recieved`
+                              }
+                            >
+                              <Eye className="h-4 w-4 text-blue-500 dark:text-blue-400 cursor-pointer hover:text-blue-700 dark:hover:text-blue-300" />
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-2xl font-bold">
+                        {summary.files_received}
                       </span>
                     </div>
 
@@ -535,6 +739,29 @@ function SummariesContent() {
                 </CardContent>
               </Card>
 
+              {/* Phase 2: Week-over-Week Comparison */}
+              {comparisonMetrics &&
+                Object.keys(comparisonMetrics).length > 0 && (
+                  <MemoizedSummaryComparison
+                    current={summary}
+                    comparison={comparisonMetrics}
+                  />
+                )}
+
+              {/* Phase 2: Analytics Charts */}
+              <MemoizedSummaryCharts
+                summaryData={summary}
+                historicalData={historicalSummaries}
+              />
+
+              {/* Phase 2: Goal Tracker */}
+              {!isSharedView && (
+                <MemoizedGoalTracker
+                  goals={goals}
+                  goalProgress={goalProgress}
+                />
+              )}
+
               {/* Share Section - only for non-shared view */}
               {!isSharedView && (
                 <Card>
@@ -548,8 +775,26 @@ function SummariesContent() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => setShareWithUserOpen(true)}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Share with user
+                      </Button>
+                    </div>
+                    <ShareWithUserModal
+                      open={shareWithUserOpen}
+                      onClose={() => setShareWithUserOpen(false)}
+                      weekStartDate={selectedWeek || ""}
+                      onShared={(userId) => {
+                        // optional: show feedback or update UI
+                        console.log("shared with", userId);
+                      }}
+                    />
                     {shares[selectedWeek || ""] ? (
-                      <div className="flex space-x-2">
+                      <div className="flex space-x-2 items-center">
                         <input
                           type="text"
                           value={`${window.location.origin}${shares[selectedWeek || ""]}`}
@@ -575,16 +820,74 @@ function SummariesContent() {
                             </>
                           )}
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setRevokeConfirmOpen(true)}
+                          disabled={isRevoking}
+                        >
+                          {isRevoking ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Revoking...
+                            </>
+                          ) : (
+                            "Revoke"
+                          )}
+                        </Button>
                       </div>
                     ) : (
-                      <Button
-                        onClick={handleCreateShare}
-                        disabled={creatingShare}
-                        className="w-full"
-                      >
-                        <Share2 className="w-4 h-4 mr-2" />
-                        {creatingShare ? "Creating..." : "Create Share Link"}
-                      </Button>
+                      <>
+                        <Button
+                          onClick={() => setShareConfirmOpen(true)}
+                          disabled={creatingShare}
+                          className="w-full"
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          {creatingShare ? "Creating..." : "Create Share Link"}
+                        </Button>
+
+                        <Dialog
+                          open={shareConfirmOpen}
+                          onOpenChange={setShareConfirmOpen}
+                        >
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Share Summary Publicly</DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to share this summary to
+                                public? Everyone with the share link will be
+                                able to view this summary if you confirm
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="flex gap-3 justify-end pt-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setShareConfirmOpen(false)}
+                                disabled={creatingShare}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => void handleCreateShare()}
+                                disabled={creatingShare}
+                              >
+                                {creatingShare ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Creating...
+                                  </>
+                                ) : (
+                                  "Confirm"
+                                )}
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </>
                     )}
                   </CardContent>
                 </Card>
