@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment
+from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary, WeeklySummaryUserShare, SummaryExport, UserGoal
 from .s3 import TaskAttachmentStorageError, generate_task_attachment_download_url
 
 
@@ -432,6 +432,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
 class WeeklySummarySerializer(serializers.Serializer):
     """Serializer for weekly summary data - flattens summary_data fields"""
+    id = serializers.UUIDField()
     week_start_date = serializers.DateField()
     week_end_date = serializers.DateField()
     # Include user information for shared views
@@ -452,6 +453,7 @@ class WeeklySummarySerializer(serializers.Serializer):
     # Engagement metrics
     comments_added = serializers.SerializerMethodField()
     files_attached = serializers.SerializerMethodField()
+    files_received = serializers.SerializerMethodField()
     recurring_schedules_created = serializers.SerializerMethodField()
     active_recurring_schedules = serializers.SerializerMethodField()
     
@@ -508,6 +510,26 @@ class WeeklySummarySerializer(serializers.Serializer):
     
     def get_files_attached(self, obj):
         return self.get_field_from_summary_data(obj, 'files_attached')
+
+    def get_files_received(self, obj):
+        stored_value = self.get_field_from_summary_data(obj, 'files_received')
+        if stored_value is not None:
+            return stored_value
+
+        try:
+            from django.utils import timezone as django_timezone
+            from datetime import datetime
+            from .services import calculate_user_files_received
+
+            week_start_dt = django_timezone.make_aware(
+                datetime.combine(obj.week_start_date, datetime.min.time())
+            )
+            week_end_dt = django_timezone.make_aware(
+                datetime.combine(obj.week_end_date, datetime.max.time())
+            )
+            return calculate_user_files_received(obj.user, week_start_dt, week_end_dt)
+        except Exception:
+            return 0
     
     def get_recurring_schedules_created(self, obj):
         return self.get_field_from_summary_data(obj, 'recurring_schedules_created')
@@ -535,3 +557,100 @@ class WeeklySummaryListSerializer(serializers.Serializer):
 class WeeklySummaryShareSerializer(serializers.Serializer):
     """Serializer for creating a share link"""
     share_link = serializers.CharField(read_only=True)
+
+
+# PHASE 2 SERIALIZERS
+
+class WeeklySummaryComparisonSerializer(serializers.Serializer):
+    """Serializer for week-over-week comparison data"""
+    delta_tasks_completed = serializers.IntegerField()
+    delta_completion_rate = serializers.FloatField()
+    delta_on_time_completion_rate = serializers.FloatField()
+    delta_high_priority_completed = serializers.IntegerField()
+    delta_comments = serializers.IntegerField()
+    delta_files = serializers.IntegerField()
+    trend = serializers.CharField()
+    velocity_change_percent = serializers.FloatField(required=False)
+    previous_week_start = serializers.DateField(required=False)
+
+
+class SummaryWithComparisonSerializer(WeeklySummarySerializer):
+    """Extended serializer including comparison metrics"""
+    comparison_metrics = serializers.SerializerMethodField()
+    
+    def get_comparison_metrics(self, obj):
+        comparison = obj.comparison_metrics or {}
+        if comparison:
+            return {
+                'delta_tasks_completed': comparison.get('delta_tasks_completed', 0),
+                'delta_completion_rate': comparison.get('delta_completion_rate', 0),
+                'delta_on_time_completion_rate': comparison.get('delta_on_time_completion_rate', 0),
+                'delta_high_priority_completed': comparison.get('delta_high_priority_completed', 0),
+                'delta_comments': comparison.get('delta_comments', 0),
+                'delta_files': comparison.get('delta_files', 0),
+                'trend': comparison.get('trend', 'flat'),
+                'velocity_change_percent': comparison.get('velocity_change_percent'),
+            }
+        return None
+
+
+class WeeklySummaryUserShareSerializer(serializers.Serializer):
+    """Serializer for user-to-user sharing"""
+    id = serializers.CharField(read_only=True)
+    shared_with = serializers.IntegerField(source='shared_with.id', read_only=True)
+    shared_with_username = serializers.SerializerMethodField()
+    share_token = serializers.CharField(read_only=True, allow_null=True)
+    share_link = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(read_only=True)
+    
+    def get_shared_with_username(self, obj):
+        try:
+            return obj.shared_with.username
+        except Exception:
+            return None
+
+    def get_share_link(self, obj):
+        try:
+            token = getattr(obj, 'share_token', None)
+            if token:
+                return f"/summaries?token={token}"
+        except Exception:
+            pass
+        return None
+
+
+class SummaryExportSerializer(serializers.ModelSerializer):
+    """Serializer for summary exports"""
+    class Meta:
+        model = SummaryExport
+        fields = ['id', 'format', 'file_url', 'created_at']
+        read_only_fields = ['id', 'file_url', 'created_at']
+
+
+class UserGoalSerializer(serializers.ModelSerializer):
+    """Serializer for user goals"""
+    class Meta:
+        model = UserGoal
+        fields = ['id', 'metric', 'target_value', 'period_start', 'period_end', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class GoalProgressSerializer(serializers.Serializer):
+    """Serializer for goal progress tracking"""
+    metric = serializers.CharField()
+    target = serializers.FloatField()
+    current = serializers.FloatField()
+    achieved = serializers.BooleanField()
+    difference = serializers.FloatField()
+
+
+class OrganizationSummarySerializer(serializers.Serializer):
+    """Serializer for organization-wide summary"""
+    week_start_date = serializers.DateField()
+    week_end_date = serializers.DateField()
+    total_active_users = serializers.IntegerField()
+    total_tasks_completed = serializers.IntegerField()
+    total_tasks_assigned = serializers.IntegerField()
+    avg_completion_rate_percent = serializers.FloatField()
+    avg_on_time_completion_rate_percent = serializers.FloatField()
+    summaries_count = serializers.IntegerField()

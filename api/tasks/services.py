@@ -256,6 +256,7 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
     ).annotate(
         attachment_count=Count('attachments')
     ).aggregate(total=Count('attachments', filter=Q(attachments__isnull=False)))['total'] or 0
+    files_received = calculate_user_files_received(user, week_start_dt, week_end_dt)
     
     # Recurring schedules created by this user during the week
     recurring_created = RecurringSchedule.objects.filter(
@@ -314,6 +315,7 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
         # Engagement metrics
         'comments_added': comments_count,
         'files_attached': files_attached,
+        'files_received': files_received,
         'recurring_schedules_created': recurring_created,
         'active_recurring_schedules': recurring_assigned,
         
@@ -324,3 +326,149 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
         # Summary message
         'summary_message': f"You created {tasks_created.count()} task(s), completed {completed_count} of {total_assigned_to_user} assigned task(s) ({round(completion_rate, 1)}%), and added {comments_count} comment(s).",
     }
+
+
+def calculate_user_files_received(user: User, week_start_dt: datetime.datetime, week_end_dt: datetime.datetime) -> int:
+    """Count attachments received on tasks the user is involved with during a time range."""
+    from django.db.models import Count, Q
+
+    user_tasks = Task.objects.filter(
+        Q(assigned_to=user) | Q(assigned_by=user)
+    ).distinct()
+
+    return (
+        TaskActivity.objects.filter(
+            task__in=user_tasks,
+            created_at__gte=week_start_dt,
+            created_at__lte=week_end_dt,
+        )
+        .exclude(user=user)
+        .aggregate(total=Count('attachments', filter=Q(attachments__isnull=False)))['total']
+        or 0
+    )
+
+
+# PHASE 2: Week-over-week comparison and analytics
+
+def calculate_weekly_comparison(current_summary: dict, previous_summary: dict | None) -> dict:
+    """Calculate week-over-week deltas and trends"""
+    if not previous_summary:
+        return {}
+    
+    comparison = {
+        'delta_tasks_completed': (
+            current_summary.get('tasks_completed', 0) - previous_summary.get('tasks_completed', 0)
+        ),
+        'delta_completion_rate': round(
+            current_summary.get('completion_rate_percent', 0) - 
+            previous_summary.get('completion_rate_percent', 0), 2
+        ),
+        'delta_on_time_completion_rate': round(
+            current_summary.get('on_time_completion_rate_percent', 0) - 
+            previous_summary.get('on_time_completion_rate_percent', 0), 2
+        ),
+        'delta_high_priority_completed': (
+            current_summary.get('high_priority_completed', 0) - 
+            previous_summary.get('high_priority_completed', 0)
+        ),
+        'delta_comments': (
+            current_summary.get('comments_added', 0) - 
+            previous_summary.get('comments_added', 0)
+        ),
+        'delta_files': (
+            current_summary.get('files_attached', 0) - 
+            previous_summary.get('files_attached', 0)
+        ),
+        'previous_week_start': previous_summary.get('week_start_date'),
+    }
+    
+    # Calculate trend indicator
+    completion_delta = comparison['delta_completion_rate']
+    if completion_delta > 2:
+        comparison['trend'] = 'up'
+    elif completion_delta < -2:
+        comparison['trend'] = 'down'
+    else:
+        comparison['trend'] = 'flat'
+    
+    # Calculate velocity change percentage
+    prev_completed = previous_summary.get('tasks_completed', 0)
+    if prev_completed > 0:
+        velocity_change = (
+            (current_summary['tasks_completed'] - prev_completed) / prev_completed * 100
+        )
+        comparison['velocity_change_percent'] = round(velocity_change, 1)
+    
+    return comparison
+
+
+def calculate_organization_summary(week_start: datetime.date, week_end: datetime.date) -> dict:
+    """Calculate organization-wide summary stats (admin-only)"""
+    from .models import WeeklySummary
+    
+    summaries = WeeklySummary.objects.filter(
+        week_start_date=week_start
+    )
+    
+    if not summaries.exists():
+        return {}
+    
+    total_users = summaries.count()
+    total_completed = 0
+    total_assigned = 0
+    completion_rates = []
+    on_time_rates = []
+    
+    for summary in summaries:
+        data = summary.summary_data
+        total_completed += data.get('tasks_completed', 0)
+        total_assigned += data.get('tasks_assigned', 0)
+        completion_rates.append(data.get('completion_rate_percent', 0))
+        on_time_rates.append(data.get('on_time_completion_rate_percent', 0))
+    
+    avg_completion_rate = (
+        sum(completion_rates) / len(completion_rates) if completion_rates else 0
+    )
+    avg_on_time_rate = (
+        sum(on_time_rates) / len(on_time_rates) if on_time_rates else 0
+    )
+    
+    return {
+        'week_start_date': str(week_start),
+        'week_end_date': str(week_end),
+        'total_active_users': total_users,
+        'total_tasks_completed': total_completed,
+        'total_tasks_assigned': total_assigned,
+        'avg_completion_rate_percent': round(avg_completion_rate, 2),
+        'avg_on_time_completion_rate_percent': round(avg_on_time_rate, 2),
+        'summaries_count': summaries.count(),
+    }
+
+
+def check_user_goals(user: User, week_start: datetime.date, week_end: datetime.date, summary_data: dict) -> dict:
+    """Check if user achieved their goals for the week"""
+    from .models import UserGoal
+    
+    goals = UserGoal.objects.filter(
+        user=user,
+        is_active=True,
+        period_start__lte=week_start,
+        period_end__gte=week_end
+    )
+    
+    goal_results = {}
+    for goal in goals:
+        metric = goal.metric
+        current_value = summary_data.get(
+            metric.replace('_', '_percent') if 'rate' in metric else metric, 0
+        )
+        
+        achieved = current_value >= goal.target_value
+        goal_results[metric] = {
+            'target': goal.target_value,
+            'current': current_value,
+            'achieved': achieved,
+            'difference': current_value - goal.target_value,
+        }
+    
+    return goal_results

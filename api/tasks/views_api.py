@@ -4,15 +4,19 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
-from django.db import models
+from django.db import models, IntegrityError
 from django.db.models import Count, Q
 from django.utils import timezone
 from datetime import timedelta
+from django.contrib.auth.models import User
 from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
 from emails.services.task_emails import TaskEmailManager
-from .models import RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary, WeeklySummaryShare
+from .models import (
+    RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary, 
+    WeeklySummaryShare, WeeklySummaryUserShare, SummaryExport, UserGoal
+)
 from .s3 import (
     TaskAttachmentStorageError,
     build_task_attachment_key_prefix,
@@ -26,6 +30,14 @@ from .serializers import (
     TaskActivitySerializer,
     WeeklySummarySerializer,
     WeeklySummaryListSerializer,
+    # Phase 2 serializers
+    WeeklySummaryComparisonSerializer,
+    SummaryWithComparisonSerializer,
+    WeeklySummaryUserShareSerializer,
+    SummaryExportSerializer,
+    UserGoalSerializer,
+    GoalProgressSerializer,
+    OrganizationSummarySerializer,
 )
 from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
 from .services import calculate_next_run_at, create_task_with_side_effects
@@ -570,6 +582,84 @@ class WeeklySummaryViewSet(ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+    @action(detail=False, methods=['get'])
+    def comparison_metrics(self, request):
+        """GET /summaries/comparison-metrics/?week_start_date=YYYY-MM-DD - Return stored comparison metrics for a summary"""
+        week_start_date = request.query_params.get('week_start_date')
+        if not week_start_date:
+            return Response(
+                {'error': 'week_start_date query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            summary = WeeklySummary.objects.get(
+                user=request.user,
+                week_start_date=week_start_date
+            )
+            comparison = summary.comparison_metrics or {}
+
+            # If no stored comparison metrics, attempt on-demand calculation using previous week's summary
+            if not comparison:
+                from datetime import datetime, timedelta
+                prev_week = (datetime.strptime(week_start_date, '%Y-%m-%d').date() - timedelta(days=7))
+                previous_summary = WeeklySummary.objects.filter(
+                    user=request.user,
+                    week_start_date=prev_week
+                ).first()
+
+                if previous_summary:
+                    from .services import calculate_weekly_comparison
+                    try:
+                        calculated = calculate_weekly_comparison(
+                            summary.summary_data,
+                            previous_summary.summary_data
+                        )
+                        # persist for future requests
+                        summary.previous_week_summary = previous_summary
+                        summary.comparison_metrics = calculated
+                        summary.save(update_fields=['previous_week_summary', 'comparison_metrics'])
+                        comparison = calculated
+                    except Exception as e:
+                        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            if not comparison:
+                return Response({}, status=status.HTTP_200_OK)
+
+            serializer = WeeklySummaryComparisonSerializer(comparison)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found for the specified week'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['get'])
+    def historical(self, request):
+        """GET /summaries/historical/?week_start_date=YYYY-MM-DD&weeks=4 - Return recent weekly summaries including the requested week"""
+        week_start_str = request.query_params.get('week_start_date')
+        weeks = int(request.query_params.get('weeks', 4))
+        if not week_start_str:
+            return Response(
+                {'error': 'week_start_date query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            from datetime import datetime, timedelta
+            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+            week_starts = [(week_start - timedelta(days=7 * i)) for i in range(weeks)][::-1]
+
+            summaries = WeeklySummary.objects.filter(
+                user=request.user,
+                week_start_date__in=week_starts
+            ).order_by('week_start_date')
+
+            serializer = WeeklySummarySerializer(summaries, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=False, methods=['post'])
     def share(self, request):
         """POST /summaries/share/ - Create a public share link"""
@@ -616,6 +706,81 @@ class WeeklySummaryViewSet(ViewSet):
             'created_at': share.created_at
         }, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['get'])
+    def share_status(self, request):
+        """GET /summaries/share-status/?week_start_date=YYYY-MM-DD - returns public share info if any"""
+        week_start_date = request.query_params.get('week_start_date')
+        if not week_start_date:
+            return Response({'error': 'week_start_date is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
+        except WeeklySummary.DoesNotExist:
+            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Return the most recent public share if exists
+        public_share = WeeklySummaryShare.objects.filter(summary=summary).order_by('-created_at').first()
+        if not public_share:
+            return Response({'shared': False})
+
+        return Response({'shared': True, 'share_link': f'/summaries?token={public_share.share_token}', 'share_token': public_share.share_token})
+
+    @action(detail=False, methods=['post'])
+    def revoke_share(self, request):
+        """POST /summaries/revoke_share/ - Revoke a public share for a summary"""
+        week_start_date = request.data.get('week_start_date')
+        if not week_start_date:
+            return Response({'error': 'week_start_date is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
+        except WeeklySummary.DoesNotExist:
+            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only allow owner who created the share to revoke (shared_by == request.user)
+        shares = WeeklySummaryShare.objects.filter(summary=summary)
+        deleted = 0
+        for s in shares:
+            if s.shared_by == request.user:
+                s.delete()
+                deleted += 1
+
+        return Response({'revoked': deleted > 0, 'revoked_count': deleted})
+
+    @action(detail=False, methods=['get'])
+    def user_shares(self, request):
+        """GET /summaries/user-shares/?week_start_date=YYYY-MM-DD - list user-to-user shares for a summary"""
+        week_start_date = request.query_params.get('week_start_date')
+        if not week_start_date:
+            return Response({'error': 'week_start_date is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
+        except WeeklySummary.DoesNotExist:
+            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        shares = WeeklySummaryUserShare.objects.filter(summary=summary).select_related('shared_with')
+        serializer = WeeklySummaryUserShareSerializer(shares, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def revoke_user_share(self, request):
+        """POST /summaries/revoke-user-share/ - revoke a user-to-user share"""
+        week_start_date = request.data.get('week_start_date')
+        shared_with_id = request.data.get('user_id')
+        if not week_start_date or not shared_with_id:
+            return Response({'error': 'week_start_date and user_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
+        except WeeklySummary.DoesNotExist:
+            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        deleted = WeeklySummaryUserShare.objects.filter(summary=summary, shared_with__id=shared_with_id, shared_by=request.user).delete()
+        # delete() returns (count, {..})
+        count = deleted[0] if isinstance(deleted, tuple) else int(deleted)
+        return Response({'revoked': count > 0, 'revoked_count': count})
+
     @action(detail=False, methods=['get'], permission_classes=[])
     def shared(self, request):
         """GET /summaries/shared/{share_token}/ - View shared summary (public)"""
@@ -626,20 +791,499 @@ class WeeklySummaryViewSet(ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # First try public shares
         try:
             share = WeeklySummaryShare.objects.get(share_token=share_token)
-            
+
             # Check if expired
             if share.expires_at and share.expires_at < timezone.now():
                 return Response(
                     {'error': 'Share link has expired'},
                     status=status.HTTP_403_FORBIDDEN
                 )
-            
-            serializer = WeeklySummarySerializer(share.summary)
-            return Response(serializer.data)
+
+            # Use SummaryWithComparisonSerializer so shared view includes comparison_metrics if present
+            from .serializers import SummaryWithComparisonSerializer, WeeklySummarySerializer
+
+            summary_serialized = SummaryWithComparisonSerializer(share.summary).data
+
+            # Also include historical summaries (last 4 weeks including this one)
+            try:
+                from datetime import datetime, timedelta
+                week_start = share.summary.week_start_date
+                if isinstance(week_start, str):
+                    week_start = datetime.strptime(week_start, '%Y-%m-%d').date()
+
+                week_starts = [(week_start - timedelta(days=7 * i)) for i in range(4)][::-1]
+                historical_qs = WeeklySummary.objects.filter(
+                    user=share.summary.user,
+                    week_start_date__in=week_starts
+                ).order_by('week_start_date')
+                historical_serialized = WeeklySummarySerializer(historical_qs, many=True).data
+            except Exception:
+                historical_serialized = []
+
+            return Response({
+                'summary': summary_serialized,
+                'historical': historical_serialized,
+            })
         except WeeklySummaryShare.DoesNotExist:
+            # Not a public share, check if it's a user-scoped share token
+            try:
+                user_share = WeeklySummaryUserShare.objects.get(share_token=share_token)
+
+                # Require authentication and ensure the requesting user is the intended recipient
+                if not request.user or not request.user.is_authenticated:
+                    return Response({'error': 'Authentication required for this share link'}, status=status.HTTP_403_FORBIDDEN)
+
+                if user_share.shared_with != request.user:
+                    return Response({'error': 'This share link is not valid for your account'}, status=status.HTTP_403_FORBIDDEN)
+
+                from .serializers import SummaryWithComparisonSerializer, WeeklySummarySerializer
+
+                summary_serialized = SummaryWithComparisonSerializer(user_share.summary).data
+
+                try:
+                    from datetime import datetime, timedelta
+                    week_start = user_share.summary.week_start_date
+                    if isinstance(week_start, str):
+                        week_start = datetime.strptime(week_start, '%Y-%m-%d').date()
+
+                    week_starts = [(week_start - timedelta(days=7 * i)) for i in range(4)][::-1]
+                    historical_qs = WeeklySummary.objects.filter(
+                        user=user_share.summary.user,
+                        week_start_date__in=week_starts
+                    ).order_by('week_start_date')
+                    historical_serialized = WeeklySummarySerializer(historical_qs, many=True).data
+                except Exception:
+                    historical_serialized = []
+
+                return Response({
+                    'summary': summary_serialized,
+                    'historical': historical_serialized,
+                })
+            except WeeklySummaryUserShare.DoesNotExist:
+                return Response(
+                    {'error': 'Invalid share link'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+    # PHASE 2 ENDPOINTS
+
+    @action(detail=False, methods=['get'])
+    def organization_summary(self, request):
+        """GET /summaries/organization-summary/ - Org-wide stats (admin only)"""
+        if not request.user.is_staff:
             return Response(
-                {'error': 'Invalid share link'},
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        week_start_str = request.query_params.get('week_start_date')
+        if not week_start_str:
+            return Response(
+                {'error': 'week_start_date parameter required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from datetime import datetime
+            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+            week_end = week_start.replace(day=week_start.day + 6)
+            
+            from .services import calculate_organization_summary
+            org_summary = calculate_organization_summary(week_start, week_end)
+            
+            serializer = OrganizationSummarySerializer(org_summary)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+    
+    @action(detail=False, methods=['post'])
+    def share_with_user(self, request):
+        """POST /summaries/share-with-user/ - Share with specific user"""
+        week_start_str = request.data.get('week_start_date')
+        shared_with_id = request.data.get('user_id')
+        
+        if not week_start_str or not shared_with_id:
+            return Response(
+                {'error': 'week_start_date and user_id required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from datetime import datetime
+            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+            
+            summary = WeeklySummary.objects.get(
+                user=request.user,
+                week_start_date=week_start
+            )
+            
+            try:
+                shared_with_user = User.objects.get(id=shared_with_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            from .models import WeeklySummaryUserShare
+            from emails.services.summary_emails import SummaryEmailManager
+            
+            # Avoid duplicate shares: return existing share if present
+            from django.db import transaction
+
+            existing = WeeklySummaryUserShare.objects.filter(
+                summary=summary,
+                shared_with=shared_with_user
+            ).first()
+            if existing:
+                # Re-send email when a user re-shares with the same recipient.
+                try:
+                    existing_summary_path = f"/summaries?token={existing.share_token}" if existing.share_token else "/summaries"
+                    SummaryEmailManager.send_summary_shared_notification(
+                        shared_with_user,
+                        request.user,
+                        str(week_start),
+                        view_summary_url=existing_summary_path,
+                        week_end=str(summary.week_end_date),
+                    )
+                except Exception:
+                    logger.exception('Failed to send summary shared email for existing share')
+
+                serializer = WeeklySummaryUserShareSerializer(existing)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+            try:
+                with transaction.atomic():
+                    # generate a per-user token for recipient-scoped access
+                    share_token = secrets.token_urlsafe(48)
+                    share = WeeklySummaryUserShare.objects.create(
+                        summary=summary,
+                        shared_by=request.user,
+                        shared_with=shared_with_user,
+                        share_token=share_token,
+                    )
+            except IntegrityError as ie:
+                # Likely a concurrent duplicate insert
+                existing = WeeklySummaryUserShare.objects.filter(
+                    summary=summary,
+                    shared_with=shared_with_user
+                ).first()
+                if existing:
+                    serializer = WeeklySummaryUserShareSerializer(existing)
+                    return Response(serializer.data, status=status.HTTP_200_OK)
+                raise ie
+            
+            # Send notification email
+            try:
+                summary_path = f"/summaries?token={share.share_token}"
+                SummaryEmailManager.send_summary_shared_notification(
+                    shared_with_user,
+                    request.user,
+                    str(week_start),
+                    view_summary_url=summary_path,
+                    week_end=str(summary.week_end_date),
+                )
+            except Exception:
+                logger.exception('Failed to send summary shared email')
+
+            # Create in-app notification and attempt web-push delivery
+            try:
+                # Use the per-user share token in the link so the recipient can open it.
+                # Use a relative frontend path so the client's service worker opens the frontend route.
+                summary_path = f"/summaries?token={share.share_token}"
+
+                create_notification(
+                    shared_with_user,
+                    actor=request.user,
+                    notification_type='summary_shared',
+                    title=f"{request.user.username} shared a weekly summary",
+                    body=f"{request.user.username} shared the summary for week starting {week_start} with you.",
+                    link_url=summary_path,
+                    payload={
+                        'summary_id': str(summary.id),
+                        'week_start_date': str(week_start),
+                        'url': summary_path,
+                    },
+                    send_push=True,
+                )
+            except Exception:
+                logger.exception('Failed to create notification for shared summary')
+            
+            serializer = WeeklySummaryUserShareSerializer(share)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['post'])
+    def export(self, request):
+        """POST /summaries/export/ - Export summary as PDF or CSV"""
+        week_start_str = request.data.get('week_start_date')
+        export_format = request.data.get('format', 'pdf')
+        
+        if not week_start_str or export_format not in ['pdf', 'csv']:
+            return Response(
+                {'error': 'week_start_date and valid format (pdf/csv) required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from datetime import datetime
+            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+            
+            summary = WeeklySummary.objects.get(
+                user=request.user,
+                week_start_date=week_start
+            )
+            
+            from .models import SummaryExport
+            from .services.export import generate_summary_csv, generate_summary_pdf, save_export_to_s3
+            
+            filename = f"summary_{summary.id}_{week_start}.{export_format}"
+            
+            if export_format == 'csv':
+                csv_output = generate_summary_csv(summary.summary_data, request.user)
+                file_bytes = csv_output.getvalue().encode('utf-8')
+                content_type = 'text/csv'
+            else:
+                file_bytes = generate_summary_pdf(
+                    summary.summary_data,
+                    request.user,
+                    summary.comparison_metrics
+                )
+                content_type = 'application/pdf'
+            
+            file_url = save_export_to_s3(file_bytes, filename, content_type)
+            
+            export_record = SummaryExport.objects.create(
+                summary=summary,
+                exported_by=request.user,
+                format=export_format,
+                file_url=file_url
+            )
+            
+            serializer = SummaryExportSerializer(export_record)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get', 'post'])
+    def goals(self, request):
+        """GET/POST /summaries/goals/ - Manage user goals"""
+        from .models import UserGoal
+        
+        if request.method == 'GET':
+            goals = UserGoal.objects.filter(user=request.user, is_active=True)
+            serializer = UserGoalSerializer(goals, many=True)
+            return Response(serializer.data)
+        
+        # POST: Create new goal
+        serializer = UserGoalSerializer(data=request.data)
+        if serializer.is_valid():
+            goal = UserGoal.objects.create(
+                user=request.user,
+                metric=serializer.validated_data['metric'],
+                target_value=serializer.validated_data['target_value'],
+                period_start=serializer.validated_data['period_start'],
+                period_end=serializer.validated_data['period_end'],
+            )
+            # Serialize the created goal with full data
+            response_serializer = UserGoalSerializer(goal)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['get'])
+    def goal_progress(self, request):
+        """GET /summaries/goal-progress/?week_start_date=YYYY-MM-DD - Check goal progress"""
+        week_start_str = request.query_params.get('week_start_date')
+        if not week_start_str:
+            return Response(
+                {'error': 'week_start_date parameter required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from datetime import datetime
+            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+            
+            summary = WeeklySummary.objects.get(
+                user=request.user,
+                week_start_date=week_start
+            )
+            
+            from .services import check_user_goals
+            goals_progress = check_user_goals(
+                request.user,
+                week_start,
+                summary.week_end_date,
+                summary.summary_data
+            )
+            
+            return Response({'goals': goals_progress})
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class SummaryFilesViewSet(ViewSet):
+    """Nested viewset for files within a summary: GET /summaries/<id>/files/"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def list(self, request, summary_pk=None):
+        """GET /summaries/<id>/files/?view=sent|recieved
+        Returns all files attached during a week, grouped by task.
+        - view=sent: files attached by the current user
+        - view=recieved: files attached by others on tasks the user is involved with
+        """
+        view_type = request.query_params.get('view', 'sent')  # 'sent' or 'recieved'
+        
+        if view_type not in ['sent', 'recieved']:
+            return Response(
+                {'error': 'view parameter must be "sent" or "recieved"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            summary = WeeklySummary.objects.get(id=summary_pk)
+            
+            # Check authorization - user must own the summary or have a valid share token
+            if summary.user_id != request.user.id:
+                share_token = request.query_params.get('token')
+                # Allow if token matches either:
+                # 1) a non-expired public share token, or
+                # 2) a user-scoped share token issued specifically to this user
+                from django.utils import timezone as django_timezone
+                if share_token:
+                    valid_public_share = WeeklySummaryShare.objects.filter(
+                        summary=summary,
+                        share_token=share_token,
+                    ).filter(
+                        models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=django_timezone.now())
+                    ).exists()
+
+                    valid_user_share = WeeklySummaryUserShare.objects.filter(
+                        summary=summary,
+                        share_token=share_token,
+                        shared_with=request.user,
+                    ).exists()
+
+                    if not (valid_public_share or valid_user_share):
+                        return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+                else:
+                    return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            
+            from datetime import datetime
+            from collections import defaultdict
+            
+            week_start = summary.week_start_date
+            week_end = summary.week_end_date
+            
+            if isinstance(week_start, str):
+                week_start = datetime.strptime(week_start, '%Y-%m-%d').date()
+            if isinstance(week_end, str):
+                week_end = datetime.strptime(week_end, '%Y-%m-%d').date()
+            
+            # Add one day to week_end to make it inclusive
+            week_end = week_end + timedelta(days=1)
+            
+            # Get all tasks involving this user
+            tasks_qs = Task.objects.filter(
+                models.Q(assigned_to=request.user) | models.Q(assigned_by=request.user)
+            ).distinct()
+            
+            # Find all activities with attachments during the week
+            if view_type == 'sent':
+                # Files attached by the current user
+                activities_qs = TaskActivity.objects.filter(
+                    task__in=tasks_qs,
+                    user=request.user,
+                    created_at__gte=week_start,
+                    created_at__lt=week_end
+                ).prefetch_related('attachments', 'task').order_by('-created_at')
+            else:  # recieved
+                # Files attached by others
+                activities_qs = TaskActivity.objects.filter(
+                    task__in=tasks_qs,
+                    created_at__gte=week_start,
+                    created_at__lt=week_end
+                ).exclude(user=request.user).prefetch_related('attachments', 'task').order_by('-created_at')
+            
+            # Group by task
+            tasks_with_files = defaultdict(list)
+            
+            for activity in activities_qs:
+                if activity.attachments.exists():
+                    task = activity.task
+                    for attachment in activity.attachments.all():
+                        tasks_with_files[task.id].append({
+                            'task_id': str(task.id),
+                            'task_title': task.title,
+                            'task_created_at': task.created_at.isoformat() if task.created_at else None,
+                            'file_id': str(attachment.id),
+                            'file_name': attachment.file_name,
+                            'size': attachment.size,
+                            'content_type': attachment.content_type,
+                            'created_at': activity.created_at.isoformat(),
+                            'created_by': activity.user.get_full_name() or activity.user.username,
+                            'download_url': f'/api/attachments/{attachment.id}/download/',
+                        })
+            
+            # Convert defaultdict to regular dict with sorted tasks
+            result = {
+                'week_start': summary.week_start_date.isoformat() if isinstance(summary.week_start_date, datetime) else summary.week_start_date,
+                'week_end': summary.week_end_date.isoformat() if isinstance(summary.week_end_date, datetime) else summary.week_end_date,
+                'view_type': view_type,
+                'tasks': [
+                    {
+                        'task_id': task_id,
+                        'task_title': tasks_with_files[task_id][0]['task_title'],
+                        'task_created_at': tasks_with_files[task_id][0]['task_created_at'],
+                        'files': tasks_with_files[task_id]
+                    }
+                    for task_id in sorted(tasks_with_files.keys(), 
+                                        key=lambda tid: tasks_with_files[tid][0]['task_title'])
+                ]
+            }
+            
+            return Response(result)
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )

@@ -181,4 +181,93 @@ def generate_weekly_summaries() -> dict[str, int]:
         'summaries_created': summaries_created,
         'errors': errors,
     }
+
+
+# PHASE 2: Weekly email notifications and comparisons
+
+@shared_task(name='tasks.send_weekly_summary_emails')
+def send_weekly_summary_emails() -> dict[str, int]:
+    """Send weekly summary emails to users every Monday at 8 AM"""
+    from datetime import datetime, date
+    from .models import WeeklySummary
+    from emails.services.summary_emails import SummaryEmailManager
+    
+    # Find summaries from last week
+    today = timezone.now().date()
+    last_week_start = today - timedelta(days=(today.weekday() + 7))  # Last Monday
+    
+    summaries = WeeklySummary.objects.filter(
+        week_start_date=last_week_start
+    )
+    
+    emails_sent = 0
+    errors = 0
+    
+    for summary in summaries:
+        try:
+            SummaryEmailManager.send_weekly_summary_notification(
+                summary.user,
+                summary.summary_data,
+                summary.comparison_metrics
+            )
+            emails_sent += 1
+        except Exception as e:
+            logger.error(f'Error sending email for user {summary.user.id}: {str(e)}')
+            errors += 1
+    
+    logger.info(f'Weekly emails sent: {emails_sent} sent, {errors} errors')
+    return {
+        'emails_sent': emails_sent,
+        'errors': errors,
+    }
+
+
+@shared_task(name='tasks.calculate_weekly_comparisons')
+def calculate_weekly_comparisons() -> dict[str, int]:
+    """Calculate week-over-week comparisons for all users"""
+    from datetime import date
+    from .models import WeeklySummary
+    from .services import calculate_weekly_comparison
+    
+    comparisons_created = 0
+    errors = 0
+    
+    # Get all current week summaries
+    today = timezone.now().date()
+    current_week_start = today - timedelta(days=today.weekday())  # Monday of current week
+    previous_week_start = current_week_start - timedelta(days=7)
+    
+    current_summaries = WeeklySummary.objects.filter(
+        week_start_date=current_week_start
+    )
+    
+    for current_summary in current_summaries:
+        try:
+            # Get previous week's summary for this user
+            previous_summary = WeeklySummary.objects.filter(
+                user=current_summary.user,
+                week_start_date=previous_week_start
+            ).first()
+            
+            # Calculate comparison
+            comparison_metrics = calculate_weekly_comparison(
+                current_summary.summary_data,
+                previous_summary.summary_data if previous_summary else None
+            )
+            
+            # Update current summary with comparison
+            current_summary.previous_week_summary = previous_summary
+            current_summary.comparison_metrics = comparison_metrics
+            current_summary.save()
+            
+            comparisons_created += 1
+        except Exception as e:
+            logger.error(f'Error calculating comparison for user {current_summary.user.id}: {str(e)}')
+            errors += 1
+    
+    logger.info(f'Comparisons calculated: {comparisons_created} created, {errors} errors')
+    return {
+        'comparisons_created': comparisons_created,
+        'errors': errors,
+    }
     return 1

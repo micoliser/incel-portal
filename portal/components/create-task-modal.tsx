@@ -198,6 +198,8 @@ export function CreateTaskModal({
   const deadlineMin = getDatetimeLocalMin();
 
   const [formData, setFormData] = useState(initialForm);
+  const [deadlineOffsetHours, setDeadlineOffsetHours] = useState("0");
+  const [deadlineOffsetMins, setDeadlineOffsetMins] = useState("0");
 
   const resetForm = () => {
     setFormData({ ...initialForm });
@@ -218,6 +220,15 @@ export function CreateTaskModal({
 
     return () => window.clearTimeout(timeout);
   }, [assigneeSearchInput, assigneeHasTyped]);
+
+  // keep hours/mins in sync with total minutes
+  useEffect(() => {
+    const total = Number(formData.deadline_offset_minutes || 0);
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    setDeadlineOffsetHours(String(h));
+    setDeadlineOffsetMins(String(m));
+  }, [formData.deadline_offset_minutes]);
 
   useEffect(() => {
     if (!open) return;
@@ -331,7 +342,7 @@ export function CreateTaskModal({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Task</DialogTitle>
           <DialogDescription>
@@ -759,32 +770,74 @@ export function CreateTaskModal({
                   <div>
                     <div className="flex items-center gap-2">
                       <Label htmlFor="deadline_offset_minutes">
-                        Deadline Offset (minutes)
+                        Deadline Offset
                       </Label>
                       <div className="group relative">
                         <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-slate-900 text-white text-xs rounded px-2 py-1 w-max whitespace-normal z-10">
-                          Minutes added to task creation time to set the
-                          deadline. For example, 480 minutes (8 hours) means
-                          tasks created at 9 AM will be due at 5 PM.
+                          Offset from task creation to deadline. Enter hours and
+                          minutes (hours may be 0). For example, 2 hours and 15
+                          minutes = 2h 15m.
                         </div>
                       </div>
                     </div>
-                    <Input
-                      id="deadline_offset_minutes"
-                      type="number"
-                      min="0"
-                      value={formData.deadline_offset_minutes}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          deadline_offset_minutes: e.target.value,
-                        })
-                      }
-                      disabled={submitting}
-                      className="mt-2"
-                      aria-invalid={Boolean(formErrors.deadline_offset_minutes)}
-                    />
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="deadline_offset_hours"
+                          type="number"
+                          min="0"
+                          value={deadlineOffsetHours}
+                          onChange={(e) => {
+                            const h = e.target.value.replace(/[^0-9]/g, "");
+                            setDeadlineOffsetHours(h);
+                            const total =
+                              Number(h || 0) * 60 +
+                              Number(deadlineOffsetMins || 0);
+                            setFormData({
+                              ...formData,
+                              deadline_offset_minutes: String(total),
+                            });
+                            setFormErrors((current) => ({
+                              ...current,
+                              deadline_offset_minutes: undefined,
+                            }));
+                          }}
+                          disabled={submitting}
+                          className="w-20"
+                        />
+                        <span className="text-sm">h</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="deadline_offset_minutes"
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={deadlineOffsetMins}
+                          onChange={(e) => {
+                            let m = e.target.value.replace(/[^0-9]/g, "");
+                            if (m === "") m = "0";
+                            let mm = Number(m);
+                            if (mm > 59) mm = 59;
+                            setDeadlineOffsetMins(String(mm));
+                            const total =
+                              Number(deadlineOffsetHours || 0) * 60 + mm;
+                            setFormData({
+                              ...formData,
+                              deadline_offset_minutes: String(total),
+                            });
+                            setFormErrors((current) => ({
+                              ...current,
+                              deadline_offset_minutes: undefined,
+                            }));
+                          }}
+                          disabled={submitting}
+                          className="w-20"
+                        />
+                        <span className="text-sm">m</span>
+                      </div>
+                    </div>
                     {formErrors.deadline_offset_minutes ? (
                       <p className="mt-1 text-xs text-destructive">
                         {formErrors.deadline_offset_minutes}

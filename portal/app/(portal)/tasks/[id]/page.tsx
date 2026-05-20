@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { format } from "date-fns";
 import {
@@ -49,6 +49,9 @@ const priorityColors: Record<string, string> = {
 
 const COMMENT_MAX_LENGTH = 200;
 
+const backButtonClassName =
+  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+
 function formatStatusLabel(status: string) {
   return status
     .split("_")
@@ -58,6 +61,7 @@ function formatStatusLabel(status: string) {
 
 export default function TaskDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const taskId = String(params.id);
 
   const [task, setTask] = useState<Task | null>(null);
@@ -209,11 +213,9 @@ export default function TaskDetailPage() {
         message={loadError || "Task not found"}
         onRetry={() => window.location.reload()}
         actions={
-          <Link href="/tasks">
-            <Button type="button" variant="outline">
-              Back to Tasks
-            </Button>
-          </Link>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Back to Tasks
+          </Button>
         }
       />
     );
@@ -235,13 +237,15 @@ export default function TaskDetailPage() {
 
   return (
     <div className="space-y-8">
-      <Link
-        href="/tasks"
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => router.back()}
+        className={backButtonClassName}
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Tasks
-      </Link>
+      </Button>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">

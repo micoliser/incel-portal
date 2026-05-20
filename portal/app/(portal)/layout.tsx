@@ -141,37 +141,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     void loadUserContext();
   }, [pathname, router]);
 
-  const pageHeader =
-    pathname === "/summaries"
+  const pageHeader = pathname.startsWith("/summaries")
+    ? {
+        title: "Weekly Summary",
+        subtitle: "Review your work activity and progress for the past weeks.",
+      }
+    : pathname === "/applications"
       ? {
-          title: "Weekly Summary",
-          subtitle:
-            "Review your work activity and progress for the past weeks.",
+          title: "Applications",
+          subtitle: "Browse and manage internal application access.",
         }
-      : pathname === "/applications"
+      : pathname === "/users" || pathname.startsWith("/users")
         ? {
-            title: "Applications",
-            subtitle: "Browse and manage internal application access.",
+            title: "Users",
+            subtitle: "Manage workspace users.",
           }
-        : pathname === "/users" || pathname.startsWith("/users")
+        : pathname === "/logs"
           ? {
-              title: "Users",
-              subtitle: "Manage workspace users.",
+              title: "Logs",
+              subtitle: "Review audit events and activity history.",
             }
-          : pathname === "/logs"
+          : pathname.startsWith("/tasks")
             ? {
-                title: "Logs",
-                subtitle: "Review audit events and activity history.",
+                title: "Tasks",
+                subtitle: "Manage and track your tasks.",
               }
-            : pathname.startsWith("/tasks")
-              ? {
-                  title: "Tasks",
-                  subtitle: "Manage and track your tasks.",
-                }
-              : {
-                  title: "Dashboard",
-                  subtitle: "Your portal workspace is ready.",
-                };
+            : {
+                title: "Dashboard",
+                subtitle: "Your portal workspace is ready.",
+              };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
