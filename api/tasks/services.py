@@ -204,6 +204,8 @@ def create_task_with_side_effects(
         },
     )
 
+    return task
+
 
 def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_end: datetime.date) -> dict:
     """Calculate weekly summary metrics for a user"""

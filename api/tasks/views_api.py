@@ -781,9 +781,9 @@ class WeeklySummaryViewSet(ViewSet):
         count = deleted[0] if isinstance(deleted, tuple) else int(deleted)
         return Response({'revoked': count > 0, 'revoked_count': count})
 
-    @action(detail=False, methods=['get'], permission_classes=[])
+    @action(detail=False, methods=['get'])
     def shared(self, request):
-        """GET /summaries/shared/{share_token}/ - View shared summary (public)"""
+        """GET /summaries/shared/{share_token}/ - View shared summary for authenticated users"""
         share_token = request.query_params.get('token')
         if not share_token:
             return Response(
@@ -1032,13 +1032,13 @@ class WeeklySummaryViewSet(ViewSet):
     
     @action(detail=False, methods=['post'])
     def export(self, request):
-        """POST /summaries/export/ - Export summary as PDF or CSV"""
+        """POST /summaries/export/ - Export summary as PDF"""
         week_start_str = request.data.get('week_start_date')
         export_format = request.data.get('format', 'pdf')
         
-        if not week_start_str or export_format not in ['pdf', 'csv']:
+        if not week_start_str or export_format != 'pdf':
             return Response(
-                {'error': 'week_start_date and valid format (pdf/csv) required'},
+                {'error': 'week_start_date and format "pdf" required (CSV export removed)'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1052,31 +1052,26 @@ class WeeklySummaryViewSet(ViewSet):
             )
             
             from .models import SummaryExport
-            from .services.export import generate_summary_csv, generate_summary_pdf, save_export_to_s3
-            
-            filename = f"summary_{summary.id}_{week_start}.{export_format}"
-            
-            if export_format == 'csv':
-                csv_output = generate_summary_csv(summary.summary_data, request.user)
-                file_bytes = csv_output.getvalue().encode('utf-8')
-                content_type = 'text/csv'
-            else:
-                file_bytes = generate_summary_pdf(
-                    summary.summary_data,
-                    request.user,
-                    summary.comparison_metrics
-                )
-                content_type = 'application/pdf'
-            
+            from tasks.export_storage import generate_summary_pdf, save_export_to_s3
+
+            filename = f"summary_{summary.id}_{week_start}.pdf"
+
+            file_bytes = generate_summary_pdf(
+                summary.summary_data,
+                request.user,
+                summary.comparison_metrics
+            )
+            content_type = 'application/pdf'
+
             file_url = save_export_to_s3(file_bytes, filename, content_type)
-            
+
             export_record = SummaryExport.objects.create(
                 summary=summary,
                 exported_by=request.user,
-                format=export_format,
+                format='pdf',
                 file_url=file_url
             )
-            
+
             serializer = SummaryExportSerializer(export_record)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except WeeklySummary.DoesNotExist:
@@ -1085,6 +1080,7 @@ class WeeklySummaryViewSet(ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
+            logger.exception('Export failed while exporting summary')
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

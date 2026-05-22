@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict
 
 from django.contrib.auth.models import User
-
+from django.utils import timezone
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
 
