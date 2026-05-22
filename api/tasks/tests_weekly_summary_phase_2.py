@@ -3,14 +3,17 @@ Comprehensive tests for Phase 2 features
 """
 import json
 from datetime import datetime, timedelta, date
+from unittest.mock import MagicMock, patch
 from django.test import TestCase
 from django.contrib.auth.models import User
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 
 from tasks.models import (
-    Task, WeeklySummary, WeeklySummaryUserShare, SummaryExport, UserGoal,
+    Task, TaskActivity, TaskAttachment, WeeklySummary, WeeklySummaryShare,
+    WeeklySummaryUserShare, SummaryExport, UserGoal,
     OrganizationSummaryCache
 )
 from tasks.services import (
@@ -159,7 +162,7 @@ class Phase2UserSharingTests(BaseAPITestCase):
         
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(
-            '/api/tasks/summaries/share-with-user/',
+            '/api/v1/summaries/share-with-user/',
             {
                 'week_start_date': str(week_start),
                 'user_id': self.user2.id
@@ -177,7 +180,7 @@ class Phase2UserSharingTests(BaseAPITestCase):
         """Test sharing non-existent summary returns error"""
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(
-            '/api/tasks/summaries/share-with-user/',
+            '/api/v1/summaries/share-with-user/',
             {
                 'week_start_date': '2020-01-01',
                 'user_id': self.user2.id
@@ -200,7 +203,7 @@ class Phase2UserSharingTests(BaseAPITestCase):
         
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(
-            '/api/tasks/summaries/share-with-user/',
+            '/api/v1/summaries/share-with-user/',
             {
                 'week_start_date': str(week_start),
                 'user_id': 99999
@@ -211,7 +214,7 @@ class Phase2UserSharingTests(BaseAPITestCase):
 
 
 class Phase2ExportTests(BaseAPITestCase):
-    """Tests for summary export (PDF and CSV)"""
+    """Tests for summary export (PDF)"""
     
     def test_export_summary_as_pdf(self):
         """Test exporting summary as PDF"""
@@ -226,13 +229,18 @@ class Phase2ExportTests(BaseAPITestCase):
         )
         
         self.client.force_authenticate(user=self.user1)
-        response = self.client.post(
-            '/api/tasks/summaries/export/',
-            {
-                'week_start_date': str(week_start),
-                'format': 'pdf'
-            }
-        )
+        fake_s3_client = MagicMock()
+        fake_s3_client.put_object.return_value = {}
+        fake_s3_client.generate_presigned_url.return_value = 'https://example.com/export.pdf'
+
+        with patch('tasks.export_storage._s3_client', return_value=fake_s3_client):
+            response = self.client.post(
+                '/api/v1/summaries/export/',
+                {
+                    'week_start_date': str(week_start),
+                    'format': 'pdf'
+                }
+            )
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['format'], 'pdf')
@@ -240,30 +248,6 @@ class Phase2ExportTests(BaseAPITestCase):
         
         export = SummaryExport.objects.get(summary=summary)
         self.assertEqual(export.exported_by, self.user1)
-    
-    def test_export_summary_as_csv(self):
-        """Test exporting summary as CSV"""
-        week_start = date(2024, 5, 13)
-        summary_data = self.build_summary_data()
-        
-        summary = WeeklySummary.objects.create(
-            user=self.user1,
-            week_start_date=week_start,
-            week_end_date=week_start + timedelta(days=6),
-            summary_data=summary_data
-        )
-        
-        self.client.force_authenticate(user=self.user1)
-        response = self.client.post(
-            '/api/tasks/summaries/export/',
-            {
-                'week_start_date': str(week_start),
-                'format': 'csv'
-            }
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['format'], 'csv')
 
 
 class Phase2GoalTests(BaseAPITestCase):
@@ -274,7 +258,7 @@ class Phase2GoalTests(BaseAPITestCase):
         self.client.force_authenticate(user=self.user1)
         
         response = self.client.post(
-            '/api/tasks/summaries/goals/',
+            '/api/v1/summaries/goals/',
             {
                 'metric': 'completion_rate',
                 'target_value': 85.0,
@@ -299,7 +283,7 @@ class Phase2GoalTests(BaseAPITestCase):
         )
         
         self.client.force_authenticate(user=self.user1)
-        response = self.client.get('/api/tasks/summaries/goals/')
+        response = self.client.get('/api/v1/summaries/goals/')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
@@ -345,7 +329,7 @@ class Phase2OrganizationTests(BaseAPITestCase):
         """Test organization summary endpoint requires admin access"""
         self.client.force_authenticate(user=self.user1)
         response = self.client.get(
-            '/api/tasks/summaries/organization-summary/',
+            reverse('weekly-summary-organization-summary'),
             {'week_start_date': '2024-05-13'}
         )
         
@@ -375,7 +359,7 @@ class Phase2OrganizationTests(BaseAPITestCase):
         
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.get(
-            '/api/tasks/summaries/organization-summary/',
+            reverse('weekly-summary-organization-summary'),
             {'week_start_date': str(week_start)}
         )
         
@@ -429,3 +413,177 @@ class Phase2ComparisonMetricsTest(BaseAPITestCase):
         
         self.assertEqual(current_summary.comparison_metrics['trend'], 'up')
         self.assertEqual(current_summary.previous_week_summary, previous_summary)
+
+
+class Phase2PublicShareTests(BaseAPITestCase):
+    """Tests for public sharing (create/revoke/status/shared view)"""
+
+    def test_create_public_share_and_shared_view_and_status(self):
+        week_start = date(2024, 5, 13)
+        summary_data = self.build_summary_data()
+
+        summary = WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=summary_data
+        )
+
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.post(
+            '/api/v1/summaries/share/',
+            {'week_start_date': str(week_start)}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        share_token = response.data.get('share_token')
+        self.assertTrue(share_token)
+
+        # share_status should report shared
+        status_resp = self.client.get(f'/api/v1/summaries/share-status/?week_start_date={week_start}')
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(status_resp.data.get('shared'))
+
+        # Shared view requires authentication in this app
+        self.client.force_authenticate(user=self.user1)
+        shared_resp = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        self.assertEqual(shared_resp.status_code, status.HTTP_200_OK)
+        self.assertIn('summary', shared_resp.data)
+        self.assertIn('historical', shared_resp.data)
+
+        # Revoke the public share
+        self.client.force_authenticate(user=self.user1)
+        revoke_resp = self.client.post('/api/v1/summaries/revoke_share/', {'week_start_date': str(week_start)})
+        self.assertEqual(revoke_resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(revoke_resp.data.get('revoked'))
+
+        # Now share_status should report not shared
+        status_resp2 = self.client.get(f'/api/v1/summaries/share-status/?week_start_date={week_start}')
+        self.assertEqual(status_resp2.status_code, status.HTTP_200_OK)
+        self.assertFalse(status_resp2.data.get('shared'))
+
+
+class Phase2UserScopedShareTests(BaseAPITestCase):
+    """Tests for user-scoped share tokens and access control"""
+
+    def test_user_scoped_shared_access_control(self):
+        week_start = date(2024, 5, 13)
+        summary = WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data()
+        )
+
+        share_token = 'user-token-abc'
+        WeeklySummaryUserShare.objects.create(
+            summary=summary,
+            shared_by=self.user1,
+            shared_with=self.user2,
+            share_token=share_token
+        )
+
+        # Unauthenticated should be rejected by auth middleware
+        self.client.force_authenticate(user=None)
+        resp = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # Wrong authenticated user should be forbidden
+        self.client.force_authenticate(user=self.admin_user)
+        resp2 = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        self.assertEqual(resp2.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Intended recipient can view
+        self.client.force_authenticate(user=self.user2)
+        resp3 = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        self.assertEqual(resp3.status_code, status.HTTP_200_OK)
+        self.assertIn('summary', resp3.data)
+
+
+class Phase2FilesTests(BaseAPITestCase):
+    """Tests for files listing within a summary and token-based access"""
+
+    def test_files_list_permissions_and_token(self):
+        week_start = date(2024, 5, 13)
+        summary = WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data()
+        )
+
+        # Create a task, activity and attachment within the week
+        task = Task.objects.create(
+            title='File Task',
+            assigned_by=self.user1,
+            assigned_to=self.user2,
+            status='pending',
+            priority='medium'
+        )
+
+        activity = TaskActivity.objects.create(
+            task=task,
+            user=self.user1,
+            activity_type='comment',
+            comment='Adding a file'
+        )
+        TaskActivity.objects.filter(id=activity.id).update(
+            created_at=timezone.make_aware(datetime(2024, 5, 13, 10, 0, 0))
+        )
+
+        TaskAttachment.objects.create(
+            activity=activity,
+            object_key='obj-key-1',
+            file_name='notes.txt',
+            content_type='text/plain',
+            size=123
+        )
+
+        # Owner can list files
+        self.client.force_authenticate(user=self.user1)
+        owner_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=sent')
+        self.assertEqual(owner_resp.status_code, status.HTTP_200_OK)
+        self.assertIn('tasks', owner_resp.data)
+
+        # Other user without token is forbidden
+        self.client.force_authenticate(user=self.user2)
+        other_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=sent')
+        self.assertEqual(other_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Give user2 a user-scoped share token and access with token param
+        token = 'files-access-token'
+        WeeklySummaryUserShare.objects.create(
+            summary=summary,
+            shared_by=self.user1,
+            shared_with=self.user2,
+            share_token=token
+        )
+
+        token_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=recieved&token={token}')
+        self.assertEqual(token_resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(len(token_resp.data.get('tasks', [])) >= 1)
+
+
+class Phase2RevokeUserShareTests(BaseAPITestCase):
+    """Tests for revoking user-scoped shares"""
+
+    def test_revoke_user_share(self):
+        week_start = date(2024, 5, 13)
+        summary = WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data()
+        )
+
+        WeeklySummaryUserShare.objects.create(
+            summary=summary,
+            shared_by=self.user1,
+            shared_with=self.user2,
+            share_token='revoke-token'
+        )
+
+        self.client.force_authenticate(user=self.user1)
+        resp = self.client.post('/api/v1/summaries/revoke-user-share/', {'week_start_date': str(week_start), 'user_id': self.user2.id})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data.get('revoked'))

@@ -169,17 +169,25 @@ class WeeklySummaryApiTests(BaseAPITestCase):
         )
 
         self.client.credentials()
-        response = self.client.get(
+        unauthenticated_response = self.client.get(
             reverse('weekly-summary-shared'),
             {'token': share.share_token},
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['week_start_date'], str(summary.week_start_date))
-        self.assertEqual(response.data['user_name'], 'Staff Member')
+        self.assertEqual(unauthenticated_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        authenticated_response = self.client.get(
+            reverse('weekly-summary-shared'),
+            {'token': share.share_token},
+        )
+
+        self.assertEqual(authenticated_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(authenticated_response.data['summary']['week_start_date'], str(summary.week_start_date))
+        self.assertEqual(authenticated_response.data['summary']['user_name'], 'Staff Member')
 
     def test_shared_endpoint_handles_missing_invalid_and_expired_tokens(self):
-        self.client.credentials()
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
 
         missing_token_response = self.client.get(reverse('weekly-summary-shared'))
         self.assertEqual(missing_token_response.status_code, status.HTTP_400_BAD_REQUEST)

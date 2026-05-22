@@ -259,10 +259,9 @@ class WeeklySummaryUserShare(models.Model):
 
 
 class SummaryExport(models.Model):
-    """Track PDF/CSV exports of summaries"""
+    """Track PDF exports of summaries"""
     EXPORT_FORMATS = [
         ('pdf', 'PDF'),
-        ('csv', 'CSV'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
