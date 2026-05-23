@@ -245,6 +245,11 @@ class Phase2ExportTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['format'], 'pdf')
         self.assertIn('file_url', response.data)
+        fake_s3_client.put_object.assert_called_once()
+        self.assertIn(
+            'development/pdf-exports/summaries/',
+            fake_s3_client.put_object.call_args.kwargs['Key'],
+        )
         
         export = SummaryExport.objects.get(summary=summary)
         self.assertEqual(export.exported_by, self.user1)

@@ -59,6 +59,13 @@ export interface SummaryFilesResponse {
   tasks: SummaryFilesTask[];
 }
 
+export interface SummaryExport {
+  id: string;
+  file_url: string;
+  format: string;
+  created_at: string;
+}
+
 export const summariesAPI = {
   /**
    * Get list of available weeks with summaries
@@ -245,6 +252,20 @@ export const summariesAPI = {
         params,
       },
     );
+    return data;
+  },
+
+  /**
+   * Request server to generate and store an export (PDF). Returns export record with file_url.
+   */
+  async exportSummary(
+    weekStartDate: string,
+    format: string = "pdf",
+  ): Promise<SummaryExport> {
+    const { data } = await apiClient.post<SummaryExport>("/summaries/export/", {
+      week_start_date: weekStartDate,
+      format,
+    });
     return data;
   },
 };

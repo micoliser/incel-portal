@@ -77,6 +77,7 @@ function SummariesContent() {
   const [goalProgress, setGoalProgress] = useState<Record<string, any>>({});
   const [loadingPhase2, setLoadingPhase2] = useState(false);
   const [historicalSummaries, setHistoricalSummaries] = useState<any[]>([]);
+  const [exporting, setExporting] = useState(false);
 
   // Fetch available weeks on mount (only for non-shared view)
   useEffect(() => {
@@ -460,6 +461,60 @@ function SummariesContent() {
               <h1 className="text-xl text-gray-800 dark:text-slate-200">
                 {summary.summary_message}
               </h1>
+
+              {/* Export Button */}
+              {!isSharedView && (
+                <div className="mt-3 mb-4">
+                  <Button
+                    onClick={async () => {
+                      if (!selectedWeek) return;
+                      try {
+                        setExporting(true);
+                        const resp = await summariesAPI.exportSummary(
+                          selectedWeek,
+                          "pdf",
+                        );
+                        if (resp?.file_url) {
+                          // Trigger browser download
+                          const a = document.createElement("a");
+                          a.href = resp.file_url;
+                          a.target = "_blank";
+                          a.rel = "noopener noreferrer";
+                          // If filename desired, browser will use content-disposition
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                          toast.success("Export started — downloading PDF");
+                        } else {
+                          toast.error("Export failed: no file returned");
+                        }
+                      } catch (err: any) {
+                        console.error(err);
+                        if (err?.response?.data?.detail) {
+                          toast.error(
+                            `Export failed: ${err.response.data.detail}`,
+                          );
+                        } else {
+                          toast.error("Failed to export summary to PDF");
+                        }
+                      } finally {
+                        setExporting(false);
+                      }
+                    }}
+                    disabled={exporting}
+                    size="sm"
+                  >
+                    {exporting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Exporting...
+                      </>
+                    ) : (
+                      "Export to PDF"
+                    )}
+                  </Button>
+                </div>
+              )}
 
               {/* Main Stats Grid - Same for both views */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
