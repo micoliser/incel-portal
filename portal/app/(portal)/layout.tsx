@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Target,
   ScrollText,
   Sun,
   TrendingUp,
@@ -146,30 +147,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         title: "Weekly Summary",
         subtitle: "Review your work activity and progress for the past weeks.",
       }
-    : pathname === "/applications"
+    : pathname.startsWith("/goals")
       ? {
-          title: "Applications",
-          subtitle: "Browse and manage internal application access.",
+          title: "Goals",
+          subtitle: "Create current-week goals and track live progress.",
         }
-      : pathname === "/users" || pathname.startsWith("/users")
+      : pathname === "/applications"
         ? {
-            title: "Users",
-            subtitle: "Manage workspace users.",
+            title: "Applications",
+            subtitle: "Browse and manage internal application access.",
           }
-        : pathname === "/logs"
+        : pathname === "/users" || pathname.startsWith("/users")
           ? {
-              title: "Logs",
-              subtitle: "Review audit events and activity history.",
+              title: "Users",
+              subtitle: "Manage workspace users.",
             }
-          : pathname.startsWith("/tasks")
+          : pathname === "/logs"
             ? {
-                title: "Tasks",
-                subtitle: "Manage and track your tasks.",
+                title: "Logs",
+                subtitle: "Review audit events and activity history.",
               }
-            : {
-                title: "Dashboard",
-                subtitle: "Your portal workspace is ready.",
-              };
+            : pathname.startsWith("/tasks")
+              ? {
+                  title: "Tasks",
+                  subtitle: "Manage and track your tasks.",
+                }
+              : {
+                  title: "Dashboard",
+                  subtitle: "Your portal workspace is ready.",
+                };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
@@ -433,6 +439,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               aria-hidden="true"
             />
             <span>Summaries</span>
+          </Link>
+
+          <Link
+            href="/goals"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname.startsWith("/goals")
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname.startsWith("/goals") ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <Target
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname.startsWith("/goals")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>Goals</span>
           </Link>
 
           <Link

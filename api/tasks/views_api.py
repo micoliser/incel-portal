@@ -37,6 +37,7 @@ from .serializers import (
     SummaryExportSerializer,
     UserGoalSerializer,
     GoalProgressSerializer,
+    UserGoalCreateSerializer,
     OrganizationSummarySerializer,
 )
 from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
@@ -547,6 +548,128 @@ class RecurringScheduleViewSet(ModelViewSet):
 
         return Response(self.get_serializer(schedule).data)
 
+
+def _get_week_bounds_from_start(week_start_date):
+    from datetime import timedelta
+
+    return week_start_date, week_start_date + timedelta(days=6)
+
+
+def _get_current_week_bounds():
+    from datetime import timedelta
+
+    week_start = timezone.localdate() - timedelta(days=timezone.localdate().weekday())
+    return week_start, week_start + timedelta(days=6)
+
+
+def _get_goal_summary_data(user, week_start_date, week_end_date):
+    summary = WeeklySummary.objects.filter(
+        user=user,
+        week_start_date=week_start_date,
+    ).first()
+
+    if summary:
+        return summary.summary_data or {}
+
+    from .services import calculate_user_weekly_summary
+
+    return calculate_user_weekly_summary(user, week_start_date, week_end_date)
+
+
+def _serialize_goals_with_progress(user, goals, week_start_date, week_end_date, summary_data):
+    from .services import check_user_goals
+
+    progress_map = check_user_goals(user, week_start_date, week_end_date, summary_data)
+    serializer = UserGoalSerializer(goals, many=True)
+    payload = []
+
+    for goal in serializer.data:
+        payload.append({
+            **goal,
+            'progress': progress_map.get(goal['metric']),
+        })
+
+    return payload
+
+
+class GoalsViewSet(ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def _resolve_week(self, request):
+        from datetime import datetime
+
+        week_start_str = request.query_params.get('week_start_date') or request.data.get('week_start_date')
+        if week_start_str:
+            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+        else:
+            week_start, _ = _get_current_week_bounds()
+
+        return _get_week_bounds_from_start(week_start)
+
+    def _list_goals_for_week(self, request, week_start, week_end):
+        try:
+            summary_data = _get_goal_summary_data(request.user, week_start, week_end)
+        except WeeklySummary.DoesNotExist:
+            return Response(
+                {'error': 'Summary not found for the specified week'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        goals = UserGoal.objects.filter(
+            user=request.user,
+            is_active=True,
+            period_start=week_start,
+            period_end=week_end,
+        ).order_by('-created_at')
+
+        return Response({
+            'week_start_date': str(week_start),
+            'week_end_date': str(week_end),
+            'goals': _serialize_goals_with_progress(request.user, goals, week_start, week_end, summary_data),
+        })
+
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        week_start, week_end = self._resolve_week(request)
+        return self._list_goals_for_week(request, week_start, week_end)
+
+    def list(self, request):
+        week_start, week_end = self._resolve_week(request)
+        return self._list_goals_for_week(request, week_start, week_end)
+
+    def create(self, request):
+        serializer = UserGoalCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        week_start = serializer.validated_data.get('week_start_date')
+        if week_start is None:
+            week_start, week_end = _get_current_week_bounds()
+        else:
+            week_start, week_end = _get_week_bounds_from_start(week_start)
+
+        if UserGoal.objects.filter(
+            user=request.user,
+            metric=serializer.validated_data['metric'],
+            period_start=week_start,
+            period_end=week_end,
+            is_active=True,
+        ).exists():
+            return Response(
+                {'error': 'Goal already exists for this week and metric'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        goal = UserGoal.objects.create(
+            user=request.user,
+            metric=serializer.validated_data['metric'],
+            target_value=serializer.validated_data['target_value'],
+            period_start=week_start,
+            period_end=week_end,
+        )
+
+        summary_data = _get_goal_summary_data(request.user, week_start, week_end)
+        progress_map = _serialize_goals_with_progress(request.user, [goal], week_start, week_end, summary_data)
+        return Response(progress_map[0], status=status.HTTP_201_CREATED)
 
 class WeeklySummaryViewSet(ViewSet):
     permission_classes = [IsAuthenticated]
@@ -1086,71 +1209,6 @@ class WeeklySummaryViewSet(ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=False, methods=['get', 'post'])
-    def goals(self, request):
-        """GET/POST /summaries/goals/ - Manage user goals"""
-        from .models import UserGoal
-        
-        if request.method == 'GET':
-            goals = UserGoal.objects.filter(user=request.user, is_active=True)
-            serializer = UserGoalSerializer(goals, many=True)
-            return Response(serializer.data)
-        
-        # POST: Create new goal
-        serializer = UserGoalSerializer(data=request.data)
-        if serializer.is_valid():
-            goal = UserGoal.objects.create(
-                user=request.user,
-                metric=serializer.validated_data['metric'],
-                target_value=serializer.validated_data['target_value'],
-                period_start=serializer.validated_data['period_start'],
-                period_end=serializer.validated_data['period_end'],
-            )
-            # Serialize the created goal with full data
-            response_serializer = UserGoalSerializer(goal)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=False, methods=['get'])
-    def goal_progress(self, request):
-        """GET /summaries/goal-progress/?week_start_date=YYYY-MM-DD - Check goal progress"""
-        week_start_str = request.query_params.get('week_start_date')
-        if not week_start_str:
-            return Response(
-                {'error': 'week_start_date parameter required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            from datetime import datetime
-            week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
-            
-            summary = WeeklySummary.objects.get(
-                user=request.user,
-                week_start_date=week_start
-            )
-            
-            from .services import check_user_goals
-            goals_progress = check_user_goals(
-                request.user,
-                week_start,
-                summary.week_end_date,
-                summary.summary_data
-            )
-            
-            return Response({'goals': goals_progress})
-        except WeeklySummary.DoesNotExist:
-            return Response(
-                {'error': 'Summary not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-
 class SummaryFilesViewSet(ViewSet):
     """Nested viewset for files within a summary: GET /summaries/<id>/files/"""
     

@@ -82,9 +82,7 @@ export const summariesAPI = {
    */
   async getSummary(weekStartDate: string): Promise<WeeklySummary> {
     const { data } = await apiClient.get<WeeklySummary>("/summaries/summary/", {
-      params: {
-        week_start_date: weekStartDate,
-      },
+      params: { week_start_date: weekStartDate },
     });
     return data;
   },
@@ -203,30 +201,6 @@ export const summariesAPI = {
         params: {
           week_start_date: weekStartDate,
           weeks,
-        },
-      },
-    );
-    return data;
-  },
-
-  /**
-   * Get user's goals
-   */
-  async getGoals(): Promise<Record<string, any>[]> {
-    const { data } =
-      await apiClient.get<Record<string, any>[]>("/summaries/goals/");
-    return data;
-  },
-
-  /**
-   * Get goal progress for a specific week
-   */
-  async getGoalProgress(weekStartDate: string): Promise<Record<string, any>[]> {
-    const { data } = await apiClient.get<Record<string, any>[]>(
-      "/summaries/goal-progress/",
-      {
-        params: {
-          week_start_date: weekStartDate,
         },
       },
     );

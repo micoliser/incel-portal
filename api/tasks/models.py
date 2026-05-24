@@ -284,10 +284,9 @@ class SummaryExport(models.Model):
 class UserGoal(models.Model):
     """Goal tracking for users to set targets and track progress"""
     GOAL_METRICS = [
-        ('completion_rate', 'Completion Rate (%)'),
         ('tasks_completed', 'Tasks Completed'),
         ('high_priority_completed', 'High Priority Tasks Completed'),
-        ('on_time_completion_rate', 'On-Time Completion Rate (%)'),
+        ('files_attached', 'Files Attached'),
         ('comments_added', 'Comments Added'),
     ]
     

@@ -45,9 +45,10 @@ import {
   WeeklySummary,
   AvailableWeek,
 } from "@/lib/api/summaries";
+import { goalsAPI, type GoalRecord } from "@/lib/api/goals";
 import { MemoizedSummaryComparison } from "./components/SummaryComparison";
 import { MemoizedSummaryCharts } from "./components/SummaryCharts";
-import { MemoizedGoalTracker } from "./components/GoalTracker";
+import { MemoizedWeeklyGoalsSnapshot } from "./components/WeeklyGoalsSnapshot";
 import ShareWithUserModal from "./components/ShareWithUserModal";
 
 function SummariesContent() {
@@ -73,8 +74,7 @@ function SummariesContent() {
   const [shareWithUserOpen, setShareWithUserOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [comparisonMetrics, setComparisonMetrics] = useState<any>(null);
-  const [goals, setGoals] = useState<any[]>([]);
-  const [goalProgress, setGoalProgress] = useState<Record<string, any>>({});
+  const [goalsForWeek, setGoalsForWeek] = useState<GoalRecord[]>([]);
   const [loadingPhase2, setLoadingPhase2] = useState(false);
   const [historicalSummaries, setHistoricalSummaries] = useState<any[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -100,6 +100,14 @@ function SummariesContent() {
             setComparisonMetrics((data.summary as any).comparison_metrics);
           }
           setHistoricalSummaries(data.historical || []);
+          try {
+            const goalData = await goalsAPI.getGoalsForWeek(
+              (data.summary || (data as any))?.week_start_date,
+            );
+            setGoalsForWeek(goalData.goals || []);
+          } catch (err) {
+            setGoalsForWeek([]);
+          }
           setError(null);
         } catch (err: any) {
           if (err.response?.status === 403 || err.response?.status === 404) {
@@ -203,16 +211,10 @@ function SummariesContent() {
         }
 
         try {
-          // Fetch user goals
-          const userGoals = await summariesAPI.getGoals();
-          setGoals(userGoals);
-
-          // Fetch goal progress for the selected week
-          const progress = await summariesAPI.getGoalProgress(selectedWeek);
-          setGoalProgress(progress);
+          const goalData = await goalsAPI.getGoalsForWeek(selectedWeek);
+          setGoalsForWeek(goalData.goals || []);
         } catch (err) {
-          setGoals([]);
-          setGoalProgress({});
+          setGoalsForWeek([]);
         }
       } catch (err) {
         setError("Failed to load summary for the selected week");
@@ -811,9 +813,12 @@ function SummariesContent() {
 
               {/* Phase 2: Goal Tracker */}
               {!isSharedView && (
-                <MemoizedGoalTracker
-                  goals={goals}
-                  goalProgress={goalProgress}
+                <MemoizedWeeklyGoalsSnapshot
+                  title="Goals for This Week"
+                  description="Goals you created for this week are displayed here."
+                  goals={goalsForWeek}
+                  emptyStateTitle="No goals were created for this week"
+                  emptyStateDescription="You did not create goals during this week."
                 />
               )}
 

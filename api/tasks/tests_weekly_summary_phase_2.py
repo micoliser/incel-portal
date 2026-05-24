@@ -259,52 +259,66 @@ class Phase2GoalTests(BaseAPITestCase):
     """Tests for goal tracking and progress"""
     
     def test_create_user_goal(self):
-        """Test creating a user goal"""
+        """Test creating a user goal for the current week"""
         self.client.force_authenticate(user=self.user1)
+        week_start = date(2024, 5, 13)
         
         response = self.client.post(
-            '/api/v1/summaries/goals/',
+            '/api/v1/goals/',
             {
-                'metric': 'completion_rate',
+                'metric': 'files_attached',
                 'target_value': 85.0,
-                'period_start': '2024-05-01',
-                'period_end': '2024-05-31',
+                'week_start_date': str(week_start),
             }
         )
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         goal = UserGoal.objects.get(user=self.user1)
-        self.assertEqual(goal.metric, 'completion_rate')
+        self.assertEqual(goal.metric, 'files_attached')
         self.assertEqual(goal.target_value, 85.0)
+        self.assertEqual(goal.period_start, week_start)
+        self.assertEqual(goal.period_end, week_start + timedelta(days=6))
     
     def test_list_user_goals(self):
-        """Test listing user's active goals"""
+        """Test listing goals for a specific week"""
+        week_start = date(2024, 5, 13)
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(),
+        )
         goal = UserGoal.objects.create(
             user=self.user1,
-            metric='completion_rate',
+            metric='files_attached',
             target_value=85.0,
-            period_start=date(2024, 5, 1),
-            period_end=date(2024, 5, 31),
+            period_start=week_start,
+            period_end=week_start + timedelta(days=6),
         )
         
         self.client.force_authenticate(user=self.user1)
-        response = self.client.get('/api/v1/summaries/goals/')
+        response = self.client.get(
+            '/api/v1/goals/',
+            {'week_start_date': str(week_start)}
+        )
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['metric'], 'completion_rate')
+        self.assertEqual(response.data['week_start_date'], str(week_start))
+        self.assertEqual(len(response.data['goals']), 1)
+        self.assertEqual(response.data['goals'][0]['metric'], 'files_attached')
+        self.assertIn('progress', response.data['goals'][0])
     
     def test_check_goal_progress(self):
         """Test checking progress against goals"""
+        week_start = date(2024, 5, 13)
         goal = UserGoal.objects.create(
             user=self.user1,
             metric='tasks_completed',
             target_value=10.0,
-            period_start=date(2024, 5, 13),
-            period_end=date(2024, 5, 19),
+            period_start=week_start,
+            period_end=week_start + timedelta(days=6),
         )
         
-        week_start = date(2024, 5, 13)
         summary_data = self.build_summary_data(tasks_completed=8)
         
         summary = WeeklySummary.objects.create(
@@ -325,6 +339,24 @@ class Phase2GoalTests(BaseAPITestCase):
         self.assertFalse(goal_results['tasks_completed']['achieved'])
         self.assertEqual(goal_results['tasks_completed']['current'], 8)
         self.assertEqual(goal_results['tasks_completed']['target'], 10.0)
+
+    def test_delete_user_goal_not_allowed(self):
+        """Test goals cannot be deleted once created"""
+        week_start = date(2024, 5, 13)
+        goal = UserGoal.objects.create(
+            user=self.user1,
+            metric='comments_added',
+            target_value=5.0,
+            period_start=week_start,
+            period_end=week_start + timedelta(days=6),
+        )
+
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.delete(f'/api/v1/goals/{goal.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        goal.refresh_from_db()
+        self.assertTrue(goal.is_active)
 
 
 class Phase2OrganizationTests(BaseAPITestCase):

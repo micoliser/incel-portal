@@ -1,10 +1,11 @@
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
-from .views_api import RecurringScheduleViewSet, TaskViewSet, WeeklySummaryViewSet, SummaryFilesViewSet
+from .views_api import GoalsViewSet, RecurringScheduleViewSet, TaskViewSet, WeeklySummaryViewSet, SummaryFilesViewSet
 
 router = DefaultRouter()
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'recurring-schedules', RecurringScheduleViewSet, basename='recurring-schedule')
+router.register(r'goals', GoalsViewSet, basename='goal')
 router.register(r'summaries', WeeklySummaryViewSet, basename='weekly-summary')
 
 urlpatterns = [

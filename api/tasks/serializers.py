@@ -627,6 +627,13 @@ class SummaryExportSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'file_url', 'created_at']
 
 
+class UserGoalCreateSerializer(serializers.Serializer):
+    """Serializer for creating a current-week user goal"""
+    metric = serializers.ChoiceField(choices=UserGoal.GOAL_METRICS)
+    target_value = serializers.FloatField()
+    week_start_date = serializers.DateField(required=False)
+
+
 class UserGoalSerializer(serializers.ModelSerializer):
     """Serializer for user goals"""
     class Meta:
