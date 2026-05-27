@@ -44,12 +44,15 @@ import {
   summariesAPI,
   WeeklySummary,
   AvailableWeek,
+  type ComparisonMetrics,
+  type SharedWeeklySummary,
 } from "@/lib/api/summaries";
 import { goalsAPI, type GoalRecord } from "@/lib/api/goals";
 import { MemoizedSummaryComparison } from "./components/SummaryComparison";
 import { MemoizedSummaryCharts } from "./components/SummaryCharts";
 import { MemoizedWeeklyGoalsSnapshot } from "./components/WeeklyGoalsSnapshot";
 import ShareWithUserModal from "./components/ShareWithUserModal";
+import type { AxiosError } from "axios";
 
 function SummariesContent() {
   const searchParams = useSearchParams();
@@ -73,10 +76,13 @@ function SummariesContent() {
   const [loadingShareStatus, setLoadingShareStatus] = useState(false);
   const [shareWithUserOpen, setShareWithUserOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [comparisonMetrics, setComparisonMetrics] = useState<any>(null);
+  const [comparisonMetrics, setComparisonMetrics] =
+    useState<ComparisonMetrics | null>(null);
   const [goalsForWeek, setGoalsForWeek] = useState<GoalRecord[]>([]);
   const [loadingPhase2, setLoadingPhase2] = useState(false);
-  const [historicalSummaries, setHistoricalSummaries] = useState<any[]>([]);
+  const [historicalSummaries, setHistoricalSummaries] = useState<
+    WeeklySummary[]
+  >([]);
   const [exporting, setExporting] = useState(false);
 
   // Fetch available weeks on mount (only for non-shared view)
@@ -93,24 +99,29 @@ function SummariesContent() {
         try {
           setLoading(true);
           const data = await summariesAPI.getSharedSummary(shareToken);
+          const sharedSummary = data.summary as SharedWeeklySummary | undefined;
           // data: { summary, historical? }
-          setSummary(data.summary || (data as any));
+          setSummary(sharedSummary || null);
           // set comparison metrics if present
-          if (data.summary && (data.summary as any).comparison_metrics) {
-            setComparisonMetrics((data.summary as any).comparison_metrics);
+          if (sharedSummary?.comparison_metrics) {
+            setComparisonMetrics(sharedSummary.comparison_metrics);
           }
           setHistoricalSummaries(data.historical || []);
           try {
             const goalData = await goalsAPI.getGoalsForWeek(
-              (data.summary || (data as any))?.week_start_date,
+              sharedSummary?.week_start_date ?? "",
             );
             setGoalsForWeek(goalData.goals || []);
           } catch (err) {
             setGoalsForWeek([]);
           }
           setError(null);
-        } catch (err: any) {
-          if (err.response?.status === 403 || err.response?.status === 404) {
+        } catch (err) {
+          const error = err as AxiosError<{ detail?: string }>;
+          if (
+            error.response?.status === 403 ||
+            error.response?.status === 404
+          ) {
             setError("Invalid share link");
           } else {
             setError("Failed to load the shared summary");
@@ -490,11 +501,12 @@ function SummariesContent() {
                         } else {
                           toast.error("Export failed: no file returned");
                         }
-                      } catch (err: any) {
+                      } catch (err) {
+                        const error = err as AxiosError<{ detail?: string }>;
                         console.error(err);
-                        if (err?.response?.data?.detail) {
+                        if (error.response?.data?.detail) {
                           toast.error(
-                            `Export failed: ${err.response.data.detail}`,
+                            `Export failed: ${error.response.data.detail}`,
                           );
                         } else {
                           toast.error("Failed to export summary to PDF");

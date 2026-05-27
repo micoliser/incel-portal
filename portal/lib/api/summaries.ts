@@ -23,6 +23,22 @@ export interface WeeklySummary {
   summary_message: string;
 }
 
+export interface ComparisonMetrics {
+  delta_tasks_completed: number;
+  delta_completion_rate: number;
+  delta_on_time_completion_rate: number;
+  delta_high_priority_completed: number;
+  delta_comments: number;
+  delta_files: number;
+  trend: "up" | "down" | "flat";
+  velocity_change_percent?: number;
+  previous_week_start?: string;
+}
+
+export interface SharedWeeklySummary extends WeeklySummary {
+  comparison_metrics?: ComparisonMetrics;
+}
+
 export interface AvailableWeek {
   week_start_date: string;
   week_end_date: string;
@@ -33,6 +49,13 @@ export interface ShareResponse {
   share_link: string;
   share_token: string;
   created_at: string;
+}
+
+export interface UserShare {
+  shared_with: number | string;
+  share_token?: string;
+  share_link?: string;
+  created_at?: string;
 }
 
 export interface SummaryFileItem {
@@ -148,9 +171,12 @@ export const summariesAPI = {
    * List user-to-user shares for a summary
    */
   async getUserShares(weekStartDate: string) {
-    const { data } = await apiClient.get("/summaries/user-shares/", {
-      params: { week_start_date: weekStartDate },
-    });
+    const { data } = await apiClient.get<UserShare[]>(
+      "/summaries/user-shares/",
+      {
+        params: { week_start_date: weekStartDate },
+      },
+    );
     return data;
   },
 
@@ -170,9 +196,9 @@ export const summariesAPI = {
    */
   async getSharedSummary(
     shareToken: string,
-  ): Promise<{ summary: WeeklySummary; historical?: WeeklySummary[] }> {
+  ): Promise<{ summary: SharedWeeklySummary; historical?: WeeklySummary[] }> {
     const { data } = await apiClient.get<{
-      summary: WeeklySummary;
+      summary: SharedWeeklySummary;
       historical?: WeeklySummary[];
     }>("/summaries/shared/", {
       params: {
@@ -187,8 +213,8 @@ export const summariesAPI = {
    */
   async getComparisonMetrics(
     weekStartDate: string,
-  ): Promise<Record<string, any>> {
-    const { data } = await apiClient.get<Record<string, any>>(
+  ): Promise<ComparisonMetrics> {
+    const { data } = await apiClient.get<ComparisonMetrics>(
       "/summaries/comparison-metrics/",
       {
         params: {
@@ -228,7 +254,9 @@ export const summariesAPI = {
     viewType: "sent" | "recieved" = "sent",
     token?: string,
   ): Promise<SummaryFilesResponse> {
-    const params: Record<string, any> = { view: viewType };
+    const params: { view: "sent" | "recieved"; token?: string } = {
+      view: viewType,
+    };
     if (token) params.token = token;
 
     const { data } = await apiClient.get<SummaryFilesResponse>(

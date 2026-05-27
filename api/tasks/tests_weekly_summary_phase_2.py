@@ -4,6 +4,7 @@ Comprehensive tests for Phase 2 features
 import json
 from datetime import datetime, timedelta, date
 from unittest.mock import MagicMock, patch
+from django.conf import settings
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
@@ -246,8 +247,11 @@ class Phase2ExportTests(BaseAPITestCase):
         self.assertEqual(response.data['format'], 'pdf')
         self.assertIn('file_url', response.data)
         fake_s3_client.put_object.assert_called_once()
+        expected_prefix = (
+            f"{getattr(settings, 'SUMMARY_PDF_EXPORT_S3_PREFIX', 'pdf-exports').strip() or 'pdf-exports'}/summaries/"
+        )
         self.assertIn(
-            'development/pdf-exports/summaries/',
+            expected_prefix,
             fake_s3_client.put_object.call_args.kwargs['Key'],
         )
         

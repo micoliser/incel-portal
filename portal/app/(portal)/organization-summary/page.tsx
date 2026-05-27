@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Loader2 } from "lucide-react";
+import type { AxiosError } from "axios";
 
 import { PageErrorCard } from "@/components/page-error-card";
 import { Button } from "@/components/ui/button";
@@ -81,8 +82,9 @@ export default function OrganizationSummaryPage() {
         const data = await summariesAPI.getOrganizationSummary(selectedWeek);
         setOrgSummary(data);
         setError(null);
-      } catch (err: any) {
-        if (err?.response?.status === 403) {
+      } catch (err) {
+        const error = err as AxiosError<{ detail?: string }>;
+        if (error.response?.status === 403) {
           setError("Admin access required");
         } else {
           setError("Failed to load organization summary");
@@ -106,8 +108,9 @@ export default function OrganizationSummaryPage() {
       const data = await summariesAPI.getOrganizationSummary(selectedWeek);
       setOrgSummary(data);
       setError(null);
-    } catch (err: any) {
-      if (err?.response?.status === 403) {
+    } catch (err) {
+      const error = err as AxiosError<{ detail?: string }>;
+      if (error.response?.status === 403) {
         setError("Admin access required");
       } else {
         setError("Failed to load organization summary");
