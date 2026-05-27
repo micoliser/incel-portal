@@ -436,7 +436,7 @@ export default function UsersPage() {
   }, [departmentFilter]);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div className="mx-auto mb-4 w-full max-w-2xl">
         <Input
           id="users-search"

@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  AppWindow,
+  Calendar,
   CheckSquare2,
   Eye,
   EyeOff,
+  Building2,
   KeyRound,
+  AppWindow,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -147,35 +149,41 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         title: "Weekly Summary",
         subtitle: "Review your work activity and progress for the past weeks.",
       }
-    : pathname.startsWith("/goals")
+    : pathname.startsWith("/reports")
       ? {
-          title: "Goals",
-          subtitle: "Create current-week goals and track live progress.",
+          title: "Reports",
+          subtitle:
+            "Track daily reports, subreports, and departmental updates.",
         }
-      : pathname === "/applications"
+      : pathname.startsWith("/goals")
         ? {
-            title: "Applications",
-            subtitle: "Browse and manage internal application access.",
+            title: "Goals",
+            subtitle: "Create current-week goals and track live progress.",
           }
-        : pathname === "/users" || pathname.startsWith("/users")
+        : pathname === "/applications"
           ? {
-              title: "Users",
-              subtitle: "Manage workspace users.",
+              title: "Applications",
+              subtitle: "Browse and manage internal application access.",
             }
-          : pathname === "/logs"
+          : pathname === "/users" || pathname.startsWith("/users")
             ? {
-                title: "Logs",
-                subtitle: "Review audit events and activity history.",
+                title: "Users",
+                subtitle: "Manage workspace users.",
               }
-            : pathname.startsWith("/tasks")
+            : pathname === "/logs"
               ? {
-                  title: "Tasks",
-                  subtitle: "Manage and track your tasks.",
+                  title: "Logs",
+                  subtitle: "Review audit events and activity history.",
                 }
-              : {
-                  title: "Dashboard",
-                  subtitle: "Your portal workspace is ready.",
-                };
+              : pathname.startsWith("/tasks")
+                ? {
+                    title: "Tasks",
+                    subtitle: "Manage and track your tasks.",
+                  }
+                : {
+                    title: "Dashboard",
+                    subtitle: "Your portal workspace is ready.",
+                  };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
@@ -390,7 +398,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             onClick={handleCloseSidebar}
             className={cn(
               "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname === "/tasks"
+              pathname.startsWith("/tasks")
                 ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
@@ -398,14 +406,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span
               className={cn(
                 "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname === "/tasks" ? "opacity-100" : "opacity-0",
+                pathname.startsWith("/tasks") ? "opacity-100" : "opacity-0",
               )}
               aria-hidden="true"
             />
             <CheckSquare2
               className={cn(
                 "size-4 transition-transform duration-300",
-                pathname === "/tasks" ? "scale-110" : "group-hover:scale-105",
+                pathname.startsWith("/tasks")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
               )}
               aria-hidden="true"
             />
@@ -413,11 +423,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
-            href="/summaries"
+            href="/reports"
             onClick={handleCloseSidebar}
             className={cn(
               "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname === "/summaries"
+              pathname.startsWith("/reports")
                 ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
@@ -425,20 +435,49 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span
               className={cn(
                 "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname === "/summaries" ? "opacity-100" : "opacity-0",
+                pathname.startsWith("/reports") ? "opacity-100" : "opacity-0",
               )}
               aria-hidden="true"
             />
-            <TrendingUp
+            <Calendar
               className={cn(
                 "size-4 transition-transform duration-300",
-                pathname === "/summaries"
+                pathname.startsWith("/reports")
                   ? "scale-110"
                   : "group-hover:scale-105",
               )}
               aria-hidden="true"
             />
-            <span>Summaries</span>
+            <span>Reports</span>
+          </Link>
+
+          <Link
+            href="/applications"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname === "/applications"
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname === "/applications" ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <AppWindow
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname === "/applications"
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>Applications</span>
           </Link>
 
           <Link
@@ -471,11 +510,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
-            href="/applications"
+            href="/summaries"
             onClick={handleCloseSidebar}
             className={cn(
               "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname === "/applications"
+              pathname.startsWith("/summaries")
                 ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
@@ -483,20 +522,20 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span
               className={cn(
                 "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname === "/applications" ? "opacity-100" : "opacity-0",
+                pathname.startsWith("/summaries") ? "opacity-100" : "opacity-0",
               )}
               aria-hidden="true"
             />
-            <AppWindow
+            <TrendingUp
               className={cn(
                 "size-4 transition-transform duration-300",
-                pathname === "/applications"
+                pathname.startsWith("/summaries")
                   ? "scale-110"
                   : "group-hover:scale-105",
               )}
               aria-hidden="true"
             />
-            <span>Applications</span>
+            <span>Summaries</span>
           </Link>
 
           {isAdmin ? (
@@ -525,6 +564,39 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 aria-hidden="true"
               />
               <span>Users</span>
+            </Link>
+          ) : null}
+
+          {isAdmin ? (
+            <Link
+              href="/organization-summary"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname === "/organization-summary"
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname === "/organization-summary"
+                    ? "opacity-100"
+                    : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <Building2
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname === "/organization-summary"
+                    ? "scale-110"
+                    : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Organization</span>
             </Link>
           ) : null}
 
@@ -658,7 +730,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       <main
         className={cn(
           "h-screen overflow-y-auto lg:ml-72",
-          pathname === "/summaries"
+          pathname === "/summaries" || pathname.startsWith("/reports")
             ? "pt-54 px-0 pb-0 sm:pt-40 sm:px-0 sm:pb-0 lg:pt-28"
             : "pt-56 px-5 pb-6 sm:px-6 sm:pb-8 lg:pt-36",
         )}
