@@ -8,12 +8,10 @@ import {
   AlertCircle,
   ArrowLeft,
   Eye,
-  FileText,
   Loader2,
   Plus,
   Users,
 } from "lucide-react";
-import axios from "axios";
 import { toast } from "sonner";
 
 import { PageErrorCard } from "@/components/page-error-card";

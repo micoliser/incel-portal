@@ -1,6 +1,7 @@
 "use client";
 
 import axios from "axios";
+import Image from "next/image";
 import { AppWindow, ExternalLink, Loader2, Plus } from "lucide-react";
 import {
   useEffect,
@@ -1470,10 +1471,13 @@ export default function ApplicationsPage() {
                           Selected Preview
                         </p>
                         {createLogoPreviewUrl ? (
-                          <img
+                          <Image
                             src={createLogoPreviewUrl}
                             alt="Selected logo preview"
                             className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-slate-700"
+                            width={240}
+                            height={96}
+                            unoptimized
                           />
                         ) : (
                           <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-slate-700">
@@ -1856,10 +1860,13 @@ export default function ApplicationsPage() {
                         Current Logo
                       </p>
                       {manageTarget.logo_url ? (
-                        <img
+                        <Image
                           src={manageTarget.logo_url}
                           alt={`${manageTarget.name} current logo`}
                           className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-slate-700"
+                          width={240}
+                          height={96}
+                          unoptimized
                         />
                       ) : (
                         <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-slate-700">
@@ -1873,10 +1880,13 @@ export default function ApplicationsPage() {
                         Replacement Logo
                       </p>
                       {manageLogoPreviewUrl ? (
-                        <img
+                        <Image
                           src={manageLogoPreviewUrl}
                           alt="Replacement logo preview"
                           className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-slate-700"
+                          width={240}
+                          height={96}
+                          unoptimized
                         />
                       ) : (
                         <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-slate-700">
@@ -2271,10 +2281,13 @@ export default function ApplicationsPage() {
                     <div className="flex items-start gap-4">
                       <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent text-accent-foreground shadow-sm transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                         {hasLogo ? (
-                          <img
+                          <Image
                             src={application.logo_url ?? ""}
                             alt={application.name}
                             className="size-full object-contain p-2"
+                            width={56}
+                            height={56}
+                            unoptimized
                           />
                         ) : (
                           <AppWindow className="size-5" aria-hidden="true" />

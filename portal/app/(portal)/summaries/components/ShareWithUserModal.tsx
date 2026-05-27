@@ -42,8 +42,7 @@ export function ShareWithUserModal({
         setLoading(true);
         const users = await getUsers({ search: query });
         setResults(users || []);
-      } catch (err) {
-        console.error(err);
+      } catch {
         setResults([]);
       } finally {
         setLoading(false);
@@ -64,7 +63,7 @@ export function ShareWithUserModal({
           if (s.shared_with) map[Number(s.shared_with)] = true;
         });
         setSharedWith(map);
-      } catch (e) {
+      } catch {
         console.warn("Failed to load user shares", e);
       }
     })();
@@ -109,14 +108,14 @@ export function ShareWithUserModal({
             }
           }
         }
-      } catch (e) {
-        console.warn("Browser notification failed", e);
+      } catch {
+        console.warn("Browser notification failed");
       }
 
       // Optionally refresh unread count (Notification center may poll itself)
       try {
         await getUnreadNotificationCount();
-      } catch (e) {
+      } catch {
         // ignore
       }
 
@@ -180,8 +179,7 @@ export function ShareWithUserModal({
                               delete copy[Number(u.id)];
                               return copy;
                             });
-                          } catch (e) {
-                            console.error(e);
+                          } catch {
                             toast.error("Failed to revoke share");
                           } finally {
                             setSharing(false);

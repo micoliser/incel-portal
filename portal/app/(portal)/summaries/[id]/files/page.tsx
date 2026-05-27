@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Download, Eye } from "lucide-react";
-import Link from "next/link";
+import { ArrowLeft, Download } from "lucide-react";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { summariesAPI, type SummaryFilesResponse } from "@/lib/api/summaries";

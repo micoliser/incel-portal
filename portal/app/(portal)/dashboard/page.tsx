@@ -1,6 +1,7 @@
 "use client";
 
 import axios from "axios";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -35,7 +36,6 @@ import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
 import { PageErrorCard } from "@/components/page-error-card";
 import { apiClient } from "@/lib/api-client";
 import {
-  Task,
   TaskDashboardSummaryResponse,
   getTaskDashboardSummary,
 } from "@/lib/api/tasks";
@@ -138,7 +138,7 @@ export default function DashboardPage() {
           );
           const recentData = recentResp.data.map((r) => r.application);
           setRecentApps(recentData);
-        } catch (err) {
+        } catch {
           // silently ignore recent apps failure; dashboard will fall back to defaults
           setRecentApps(null);
         }
@@ -188,24 +188,12 @@ export default function DashboardPage() {
     taskSummary?.assigned_to.due_soon_or_overdue ?? 0;
 
   const assignedByMeTasksCount = taskSummary?.assigned_by.count ?? 0;
-  const pendingAssignedByMe = taskSummary?.assigned_by.pending ?? 0;
-  const inProgressAssignedByMe = taskSummary?.assigned_by.in_progress ?? 0;
-  const completedAssignedByMe = taskSummary?.assigned_by.completed ?? 0;
-  const highPriorityAssignedByMe = taskSummary?.assigned_by.high_priority ?? 0;
-  const overdueOrDueSoonAssignedByMe =
-    taskSummary?.assigned_by.due_soon_or_overdue ?? 0;
-
   const totalTasks = taskSummary?.total.count ?? 0;
   const totalPendingTasks = taskSummary?.total.pending ?? 0;
   const totalInProgressTasks = taskSummary?.total.in_progress ?? 0;
   const totalCompletedTasks = taskSummary?.total.completed ?? 0;
   const totalOverdueTasks = taskSummary?.total.overdue ?? 0;
 
-  const accessibleApps = useMemo(
-    () =>
-      applications.filter((application) => application.can_access !== false),
-    [applications],
-  );
   const activeApps = useMemo(
     () => applications.filter((application) => application.status === "ACTIVE"),
     [applications],
@@ -217,9 +205,6 @@ export default function DashboardPage() {
       ),
     [applications],
   );
-
-  const topAccessibleApps = accessibleApps.slice(0, 5);
-  const topAdminApps = applications.slice(0, 4);
 
   const summaryCards = isAdmin
     ? [
@@ -866,10 +851,13 @@ export default function DashboardPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <img
+                        <Image
                           src={application.logo_url ?? "/vercel.svg"}
                           alt={`${application.name} logo`}
                           className="h-10 w-10 rounded-md object-cover bg-muted"
+                          width={40}
+                          height={40}
+                          unoptimized
                         />
                         <div>
                           <p className="font-semibold text-foreground">
@@ -913,7 +901,7 @@ export default function DashboardPage() {
                             } else {
                               router.push("/applications");
                             }
-                          } catch (error) {
+                          } catch {
                             toast.error("Failed to open application.");
                             router.push("/applications");
                           }
