@@ -411,9 +411,18 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
     summaries = WeeklySummary.objects.filter(
         week_start_date=week_start
     )
-    
+
     if not summaries.exists():
-        return {}
+        return {
+            'week_start_date': str(week_start),
+            'week_end_date': str(week_end),
+            'total_active_users': 0,
+            'total_tasks_completed': 0,
+            'total_tasks_assigned': 0,
+            'avg_completion_rate_percent': 0,
+            'avg_on_time_completion_rate_percent': 0,
+            'summaries_count': 0,
+        }
     
     total_users = summaries.count()
     total_completed = 0

@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
+from rest_framework.views import APIView
 from django.db import models, IntegrityError
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -13,9 +14,11 @@ from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
 from emails.services.task_emails import TaskEmailManager
+from common.permissions import has_global_access
 from .models import (
-    RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary, 
-    WeeklySummaryShare, WeeklySummaryUserShare, SummaryExport, UserGoal
+    RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary,
+    WeeklySummaryShare, WeeklySummaryUserShare, SummaryExport, UserGoal,
+    DailyReport, DailyReportSubreport, DailyReportComment,
 )
 from .s3 import (
     TaskAttachmentStorageError,
@@ -39,6 +42,14 @@ from .serializers import (
     GoalProgressSerializer,
     UserGoalCreateSerializer,
     OrganizationSummarySerializer,
+    DailyReportCommentSerializer,
+    DailyReportCreateSerializer,
+    DailyReportDetailSerializer,
+    DailyReportCommentCreateSerializer,
+    DailyReportSubreportDetailSerializer,
+    DailyReportSubreportCreateSerializer,
+    DailyReportSubreportSummarySerializer,
+    DailyReportSummarySerializer,
 )
 from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
 from .services import calculate_next_run_at, create_task_with_side_effects
@@ -1012,7 +1023,7 @@ class WeeklySummaryViewSet(ViewSet):
         try:
             from datetime import datetime
             week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
-            week_end = week_start.replace(day=week_start.day + 6)
+            week_end = week_start + timedelta(days=6)
             
             from .services import calculate_organization_summary
             org_summary = calculate_organization_summary(week_start, week_end)
@@ -1341,3 +1352,315 @@ class SummaryFilesViewSet(ViewSet):
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+def _get_staff_profile(user):
+    return getattr(user, 'staff_profile', None)
+
+
+def _get_user_department(user):
+    profile = _get_staff_profile(user)
+    return profile.department if profile else None
+
+
+def _report_scope_users(user):
+    queryset = User.objects.select_related('staff_profile__department').filter(is_active=True)
+    if has_global_access(user):
+        return queryset.filter(staff_profile__department__isnull=False).distinct()
+
+    department = _get_user_department(user)
+    if department is None:
+        return User.objects.filter(id=user.id).select_related('staff_profile__department')
+
+    return queryset.filter(staff_profile__department=department).distinct()
+
+
+def _ensure_daily_reports_for_date(user, report_date):
+    department = _get_user_department(user)
+    if department is None and not has_global_access(user):
+        raise ValueError('Department is required to access daily reports.')
+
+    users = _report_scope_users(user)
+    created_reports = []
+    for member in users:
+        profile = _get_staff_profile(member)
+        if profile is None or profile.department is None:
+            continue
+
+        report, _ = DailyReport.objects.get_or_create(
+            user=member,
+            report_date=report_date,
+            defaults={'department': profile.department},
+        )
+        created_reports.append(report)
+
+    return created_reports
+
+
+def _get_or_create_current_user_report(user, report_date):
+    profile = _get_staff_profile(user)
+    if profile is None or profile.department is None:
+        raise ValueError('Department is required to create a daily report.')
+
+    report, _ = DailyReport.objects.get_or_create(
+        user=user,
+        report_date=report_date,
+        defaults={'department': profile.department},
+    )
+    return report
+
+
+def _serialize_daily_report_detail(report):
+    return DailyReportDetailSerializer(report).data
+
+
+def _serialize_daily_report_summary(report):
+    return DailyReportSummarySerializer(report).data
+
+
+def _parse_report_date(value):
+    from datetime import datetime
+
+    if isinstance(value, datetime):
+        return value.date()
+    return datetime.strptime(str(value), '%Y-%m-%d').date()
+
+
+class ReportsMonthCalendarView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        month_str = request.query_params.get('month')
+        if not month_str:
+            return Response({'error': 'month query parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from datetime import datetime, date
+
+            month_start = datetime.strptime(month_str, '%Y-%m').date().replace(day=1)
+            next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+            month_end = next_month - timedelta(days=1)
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        scope_users = _report_scope_users(request.user)
+        reports = DailyReport.objects.filter(
+            report_date__gte=month_start,
+            report_date__lte=month_end,
+            user__in=scope_users,
+        ).values('report_date').annotate(
+            report_count=Count('id'),
+            subreport_count=Count('subreports', distinct=True),
+        ).order_by('report_date')
+
+        your_reports = DailyReport.objects.filter(
+            user=request.user,
+            report_date__gte=month_start,
+            report_date__lte=month_end,
+        ).values('report_date').annotate(
+            report_count=Count('id'),
+            subreport_count=Count('subreports', distinct=True),
+        ).order_by('report_date')
+
+        report_map = {
+            str(item['report_date']): item for item in reports
+        }
+        your_report_map = {
+            str(item['report_date']): item for item in your_reports
+        }
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'dates': [
+                {
+                    'report_date': date_str,
+                    'report_count': report_map.get(date_str, {}).get('report_count', 0),
+                    'subreport_count': your_report_map.get(date_str, {}).get('subreport_count', 0),
+                    'has_your_report': date_str in your_report_map,
+                }
+                for date_str in sorted(report_map.keys())
+            ],
+        })
+
+
+class ReportsDayView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        report_date_str = request.query_params.get('report_date')
+        if not report_date_str:
+            return Response({'error': 'report_date query parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            report_date = _parse_report_date(report_date_str)
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        your_report = DailyReport.objects.select_related('user__staff_profile__department').prefetch_related(
+            'subreports__comments__author',
+            'subreports__created_by',
+            'user__staff_profile__department',
+        ).filter(user=request.user, report_date=report_date).first()
+
+        scope_users = _report_scope_users(request.user)
+        all_reports = DailyReport.objects.select_related('user__staff_profile__department').prefetch_related(
+            'subreports',
+            'user__staff_profile__department',
+        ).filter(
+            report_date=report_date,
+            user__in=scope_users,
+        ).annotate(subreport_count=Count('subreports', distinct=True)).order_by('user__first_name', 'user__last_name', 'user__username')
+
+        return Response({
+            'report_date': str(report_date),
+            'your_report': _serialize_daily_report_detail(your_report) if your_report else None,
+            'all_reports': DailyReportSummarySerializer(all_reports, many=True).data,
+        })
+
+    def post(self, request):
+        serializer = DailyReportCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        report_date = serializer.validated_data['report_date']
+        try:
+            daily_report = _get_or_create_current_user_report(request.user, report_date)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        subreport = DailyReportSubreport.objects.create(
+            daily_report=daily_report,
+            title=serializer.validated_data['title'],
+            created_by=request.user,
+        )
+        DailyReportComment.objects.create(
+            subreport=subreport,
+            author=request.user,
+            body=serializer.validated_data['comment'],
+        )
+
+        log_audit(
+            action='DAILY_REPORT_CREATED',
+            request=request,
+            actor_user=request.user,
+            target_type='daily_report_subreport',
+            target_id=str(subreport.id),
+            metadata={
+                'report_date': str(report_date),
+                'daily_report_id': str(daily_report.id),
+                'title': subreport.title,
+            },
+        )
+
+        return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
+
+
+class DailyReportDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, report_id):
+        return DailyReport.objects.select_related('user__staff_profile__department').prefetch_related(
+            'subreports__comments__author',
+            'subreports__created_by',
+            'user__staff_profile__department',
+        ).get(id=report_id)
+
+    def get(self, request, report_id):
+        try:
+            report = self.get_object(report_id)
+        except DailyReport.DoesNotExist:
+            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not has_global_access(request.user) and report.user_id != request.user.id:
+            profile = _get_user_department(request.user)
+            if profile is None or report.department_id != profile.id:
+                return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(_serialize_daily_report_detail(report))
+
+
+class DailyReportSubreportCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, report_id):
+        serializer = DailyReportSubreportCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            report = DailyReport.objects.get(id=report_id)
+        except DailyReport.DoesNotExist:
+            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if report.user_id != request.user.id and not has_global_access(request.user):
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        if report.report_date != timezone.localdate():
+            return Response(
+                {'error': 'You can only add reports on the current day.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        subreport = DailyReportSubreport.objects.create(
+            daily_report=report,
+            title=serializer.validated_data['title'],
+            created_by=request.user,
+        )
+        DailyReportComment.objects.create(
+            subreport=subreport,
+            author=request.user,
+            body=serializer.validated_data['comment'],
+        )
+
+        return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
+
+
+class DailyReportSubreportDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, subreport_id):
+        return DailyReportSubreport.objects.select_related(
+            'daily_report__user__staff_profile__department',
+            'created_by__staff_profile__department',
+        ).prefetch_related('comments__author').get(id=subreport_id)
+
+    def get(self, request, subreport_id):
+        try:
+            subreport = self.get_object(subreport_id)
+        except DailyReportSubreport.DoesNotExist:
+            return Response({'error': 'Subreport not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
+            profile = _get_user_department(request.user)
+            if profile is None or subreport.daily_report.department_id != profile.id:
+                return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(DailyReportSubreportDetailSerializer(subreport).data)
+
+
+class DailyReportSubreportCommentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, subreport_id):
+        serializer = DailyReportCommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            subreport = DailyReportSubreport.objects.select_related('daily_report__user').get(id=subreport_id)
+        except DailyReportSubreport.DoesNotExist:
+            return Response({'error': 'Subreport not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        if subreport.daily_report.report_date != timezone.localdate():
+            return Response(
+                {'error': 'You can only add comments on the current day.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        comment = DailyReportComment.objects.create(
+            subreport=subreport,
+            author=request.user,
+            body=serializer.validated_data['body'],
+        )
+
+        return Response(DailyReportCommentSerializer(comment).data, status=status.HTTP_201_CREATED)

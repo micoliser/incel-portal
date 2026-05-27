@@ -66,6 +66,17 @@ export interface SummaryExport {
   created_at: string;
 }
 
+export interface OrganizationSummary {
+  week_start_date: string;
+  week_end_date: string;
+  total_active_users: number;
+  total_tasks_completed: number;
+  total_tasks_assigned: number;
+  avg_completion_rate_percent: number;
+  avg_on_time_completion_rate_percent: number;
+  summaries_count: number;
+}
+
 export const summariesAPI = {
   /**
    * Get list of available weeks with summaries
@@ -240,6 +251,19 @@ export const summariesAPI = {
       week_start_date: weekStartDate,
       format,
     });
+    return data;
+  },
+
+  /**
+   * Get organization-wide summary (admin only)
+   */
+  async getOrganizationSummary(
+    weekStartDate: string,
+  ): Promise<OrganizationSummary> {
+    const { data } = await apiClient.get<OrganizationSummary>(
+      "/summaries/organization-summary/",
+      { params: { week_start_date: weekStartDate } },
+    );
     return data;
   },
 };

@@ -160,7 +160,7 @@ export default function SummaryFilesPage() {
   const tasksEmpty = !files || files.tasks.length === 0;
 
   return (
-    <div className="container mx-auto py-1">
+    <div className="container mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <Button
           variant="ghost"
