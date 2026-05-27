@@ -5,9 +5,10 @@ function buildRemotePatterns() {
 
   const customDomain = process.env.AWS_S3_CUSTOM_DOMAIN?.trim();
   if (customDomain) {
-    const normalized = customDomain.startsWith("http://") || customDomain.startsWith("https://")
-      ? customDomain
-      : `https://${customDomain}`;
+    const normalized =
+      customDomain.startsWith("http://") || customDomain.startsWith("https://")
+        ? customDomain
+        : `https://${customDomain}`;
     const parsed = new URL(normalized);
     patterns.push({
       protocol: parsed.protocol.replace(":", "") as "http" | "https",
