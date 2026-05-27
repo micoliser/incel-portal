@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getUsers } from "@/lib/api/tasks";
-import { summariesAPI } from "@/lib/api/summaries";
+import { getUsers, type UserOption } from "@/lib/api/tasks";
+import { summariesAPI, type UserShare } from "@/lib/api/summaries";
 import { getUnreadNotificationCount } from "@/lib/api/notifications";
 
 type Props = {
@@ -29,7 +29,7 @@ export function ShareWithUserModal({
   onShared,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<UserOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [sharedWith, setSharedWith] = useState<Record<number, boolean>>({});
@@ -60,7 +60,7 @@ export function ShareWithUserModal({
       try {
         const shares = await summariesAPI.getUserShares(weekStartDate);
         const map: Record<number, boolean> = {};
-        (shares || []).forEach((s: any) => {
+        (shares || []).forEach((s: UserShare) => {
           if (s.shared_with) map[Number(s.shared_with)] = true;
         });
         setSharedWith(map);
@@ -156,7 +156,7 @@ export function ShareWithUserModal({
               <div className="text-sm text-slate-500">No users found</div>
             )}
             {!loading &&
-              results.map((u: any) => (
+              results.map((u) => (
                 <div key={u.id} className="flex items-center justify-between">
                   <div>
                     <div className="font-medium">{u.username}</div>

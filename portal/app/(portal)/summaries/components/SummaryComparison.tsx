@@ -9,18 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
-interface ComparisonData {
-  delta_tasks_completed: number;
-  delta_completion_rate: number;
-  delta_on_time_completion_rate: number;
-  delta_high_priority_completed: number;
-  delta_comments: number;
-  delta_files: number;
-  trend: "up" | "down" | "flat";
-  velocity_change_percent?: number;
-  previous_week_start?: string;
-}
+import type { WeeklySummary, ComparisonMetrics } from "@/lib/api/summaries";
 
 interface MetricComparisonProps {
   label: string;
@@ -106,8 +95,16 @@ function MetricComparison({
 }
 
 interface SummaryComparisonProps {
-  current: Record<string, any>;
-  comparison?: ComparisonData;
+  current: Pick<
+    WeeklySummary,
+    | "completion_rate_percent"
+    | "tasks_completed"
+    | "on_time_completion_rate_percent"
+    | "high_priority_completed"
+    | "comments_added"
+    | "files_attached"
+  >;
+  comparison?: ComparisonMetrics;
 }
 
 export function SummaryComparison({
