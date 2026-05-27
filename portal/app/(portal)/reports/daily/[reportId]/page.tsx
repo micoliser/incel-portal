@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { format, formatDistanceToNow, isToday, parseISO } from "date-fns";
-import axios from "axios";
 import { useEffect, useState } from "react";
 import {
   AlertCircle,

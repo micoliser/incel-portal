@@ -1,10 +1,9 @@
 "use client";
 
-import axios from "axios";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { formatDistanceToNow, format, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import {
   Calendar,
@@ -12,11 +11,9 @@ import {
   Copy,
   Check,
   TrendingUp,
-  CheckCircle,
   FileText,
   MessageSquare,
   Clock,
-  AlertCircle,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -73,13 +70,12 @@ function SummariesContent() {
   const [shareConfirmOpen, setShareConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
-  const [loadingShareStatus, setLoadingShareStatus] = useState(false);
+  const [, setLoadingShareStatus] = useState(false);
   const [shareWithUserOpen, setShareWithUserOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [comparisonMetrics, setComparisonMetrics] =
     useState<ComparisonMetrics | null>(null);
   const [goalsForWeek, setGoalsForWeek] = useState<GoalRecord[]>([]);
-  const [loadingPhase2, setLoadingPhase2] = useState(false);
   const [historicalSummaries, setHistoricalSummaries] = useState<
     WeeklySummary[]
   >([]);
@@ -112,7 +108,7 @@ function SummariesContent() {
               sharedSummary?.week_start_date ?? "",
             );
             setGoalsForWeek(goalData.goals || []);
-          } catch (err) {
+          } catch {
             setGoalsForWeek([]);
           }
           setError(null);
@@ -126,7 +122,6 @@ function SummariesContent() {
           } else {
             setError("Failed to load the shared summary");
           }
-          console.error(err);
           setSummary(null);
         } finally {
           setLoading(false);
@@ -149,9 +144,8 @@ function SummariesContent() {
               setSelectedWeek(weeks[0].week_start_date);
             }
           }
-        } catch (err) {
+        } catch {
           setError("Failed to load available weeks");
-          console.error(err);
         } finally {
           setLoading(false);
         }
@@ -159,7 +153,7 @@ function SummariesContent() {
 
       fetchWeeks();
     }
-  }, [isSharedView, shareToken]);
+  }, [isSharedView, shareToken, summaryId]);
 
   // Fetch summary when selected week changes
   useEffect(() => {
@@ -182,10 +176,10 @@ function SummariesContent() {
             return copy;
           });
         }
-      } catch (e) {
+      } catch {
         // ignore
       } finally {
-        setLoadingShareStatus(false);
+        // no-op
       }
     })();
 
@@ -199,13 +193,12 @@ function SummariesContent() {
         setError(null);
 
         // Fetch Phase 2 data (comparisons, goals, goal progress)
-        setLoadingPhase2(true);
         try {
           // Fetch comparison metrics if available
           const comparison =
             await summariesAPI.getComparisonMetrics(selectedWeek);
           setComparisonMetrics(comparison);
-        } catch (err) {
+        } catch {
           // Comparison may not exist for first week
           setComparisonMetrics(null);
         }
@@ -217,14 +210,14 @@ function SummariesContent() {
             4,
           );
           setHistoricalSummaries(historical || []);
-        } catch (err) {
+        } catch {
           setHistoricalSummaries([]);
         }
 
         try {
           const goalData = await goalsAPI.getGoalsForWeek(selectedWeek);
           setGoalsForWeek(goalData.goals || []);
-        } catch (err) {
+        } catch {
           setGoalsForWeek([]);
         }
       } catch (err) {
@@ -233,7 +226,6 @@ function SummariesContent() {
         setSummary(null);
       } finally {
         setLoading(false);
-        setLoadingPhase2(false);
       }
     };
 
@@ -436,7 +428,7 @@ function SummariesContent() {
           {isSharedView && summary && (
             <div className="space-y-2 mb-8">
               <h1 className="text-4xl font-bold dark:text-white">
-                {summary.user_name}'s Weekly Summary
+                {summary.user_name}{"'s"} Weekly Summary
               </h1>
               <p className="text-gray-600 dark:text-slate-400 flex items-center space-x-2">
                 <Calendar className="w-4 h-4" />
@@ -501,9 +493,8 @@ function SummariesContent() {
                         } else {
                           toast.error("Export failed: no file returned");
                         }
-                      } catch (err) {
+                          } catch {
                         const error = err as AxiosError<{ detail?: string }>;
-                        console.error(err);
                         if (error.response?.data?.detail) {
                           toast.error(
                             `Export failed: ${error.response.data.detail}`,

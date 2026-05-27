@@ -28,6 +28,7 @@ function MetricComparison({
   isTrend,
   format = "count",
 }: MetricComparisonProps) {
+  void isTrend;
   const formatNumber = (val: number | null | undefined) =>
     typeof val === "number" && Number.isFinite(val) ? val : null;
 

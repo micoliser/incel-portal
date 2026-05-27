@@ -45,6 +45,7 @@ export function CompletionTrendChart({
   summaries,
   loading = false,
 }: TrendChartProps) {
+  void loading;
   if (!summaries || summaries.length === 0) {
     return (
       <Card>
@@ -123,6 +124,7 @@ export function TasksCompletedChart({
   summaries,
   loading = false,
 }: TasksCompletedChartProps) {
+  void loading;
   if (!summaries || summaries.length === 0) {
     return (
       <Card>
