@@ -428,7 +428,8 @@ function SummariesContent() {
           {isSharedView && summary && (
             <div className="space-y-2 mb-8">
               <h1 className="text-4xl font-bold dark:text-white">
-                {summary.user_name}{"'s"} Weekly Summary
+                {summary.user_name}
+                {"'s"} Weekly Summary
               </h1>
               <p className="text-gray-600 dark:text-slate-400 flex items-center space-x-2">
                 <Calendar className="w-4 h-4" />
@@ -493,7 +494,7 @@ function SummariesContent() {
                         } else {
                           toast.error("Export failed: no file returned");
                         }
-                          } catch {
+                      } catch (err) {
                         const error = err as AxiosError<{ detail?: string }>;
                         if (error.response?.data?.detail) {
                           toast.error(

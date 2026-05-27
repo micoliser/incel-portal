@@ -64,7 +64,7 @@ export function ShareWithUserModal({
         });
         setSharedWith(map);
       } catch {
-        console.warn("Failed to load user shares", e);
+        console.warn("Failed to load user shares");
       }
     })();
   }, [open, weekStartDate]);
