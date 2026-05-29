@@ -580,6 +580,26 @@ class Phase2FilesTests(BaseAPITestCase):
             size=123
         )
 
+        # Add an attachment from another user so "recieved" (for summary owner)
+        # has data when accessed via token by a shared recipient.
+        activity_other = TaskActivity.objects.create(
+            task=task,
+            user=self.user2,
+            activity_type='comment',
+            comment='Adding a received file'
+        )
+        TaskActivity.objects.filter(id=activity_other.id).update(
+            created_at=timezone.make_aware(datetime(2024, 5, 14, 11, 0, 0))
+        )
+
+        TaskAttachment.objects.create(
+            activity=activity_other,
+            object_key='obj-key-2',
+            file_name='received.txt',
+            content_type='text/plain',
+            size=456
+        )
+
         # Owner can list files
         self.client.force_authenticate(user=self.user1)
         owner_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=sent')

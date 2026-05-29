@@ -1282,27 +1282,31 @@ class SummaryFilesViewSet(ViewSet):
             # Add one day to week_end to make it inclusive
             week_end = week_end + timedelta(days=1)
             
-            # Get all tasks involving this user
+            # Always scope file aggregation to the summary owner so shared viewers
+            # see the same files represented by the shared summary metrics.
+            summary_user = summary.user
+
+            # Get all tasks involving the summary owner
             tasks_qs = Task.objects.filter(
-                models.Q(assigned_to=request.user) | models.Q(assigned_by=request.user)
+                models.Q(assigned_to=summary_user) | models.Q(assigned_by=summary_user)
             ).distinct()
             
             # Find all activities with attachments during the week
             if view_type == 'sent':
-                # Files attached by the current user
+                # Files attached by the summary owner
                 activities_qs = TaskActivity.objects.filter(
                     task__in=tasks_qs,
-                    user=request.user,
+                    user=summary_user,
                     created_at__gte=week_start,
                     created_at__lt=week_end
                 ).prefetch_related('attachments', 'task').order_by('-created_at')
             else:  # recieved
-                # Files attached by others
+                # Files attached by others on tasks involving the summary owner
                 activities_qs = TaskActivity.objects.filter(
                     task__in=tasks_qs,
                     created_at__gte=week_start,
                     created_at__lt=week_end
-                ).exclude(user=request.user).prefetch_related('attachments', 'task').order_by('-created_at')
+                ).exclude(user=summary_user).prefetch_related('attachments', 'task').order_by('-created_at')
             
             # Group by task
             tasks_with_files = defaultdict(list)
