@@ -10,6 +10,8 @@ from rest_framework import status
 from common.test_utils import BaseAPITestCase
 from tasks.management.commands import generate_user_summaries
 from tasks.models import Task, WeeklySummary, WeeklySummaryShare
+from tasks.models import DailyReport, DailyReportSubreport
+from tasks.services import calculate_user_weekly_summary
 
 
 def build_summary_data(**overrides):
@@ -348,3 +350,33 @@ class GenerateUserSummariesCommandTests(BaseAPITestCase):
         self.assertFalse(WeeklySummary.objects.filter(week_start_date=current_week_monday).exists())
         self.assertTrue(WeeklySummary.objects.filter(week_start_date=previous_week_monday).exists())
         self.assertTrue(WeeklySummary.objects.filter(week_start_date=week_before_previous_monday).exists())
+
+
+class WeeklySummaryDailyReportsTests(BaseAPITestCase):
+    def test_weekly_summary_includes_daily_report_breakdown(self):
+        week_start = date(2026, 5, 11)
+        week_end = week_start + timedelta(days=6)
+
+        daily_report = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=week_start,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=daily_report,
+            title='Morning update',
+            created_by=self.staff_user,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=daily_report,
+            title='Afternoon follow-up',
+            created_by=self.staff_user,
+        )
+
+        summary_data = calculate_user_weekly_summary(self.staff_user, week_start, week_end)
+
+        self.assertEqual(summary_data['daily_reports_created'], 1)
+        self.assertEqual(summary_data['daily_reports_subreports_created'], 2)
+        self.assertEqual(len(summary_data['daily_reports']), 1)
+        self.assertEqual(summary_data['daily_reports'][0]['title'], 'Morning update')
+        self.assertEqual(summary_data['daily_reports'][0]['subreport_count'], 2)

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { format, formatDistanceToNow, isToday, parseISO } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
+import { useCallback } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -23,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ReportDaySkeleton } from "@/components/skeletons/reports-skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { extractApiErrorMessage } from "@/lib/api-errors";
@@ -133,33 +135,31 @@ export default function ReportDayPage() {
     "my-report" | "department"
   >("my-report");
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const reportResponse = await reportsAPI.getDay(reportDate);
-        setDayData(reportResponse);
-        setShowCreateForm(false);
-        setActiveSection(
-          reportResponse.your_report ? "my-report" : "department",
-        );
-        setLoadError(null);
-        setActionError(null);
-      } catch (err) {
-        const message = extractApiErrorMessage(
-          err,
-          err instanceof Error ? err.message : "Failed to load report day",
-        );
-        setLoadError(message);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const reportResponse = await reportsAPI.getDay(reportDate);
+      setDayData(reportResponse);
+      setShowCreateForm(false);
+      setActiveSection(reportResponse.your_report ? "my-report" : "department");
+      setLoadError(null);
+      setActionError(null);
+    } catch (err) {
+      const message = extractApiErrorMessage(
+        err,
+        err instanceof Error ? err.message : "Failed to load report day",
+      );
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportDate]);
 
+  useEffect(() => {
     if (reportDate) {
       void loadData();
     }
-  }, [reportDate]);
+  }, [loadData, reportDate]);
 
   const yourReport = dayData?.your_report ?? null;
 
@@ -195,22 +195,20 @@ export default function ReportDayPage() {
         return;
       }
 
-      const response = yourReport
-        ? await reportsAPI.createSubreport(
-            yourReport.id,
-            trimmedTitle,
-            trimmedComment,
-          )
-        : await reportsAPI.createForDay(
-            reportDate,
-            trimmedTitle,
-            trimmedComment,
-          );
+      if (yourReport) {
+        await reportsAPI.createSubreport(
+          yourReport.id,
+          trimmedTitle,
+          trimmedComment,
+        );
+      } else {
+        await reportsAPI.createForDay(reportDate, trimmedTitle, trimmedComment);
+      }
 
       toast.success(yourReport ? "Report created." : "Daily report created.");
       setTitle("");
       setComment("");
-      router.push(response.view_url);
+      await loadData();
     } catch (err) {
       const message = extractApiErrorMessage(
         err,
@@ -224,16 +222,7 @@ export default function ReportDayPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/80 px-5 py-4 shadow-sm backdrop-blur">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <span className="text-sm font-medium text-muted-foreground">
-            Loading report day...
-          </span>
-        </div>
-      </div>
-    );
+    return <ReportDaySkeleton />;
   }
 
   if (loadError || !dayData) {

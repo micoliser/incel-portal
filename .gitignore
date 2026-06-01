@@ -5,3 +5,4 @@ DEPLOYMENT.md
 deployment/
 deploy.sh
 *.csv
+REALTIME_IMPLEMENTATION.txt

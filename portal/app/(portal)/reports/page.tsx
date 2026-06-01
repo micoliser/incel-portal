@@ -23,7 +23,6 @@ import {
   ChevronRight,
   Clock,
   FileText,
-  Loader2,
   Users,
 } from "lucide-react";
 
@@ -36,6 +35,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ReportsCalendarSkeleton } from "@/components/skeletons/reports-skeleton";
 import { reportsAPI, type ReportCalendarDay } from "@/lib/api/reports";
 
 function buildMonthGrid(month: Date) {
@@ -84,16 +84,7 @@ export default function ReportsPage() {
   };
 
   if (loading && calendarDays.length === 0) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/80 px-5 py-4 shadow-sm backdrop-blur">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <span className="text-sm font-medium text-muted-foreground">
-            Loading report calendar...
-          </span>
-        </div>
-      </div>
-    );
+    return <ReportsCalendarSkeleton />;
   }
 
   if (error) {

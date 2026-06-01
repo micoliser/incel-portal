@@ -4,6 +4,7 @@ import axios from "axios";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { useCallback } from "react";
 import {
   Calendar,
   CheckSquare2,
@@ -205,19 +206,172 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       .map((part) => part[0]?.toUpperCase() ?? "")
       .join("") || "PU";
 
-  async function handleLogout() {
-    const accessToken = getStoredAccessToken();
-    const refreshToken = getStoredRefreshToken();
+  const handleLogout = useCallback(
+    async (reason?: "inactivity" | "manual") => {
+      const accessToken = getStoredAccessToken();
+      const refreshToken = getStoredRefreshToken();
 
-    try {
-      if (accessToken && refreshToken) {
-        await apiClient.post("/auth/logout", { refresh: refreshToken });
+      try {
+        if (accessToken && refreshToken) {
+          await apiClient.post("/auth/logout", { refresh: refreshToken });
+        }
+      } finally {
+        clearStoredTokens();
+        if (reason === "inactivity") {
+          const search =
+            typeof window !== "undefined" ? (window.location.search ?? "") : "";
+          const currentPath = `${pathname}${search}`;
+          const loginPath = buildLoginPath(currentPath);
+          const inactivityLoginPath = loginPath.includes("?")
+            ? `${loginPath}&reason=inactivity`
+            : "/?reason=inactivity";
+          router.replace(inactivityLoginPath);
+        } else {
+          // For manual logout/default behavior, go to landing/login immediately.
+          router.replace("/");
+        }
       }
-    } finally {
-      clearStoredTokens();
-      router.replace("/");
+    },
+    [pathname, router],
+  );
+
+  // Inactivity auto-logout: track last activity across tabs and call logout
+  // after 1 hour (3600 seconds) of inactivity. Also send a lightweight
+  // heartbeat to the server when activity is detected to keep server-side
+  // last_activity_at in sync.
+  useEffect(() => {
+    const LAST_ACTIVITY_KEY = "portal_last_activity";
+    const INACTIVITY_SECONDS = 60 * 60; // 1 hour
+    const HEARTBEAT_THROTTLE = 60 * 1000; // 60 seconds
+
+    let inactivityTimer: number | null = null;
+    const lastHeartbeatRef = { ts: 0 } as { ts: number };
+
+    const bc =
+      typeof window !== "undefined" && "BroadcastChannel" in window
+        ? new BroadcastChannel("portal-auth")
+        : null;
+
+    const now = () => Math.floor(Date.now() / 1000);
+
+    function readLastActivity(): number {
+      try {
+        const v = window.localStorage.getItem(LAST_ACTIVITY_KEY);
+        if (!v) return 0;
+        return parseInt(v, 10) || 0;
+      } catch {
+        return 0;
+      }
     }
-  }
+
+    function writeLastActivity(ts: number) {
+      try {
+        window.localStorage.setItem(LAST_ACTIVITY_KEY, String(ts));
+      } catch {}
+    }
+
+    async function sendHeartbeatIfNeeded() {
+      try {
+        if (Date.now() - lastHeartbeatRef.ts < HEARTBEAT_THROTTLE) return;
+        lastHeartbeatRef.ts = Date.now();
+        await apiClient.post("/auth/heartbeat");
+      } catch {
+        // ignore heartbeat errors
+      }
+    }
+
+    function scheduleInactivityCheck() {
+      if (inactivityTimer) {
+        window.clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+      }
+      const last = readLastActivity();
+      const elapsed = now() - last;
+      const remaining = INACTIVITY_SECONDS - elapsed;
+      if (remaining <= 0) {
+        void handleLogout("inactivity");
+        if (bc) bc.postMessage({ type: "logout", reason: "inactivity" });
+        try {
+          window.localStorage.setItem(
+            "portal_auth_event",
+            JSON.stringify({ type: "logout", reason: "inactivity" }),
+          );
+        } catch {}
+        return;
+      }
+      inactivityTimer = window.setTimeout(() => {
+        void handleLogout("inactivity");
+        if (bc) bc.postMessage({ type: "logout", reason: "inactivity" });
+        try {
+          window.localStorage.setItem(
+            "portal_auth_event",
+            JSON.stringify({ type: "logout", reason: "inactivity" }),
+          );
+        } catch {}
+      }, remaining * 1000);
+    }
+
+    function onActivity() {
+      const ts = now();
+      writeLastActivity(ts);
+      void sendHeartbeatIfNeeded();
+      scheduleInactivityCheck();
+      if (bc) bc.postMessage({ type: "activity", ts });
+    }
+
+    // Initialize
+    const initial = readLastActivity();
+    if (!initial) writeLastActivity(now());
+    scheduleInactivityCheck();
+
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    for (const ev of events)
+      window.addEventListener(ev, onActivity, { passive: true });
+    document.addEventListener("visibilitychange", onActivity);
+
+    if (bc) {
+      bc.addEventListener("message", (ev) => {
+        const data = ev.data || {};
+        if (data.type === "logout") {
+          // Another tab logged out — ensure this tab also logs out
+          void handleLogout(
+            data.reason === "inactivity" ? "inactivity" : undefined,
+          );
+        } else if (data.type === "activity" && data.ts) {
+          writeLastActivity(Number(data.ts));
+          scheduleInactivityCheck();
+        }
+      });
+    } else {
+      // Fallback: listen to storage events (we update LAST_ACTIVITY_KEY)
+      window.addEventListener("storage", (ev) => {
+        if (!ev.key) return;
+        if (ev.key === LAST_ACTIVITY_KEY && ev.newValue) {
+          const ts = parseInt(ev.newValue, 10) || 0;
+          if (ts) {
+            writeLastActivity(ts);
+            scheduleInactivityCheck();
+          }
+        }
+        if (ev.key === "portal_auth_event" && ev.newValue) {
+          try {
+            const obj = JSON.parse(ev.newValue);
+            if (obj?.type === "logout")
+              void handleLogout(
+                obj.reason === "inactivity" ? "inactivity" : undefined,
+              );
+          } catch {}
+        }
+      });
+    }
+
+    return () => {
+      for (const ev of events) window.removeEventListener(ev, onActivity);
+      document.removeEventListener("visibilitychange", onActivity);
+      if (inactivityTimer) window.clearTimeout(inactivityTimer);
+      if (bc) bc.close();
+    };
+  }, [handleLogout]);
 
   function handleCloseSidebar() {
     setIsSidebarOpen(false);
@@ -633,7 +787,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         <Button
           variant="secondary"
           className="w-full justify-start"
-          onClick={handleLogout}
+          onClick={() => void handleLogout()}
         >
           <LogOut className="mr-2 size-4" aria-hidden="true" />
           Log out

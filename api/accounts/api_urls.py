@@ -6,6 +6,7 @@ urlpatterns = [
     path('auth/login', views_api.LoginView.as_view(), name='auth-login'),
     path('auth/logout', views_api.LogoutView.as_view(), name='auth-logout'),
     path('auth/refresh', views_api.RefreshTokenView.as_view(), name='auth-refresh'),
+    path('auth/heartbeat', views_api.HeartbeatView.as_view(), name='auth-heartbeat'),
     path('auth/change-password', views_api.ChangePasswordView.as_view(), name='auth-change-password'),
     path('me', views_api.MeView.as_view(), name='me'),
     path('me/permissions', views_api.MePermissionsView.as_view(), name='me-permissions'),
