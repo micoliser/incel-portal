@@ -733,6 +733,55 @@ function SummariesContent() {
                 </CardContent>
               </Card>
 
+              {/* Daily Reports */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Daily Reports</CardTitle>
+                  <CardDescription>
+                    {summary.daily_reports_created} daily report
+                    {summary.daily_reports_created === 1 ? "" : "s"} created
+                    this week.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {summary.daily_reports?.length > 0 ? (
+                    <div className="space-y-3">
+                      {summary.daily_reports.map((dailyReport) => (
+                        <div
+                          key={`${dailyReport.report_date}-${dailyReport.view_url}`}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 p-4"
+                        >
+                          <div className="space-y-1">
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">
+                              {format(
+                                parseISO(dailyReport.report_date),
+                                "EEEE, MMM d",
+                              )}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {dailyReport.title}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="rounded-full bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
+                              {dailyReport.subreport_count} report
+                              {dailyReport.subreport_count === 1 ? "" : "s"}
+                            </span>
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={dailyReport.view_url}>Open</Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                      No daily reports were captured for this week.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Priority Distribution - Same for both views */}
               <Card>
                 <CardHeader>

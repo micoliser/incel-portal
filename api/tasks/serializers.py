@@ -466,6 +466,9 @@ class WeeklySummarySerializer(serializers.Serializer):
     comments_added = serializers.SerializerMethodField()
     files_attached = serializers.SerializerMethodField()
     files_received = serializers.SerializerMethodField()
+    daily_reports_created = serializers.SerializerMethodField()
+    daily_reports_subreports_created = serializers.SerializerMethodField()
+    daily_reports = serializers.SerializerMethodField()
     recurring_schedules_created = serializers.SerializerMethodField()
     active_recurring_schedules = serializers.SerializerMethodField()
     
@@ -542,6 +545,51 @@ class WeeklySummarySerializer(serializers.Serializer):
             return calculate_user_files_received(obj.user, week_start_dt, week_end_dt)
         except Exception:
             return 0
+
+    def get_daily_reports_created(self, obj):
+        stored_value = self.get_field_from_summary_data(obj, 'daily_reports_created')
+        if stored_value is not None:
+            return stored_value
+
+        daily_reports = self.get_daily_reports(obj)
+        return len(daily_reports)
+
+    def get_daily_reports_subreports_created(self, obj):
+        stored_value = self.get_field_from_summary_data(obj, 'daily_reports_subreports_created')
+        if stored_value is not None:
+            return stored_value
+
+        return sum(item.get('subreport_count', 0) for item in self.get_daily_reports(obj))
+
+    def get_daily_reports(self, obj):
+        stored_value = self.get_field_from_summary_data(obj, 'daily_reports')
+        if stored_value:
+            return stored_value
+
+        try:
+            from .models import DailyReport
+
+            daily_reports = (
+                DailyReport.objects.filter(
+                    user=obj.user,
+                    report_date__gte=obj.week_start_date,
+                    report_date__lte=obj.week_end_date,
+                )
+                .prefetch_related('subreports')
+                .order_by('report_date')
+            )
+
+            return [
+                {
+                    'report_date': report.report_date,
+                    'title': report.display_title,
+                    'subreport_count': report.subreports.count(),
+                    'view_url': f'/reports/daily/{report.id}',
+                }
+                for report in daily_reports
+            ]
+        except Exception:
+            return []
     
     def get_recurring_schedules_created(self, obj):
         return self.get_field_from_summary_data(obj, 'recurring_schedules_created')

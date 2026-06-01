@@ -22,6 +22,7 @@ class StaffProfile(TimeStampedModel):
         blank=True,
     )
     is_active = models.BooleanField(default=True)
+    last_activity_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['user__username']

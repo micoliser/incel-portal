@@ -11,6 +11,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
+from datetime import timedelta
 
 from accounts.models import StaffProfile
 from accounts.serializers import (
@@ -135,7 +137,54 @@ class RefreshTokenView(APIView):
             serializer.is_valid(raise_exception=True)
         except TokenError:
             return Response({'detail': 'Invalid or blacklisted refresh token.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Enforce server-side inactivity timeout: if the user has not been
+        # active for more than 1 hour, reject the refresh and blacklist the
+        # presented refresh token to force a full re-login.
+        refresh_token = request.data.get('refresh')
+        try:
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                user_id = token.get('user_id') or token.get('user') or None
+                if user_id:
+                    try:
+                        user = User.objects.get(pk=user_id)
+                        profile = getattr(user, 'staff_profile', None)
+                        if profile is not None:
+                            last = profile.last_activity_at
+                            # If we've never recorded activity, treat this as a fresh session
+                            # and initialize last_activity_at rather than rejecting immediately.
+                            if last is None:
+                                profile.last_activity_at = timezone.now()
+                                profile.save(update_fields=['last_activity_at'])
+                            elif (timezone.now() - last > timedelta(hours=1)):
+                                # Blacklist the refresh token and deny
+                                try:
+                                    token.blacklist()
+                                except Exception:
+                                    pass
+                                return Response({'detail': 'Session expired due to inactivity.'}, status=status.HTTP_401_UNAUTHORIZED)
+                    except User.DoesNotExist:
+                        pass
+        except Exception:
+            # If token decode fails, fall back to normal behavior already covered above
+            pass
+
         return Response(serializer.validated_data)
+
+
+class HeartbeatView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            profile = getattr(request.user, 'staff_profile', None)
+            if profile is not None:
+                profile.last_activity_at = timezone.now()
+                profile.save(update_fields=['last_activity_at'])
+        except Exception:
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ChangePasswordView(APIView):

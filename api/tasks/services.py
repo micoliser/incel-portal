@@ -11,7 +11,7 @@ from applications.audit import log_audit
 from notifications.models import Notification
 from notifications.services import create_notification
 
-from .models import RecurringSchedule, Task, TaskActivity
+from .models import DailyReport, RecurringSchedule, Task, TaskActivity
 
 
 def _display_name(user: User) -> str:
@@ -259,6 +259,32 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
         attachment_count=Count('attachments')
     ).aggregate(total=Count('attachments', filter=Q(attachments__isnull=False)))['total'] or 0
     files_received = calculate_user_files_received(user, week_start_dt, week_end_dt)
+
+    daily_reports_qs = (
+        DailyReport.objects.filter(
+            user=user,
+            report_date__gte=week_start,
+            report_date__lte=week_end,
+        )
+        .select_related('user', 'department')
+        .prefetch_related('subreports')
+        .order_by('report_date')
+    )
+    daily_reports = []
+    daily_reports_subreports_created = 0
+    for report in daily_reports_qs:
+        subreport_count = report.subreports.count()
+        daily_reports_subreports_created += subreport_count
+        daily_reports.append(
+            {
+                'report_date': str(report.report_date),
+                'title': report.display_title,
+                'subreport_count': subreport_count,
+                'view_url': f'/reports/daily/{report.id}',
+            }
+        )
+
+    daily_reports_created = len(daily_reports)
     
     # Recurring schedules created by this user during the week
     recurring_created = RecurringSchedule.objects.filter(
@@ -318,6 +344,9 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
         'comments_added': comments_count,
         'files_attached': files_attached,
         'files_received': files_received,
+        'daily_reports_created': daily_reports_created,
+        'daily_reports_subreports_created': daily_reports_subreports_created,
+        'daily_reports': daily_reports,
         'recurring_schedules_created': recurring_created,
         'active_recurring_schedules': recurring_assigned,
         

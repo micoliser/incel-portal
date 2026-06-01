@@ -66,6 +66,22 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
         except (TypeError, ValueError):
             return default
 
+    def get_daily_reports():
+        daily_reports = summary_data.get('daily_reports') or []
+        if daily_reports:
+            return daily_reports
+
+        try:
+            from datetime import datetime
+            from .services import calculate_user_weekly_summary
+
+            week_start = datetime.strptime(summary_data['week_start_date'], '%Y-%m-%d').date()
+            week_end = datetime.strptime(summary_data['week_end_date'], '%Y-%m-%d').date()
+            computed = calculate_user_weekly_summary(user, week_start, week_end)
+            return computed.get('daily_reports') or []
+        except Exception:
+            return []
+
     def pct_text(value):
         return f"{to_float(value):.1f}%"
 
@@ -246,6 +262,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
         metric_card('Tasks Completed', str(to_int(summary_data.get('tasks_completed'))), palette['success'], 'Finished this week'),
         metric_card('Completion Rate', pct_text(summary_data.get('completion_rate_percent')), palette['blue'], 'Across all tasks'),
         metric_card('On-Time Rate', pct_text(summary_data.get('on_time_completion_rate_percent')), palette['teal'], 'Deadline performance'),
+        metric_card('Daily Reports', str(to_int(summary_data.get('daily_reports_created'))), palette['teal'], 'Daily report entries'),
         metric_card('Files Received', str(to_int(summary_data.get('files_received', summary_data.get('files_attached')))), palette['amber'], 'Attachments seen'),
         metric_card('Comments Added', str(to_int(summary_data.get('comments_added'))), palette['navy'], 'Activity and collaboration'),
         metric_card('High Priority Done', str(to_int(summary_data.get('high_priority_completed'))), palette['warning'], 'Urgent work completed'),
@@ -308,12 +325,40 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
         ['Comments Added', str(to_int(summary_data.get('comments_added')))],
         ['Files Attached', str(to_int(summary_data.get('files_attached')))],
         ['Files Received', str(to_int(summary_data.get('files_received', summary_data.get('files_attached'))))],
+        ['Daily Reports Created', str(to_int(summary_data.get('daily_reports_created')))],
+        ['Daily Report Subreports', str(to_int(summary_data.get('daily_reports_subreports_created')))],
         ['Recurring Schedules Created', str(to_int(summary_data.get('recurring_schedules_created')))],
         ['Priority Spread', ', '.join(f"{key}: {to_int(value)}" for key, value in (summary_data.get('priority_distribution') or {}).items()) or 'Not available'],
         ['Status Spread', ', '.join(f"{key}: {to_int(value)}" for key, value in (summary_data.get('status_distribution') or {}).items()) or 'Not available'],
     ])
     story.append(engagement_table)
     story.append(Spacer(1, 0.18 * inch))
+
+    daily_reports = get_daily_reports()
+    if daily_reports:
+        story.append(Paragraph('Daily Reports', section_style('Daily Reports', palette['teal'])))
+        daily_reports_rows = [['Date', 'Title', 'Subreports']]
+        for report in daily_reports:
+            daily_reports_rows.append([
+                str(report.get('report_date', '')),
+                str(report.get('title', 'Untitled')),
+                str(to_int(report.get('subreport_count'))),
+            ])
+
+        daily_reports_table = Table(daily_reports_rows, colWidths=[1.45 * inch, 3.65 * inch, 1.1 * inch], hAlign='LEFT')
+        daily_reports_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), palette['teal']),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, palette['slate_light']]),
+            ('GRID', (0, 0), (-1, -1), 0.6, palette['border']),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(daily_reports_table)
+        story.append(Spacer(1, 0.18 * inch))
 
     priority_table = build_distribution_table(
         'Priority',

@@ -16,11 +16,21 @@ export interface WeeklySummary {
   comments_added: number;
   files_attached: number;
   files_received: number;
+  daily_reports_created: number;
+  daily_reports_subreports_created: number;
+  daily_reports: DailyReportSummary[];
   recurring_schedules_created: number;
   active_recurring_schedules: number;
   priority_distribution: Record<string, number>;
   status_distribution: Record<string, number>;
   summary_message: string;
+}
+
+export interface DailyReportSummary {
+  report_date: string;
+  title: string;
+  subreport_count: number;
+  view_url: string;
 }
 
 export interface ComparisonMetrics {

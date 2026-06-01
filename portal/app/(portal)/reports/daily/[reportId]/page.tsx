@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { format, formatDistanceToNow, isToday, parseISO } from "date-fns";
 import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -23,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DailyReportSkeleton } from "@/components/skeletons/reports-skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiClient } from "@/lib/api-client";
@@ -83,33 +85,33 @@ export default function DailyReportPage() {
   const [title, setTitle] = useState("");
   const [comment, setComment] = useState("");
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [reportData, profileResponse] = await Promise.all([
-          reportsAPI.getDailyReport(reportId),
-          apiClient.get("/me"),
-        ]);
-        setReport(reportData);
-        setCurrentUserId(profileResponse.data.id ?? null);
-        setLoadError(null);
-        setActionError(null);
-      } catch (err) {
-        const message = extractApiErrorMessage(
-          err,
-          err instanceof Error ? err.message : "Failed to load report",
-        );
-        setLoadError(message);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [reportData, profileResponse] = await Promise.all([
+        reportsAPI.getDailyReport(reportId),
+        apiClient.get("/me"),
+      ]);
+      setReport(reportData);
+      setCurrentUserId(profileResponse.data.id ?? null);
+      setLoadError(null);
+      setActionError(null);
+    } catch (err) {
+      const message = extractApiErrorMessage(
+        err,
+        err instanceof Error ? err.message : "Failed to load report",
+      );
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportId]);
 
+  useEffect(() => {
     if (reportId) {
       void loadData();
     }
-  }, [reportId]);
+  }, [loadData, reportId]);
 
   const canEdit = Boolean(report && currentUserId === report.creator.id);
   const reportIsToday = report ? isToday(parseISO(report.report_date)) : false;
@@ -142,15 +144,11 @@ export default function DailyReportPage() {
     try {
       setIsSubmitting(true);
       setActionError(null);
-      const created = await reportsAPI.createSubreport(
-        report.id,
-        trimmedTitle,
-        trimmedComment,
-      );
+      await reportsAPI.createSubreport(report.id, trimmedTitle, trimmedComment);
       setTitle("");
       setComment("");
       toast.success("Report created.");
-      router.push(created.view_url);
+      await loadData();
     } catch (err) {
       const message = extractApiErrorMessage(
         err,
@@ -164,16 +162,7 @@ export default function DailyReportPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/80 px-5 py-4 shadow-sm backdrop-blur">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <span className="text-sm font-medium text-muted-foreground">
-            Loading report...
-          </span>
-        </div>
-      </div>
-    );
+    return <DailyReportSkeleton />;
   }
 
   if (loadError || !report) {
