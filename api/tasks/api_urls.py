@@ -12,6 +12,7 @@ from .views_api import (
     DailyReportSubreportCreateView,
     DailyReportSubreportDetailView,
     DailyReportSubreportCommentView,
+    DailyReportSendEmailView,
 )
 
 router = DefaultRouter()
@@ -25,6 +26,11 @@ urlpatterns = [
     path('reports/month/', ReportsMonthCalendarView.as_view(), name='reports-month-calendar'),
     path('reports/day/', ReportsDayView.as_view(), name='reports-day-hub'),
     path('reports/daily/<uuid:report_id>/', DailyReportDetailView.as_view(), name='reports-daily-detail'),
+    path(
+        'reports/daily/<uuid:report_id>/send-email/',
+        DailyReportSendEmailView.as_view(),
+        name='reports-daily-send-email',
+    ),
     path('reports/daily/<uuid:report_id>/subreports/', DailyReportSubreportCreateView.as_view(), name='reports-daily-subreports-create'),
     path('reports/subreports/<uuid:subreport_id>/', DailyReportSubreportDetailView.as_view(), name='reports-subreport-detail'),
     path('reports/subreports/<uuid:subreport_id>/comments/', DailyReportSubreportCommentView.as_view(), name='reports-subreport-comments'),

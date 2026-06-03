@@ -871,3 +871,23 @@ class DailyReportCommentCreateSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError('Comment is required.')
         return value
+
+
+class DailyReportSendEmailSerializer(serializers.Serializer):
+    recipients = serializers.ListField(
+        child=serializers.EmailField(),
+        min_length=1,
+        max_length=5,
+    )
+
+    def validate_recipients(self, value):
+        normalized = []
+        seen = set()
+        for email in value:
+            stripped = email.strip()
+            key = stripped.lower()
+            if key in seen:
+                raise serializers.ValidationError('Duplicate email addresses are not allowed.')
+            seen.add(key)
+            normalized.append(stripped)
+        return normalized

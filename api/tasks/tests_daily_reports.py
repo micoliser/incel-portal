@@ -1,6 +1,8 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -261,3 +263,145 @@ class DailyReportsApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(past_subreport.comments.count(), 0)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    @patch('emails.config.EmailConfig.is_debug_mode', return_value=False)
+    @patch('emails.config.EmailConfig.use_celery', return_value=False)
+    @patch('emails.config.EmailConfig.is_enabled', return_value=True)
+    def test_owner_can_forward_daily_report_email(self, *_mocks):
+        create_response = self._create_report(
+            title='Morning standup',
+            comment='Shipped the API changes.',
+        )
+        report_id = create_response.data['daily_report_id']
+        report = DailyReport.objects.get(id=report_id)
+
+        second_subreport = DailyReportSubreport.objects.create(
+            daily_report=report,
+            title='Afternoon sync',
+            created_by=self.staff_user,
+        )
+        DailyReportComment.objects.create(
+            subreport=second_subreport,
+            author=self.staff_user,
+            body='Blocked on review.',
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['colleague@example.com', 'manager@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('2 recipients', response.data['detail'])
+
+        from django.core import mail
+
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.to, ['colleague@example.com', 'manager@example.com'])
+        self.assertEqual(message.reply_to, ['staff@example.com'])
+        self.assertIn('Morning standup', message.body)
+        self.assertIn('Afternoon sync', message.body)
+        self.assertIn('Shipped the API changes.', message.body)
+        self.assertIn('Blocked on review.', message.body)
+        self.assertIn(f'/reports/daily/{report_id}', message.body)
+
+    def test_non_owner_cannot_forward_daily_report_email(self):
+        create_response = self._create_report(
+            title='Engineering update',
+            comment='Team note.',
+        )
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.hr_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['someone@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_global_admin_cannot_forward_someone_elses_report(self):
+        create_response = self._create_report(
+            title='Staff report',
+            comment='Only owner should send.',
+        )
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['admin-forward@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_send_email_rejects_duplicate_recipients(self):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['dup@example.com', 'dup@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['type'], 'validation_error')
+
+    def test_send_email_rejects_more_than_five_recipients(self):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {
+                'recipients': [
+                    'a@example.com',
+                    'b@example.com',
+                    'c@example.com',
+                    'd@example.com',
+                    'e@example.com',
+                    'f@example.com',
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('emails.config.EmailConfig.is_enabled', return_value=False)
+    def test_send_email_returns_503_when_email_disabled(self, _mock_enabled):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['someone@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    @patch('emails.config.EmailConfig.is_enabled', return_value=True)
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=False)
+    def test_send_email_returns_502_when_delivery_fails(self, _mock_send, _mock_enabled):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['someone@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)

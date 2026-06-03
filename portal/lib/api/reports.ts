@@ -138,4 +138,15 @@ export const reportsAPI = {
     );
     return data;
   },
+
+  async sendDailyReportEmail(
+    reportId: string,
+    recipients: string[],
+  ): Promise<{ detail: string }> {
+    const { data } = await apiClient.post<{ detail: string }>(
+      `/reports/daily/${reportId}/send-email/`,
+      { recipients },
+    );
+    return data;
+  },
 };
