@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Eye,
   Loader2,
+  Mail,
   Plus,
   Users,
 } from "lucide-react";
@@ -24,6 +25,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DailyReportSkeleton } from "@/components/skeletons/reports-skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +42,12 @@ import { reportsAPI, type DailyReportDetail } from "@/lib/api/reports";
 
 const backButtonClassName =
   "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+
+const MAX_FORWARD_RECIPIENTS = 5;
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 function SubreportCard({
   subreport,
@@ -84,6 +99,10 @@ export default function DailyReportPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [title, setTitle] = useState("");
   const [comment, setComment] = useState("");
+  const [isSendEmailOpen, setIsSendEmailOpen] = useState(false);
+  const [recipientEmails, setRecipientEmails] = useState<string[]>([""]);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [sendEmailError, setSendEmailError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -115,6 +134,95 @@ export default function DailyReportPage() {
 
   const canEdit = Boolean(report && currentUserId === report.creator.id);
   const reportIsToday = report ? isToday(parseISO(report.report_date)) : false;
+
+  const resetSendEmailForm = () => {
+    setRecipientEmails([""]);
+    setSendEmailError(null);
+  };
+
+  const handleOpenSendEmail = () => {
+    resetSendEmailForm();
+    setIsSendEmailOpen(true);
+  };
+
+  const handleAddRecipientField = () => {
+    if (recipientEmails.length >= MAX_FORWARD_RECIPIENTS) {
+      return;
+    }
+    setRecipientEmails((current) => [...current, ""]);
+  };
+
+  const handleRecipientChange = (index: number, value: string) => {
+    setRecipientEmails((current) =>
+      current.map((email, emailIndex) =>
+        emailIndex === index ? value : email,
+      ),
+    );
+    setSendEmailError(null);
+  };
+
+  const handleRemoveRecipientField = (index: number) => {
+    setRecipientEmails((current) => {
+      if (current.length === 1) {
+        return [""];
+      }
+      return current.filter((_, emailIndex) => emailIndex !== index);
+    });
+    setSendEmailError(null);
+  };
+
+  const handleSendEmail = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!report) {
+      return;
+    }
+
+    const recipients = recipientEmails
+      .map((email) => email.trim())
+      .filter(Boolean);
+
+    if (recipients.length === 0) {
+      setSendEmailError("Add at least one email address.");
+      return;
+    }
+
+    const invalidIndex = recipients.findIndex((email) => !isValidEmail(email));
+    if (invalidIndex !== -1) {
+      setSendEmailError(`Enter a valid email address in field ${invalidIndex + 1}.`);
+      return;
+    }
+
+    const seen = new Set<string>();
+    for (const email of recipients) {
+      const key = email.toLowerCase();
+      if (seen.has(key)) {
+        setSendEmailError("Remove duplicate email addresses.");
+        return;
+      }
+      seen.add(key);
+    }
+
+    try {
+      setIsSendingEmail(true);
+      setSendEmailError(null);
+      const response = await reportsAPI.sendDailyReportEmail(
+        report.id,
+        recipients,
+      );
+      toast.success(response.detail);
+      setIsSendEmailOpen(false);
+      resetSendEmailForm();
+    } catch (err) {
+      const message = extractApiErrorMessage(
+        err,
+        err instanceof Error ? err.message : "Failed to send report email",
+      );
+      setSendEmailError(message);
+      toast.error(message);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -207,9 +315,23 @@ export default function DailyReportPage() {
                   {report.department}
                 </CardDescription>
               </div>
-              <div className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm dark:bg-slate-900/80">
-                {report.subreport_count} report
-                {report.subreport_count === 1 ? "" : "s"}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm dark:bg-slate-900/80">
+                  {report.subreport_count} report
+                  {report.subreport_count === 1 ? "" : "s"}
+                </div>
+                {canEdit ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={handleOpenSendEmail}
+                  >
+                    <Mail className="h-4 w-4" />
+                    Send to email
+                  </Button>
+                ) : null}
               </div>
             </div>
           </CardHeader>
@@ -362,6 +484,103 @@ export default function DailyReportPage() {
           </Card>
         </div>
       </div>
+
+      <Dialog
+        open={isSendEmailOpen}
+        onOpenChange={(open) => {
+          setIsSendEmailOpen(open);
+          if (!open) {
+            resetSendEmailForm();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send report to email</DialogTitle>
+            <DialogDescription>
+              Forward this daily report with all report entries and comments.
+              You can add up to {MAX_FORWARD_RECIPIENTS} recipients.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form className="space-y-4" onSubmit={handleSendEmail}>
+            <div className="space-y-3">
+              {recipientEmails.map((email, index) => (
+                <div key={`recipient-${index}`} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor={`recipient-email-${index}`}>
+                      Email {index + 1}
+                    </Label>
+                    {recipientEmails.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-2 py-1 text-xs text-muted-foreground"
+                        onClick={() => handleRemoveRecipientField(index)}
+                        disabled={isSendingEmail}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                  <Input
+                    id={`recipient-email-${index}`}
+                    type="email"
+                    value={email}
+                    onChange={(event) =>
+                      handleRecipientChange(index, event.target.value)
+                    }
+                    placeholder="colleague@example.com"
+                    disabled={isSendingEmail}
+                    autoComplete="email"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {recipientEmails.length < MAX_FORWARD_RECIPIENTS ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={handleAddRecipientField}
+                disabled={isSendingEmail}
+              >
+                <Plus className="h-4 w-4" />
+                Add another
+              </Button>
+            ) : null}
+
+            {sendEmailError ? (
+              <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>{sendEmailError}</span>
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsSendEmailOpen(false)}
+                disabled={isSendingEmail}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="gap-2" disabled={isSendingEmail}>
+                {isSendingEmail ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
+                Send email
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

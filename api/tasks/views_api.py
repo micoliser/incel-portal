@@ -13,6 +13,8 @@ from django.contrib.auth.models import User
 from applications.audit import log_audit
 from notifications.services import create_notification
 from notifications.models import Notification
+from emails.config import EmailConfig
+from emails.services.daily_report_emails import DailyReportEmailManager
 from emails.services.task_emails import TaskEmailManager
 from common.permissions import has_global_access
 from .models import (
@@ -50,6 +52,7 @@ from .serializers import (
     DailyReportSubreportCreateSerializer,
     DailyReportSubreportSummarySerializer,
     DailyReportSummarySerializer,
+    DailyReportSendEmailSerializer,
 )
 from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
 from .services import calculate_next_run_at, create_task_with_side_effects
@@ -1668,3 +1671,54 @@ class DailyReportSubreportCommentView(APIView):
         )
 
         return Response(DailyReportCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+
+
+class DailyReportSendEmailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_report(self, report_id):
+        return DailyReport.objects.select_related(
+            'user',
+            'department',
+        ).prefetch_related(
+            'subreports__comments__author',
+            'subreports__created_by',
+        ).get(id=report_id)
+
+    def post(self, request, report_id):
+        if not EmailConfig.is_enabled():
+            return Response(
+                {'error': 'Email sending is disabled.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        try:
+            report = self.get_report(report_id)
+        except DailyReport.DoesNotExist:
+            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if report.user_id != request.user.id:
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = DailyReportSendEmailSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        recipients = serializer.validated_data['recipients']
+
+        sent = DailyReportEmailManager.send_forward(
+            report=report,
+            sender=request.user,
+            recipients=recipients,
+        )
+        if not sent:
+            return Response(
+                {'error': 'Failed to send email. Please try again later.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        recipient_count = len(recipients)
+        detail = (
+            f'Report forwarded to {recipient_count} recipient.'
+            if recipient_count == 1
+            else f'Report forwarded to {recipient_count} recipients.'
+        )
+        return Response({'detail': detail}, status=status.HTTP_200_OK)
