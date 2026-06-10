@@ -1,4 +1,4 @@
-const NOTIFICATION_ICON = "/vercel.svg?v=2";
+const NOTIFICATION_ICON = "/logo2.png";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
