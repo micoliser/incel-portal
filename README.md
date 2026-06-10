@@ -53,8 +53,9 @@ incel-portal/
 ├── api/                    # Django backend
 ├── portal/                 # Next.js frontend
 ├── deployment/             # VPS/bootstrap SQL and deployment helpers
-├── docker-compose.yml      # Production app stack
-├── DEPLOYMENT.md           # Production deployment guide
+├── deploy.sh               # Manual CapRover production deploy script
+├── deploy.env.example      # Template for local .env.deploy
+├── DEPLOYMENT.md           # CapRover production deployment guide
 ├── .env.backend             # Backend environment variables
 ├── .env.frontend            # Frontend environment variables
 └── README.md               # This file
@@ -460,24 +461,22 @@ Open the app at:
 http://127.0.0.1:3000
 ```
 
-## Docker Compose / Production Setup
+## Production Deployment (CapRover)
 
-The root `docker-compose.yml` is designed for the production app stack.
+Production runs on **CapRover** using GHCR images built by GitHub Actions.
 
-It expects:
+Manual deploy flow:
 
-- an existing external Docker network named `web`
-- a shared Postgres service in the infrastructure stack
-- backend and frontend images from GHCR
-- `.env.backend` and `.env.frontend` beside the compose file
+```bash
+cp deploy.env.example .env.deploy
+# add GITHUB_TOKEN and CapRover webhook URLs
+chmod +x deploy.sh
+./deploy.sh
+```
 
-The production stack uses:
+The script can optionally build/push images via GitHub Actions, then trigger CapRover app webhooks. Pushing to GitHub does not deploy production automatically.
 
-- backend container that runs migrations, collects static files, and starts Gunicorn
-- frontend container configured with the public API base URL
-- Traefik labels for routing and TLS
-
-See `DEPLOYMENT.md` for a full VPS deployment workflow.
+See `DEPLOYMENT.md` for the full CapRover setup and environment variable reference.
 
 ## Running Tests
 
@@ -579,7 +578,7 @@ You can override the API base URL, admin login, password, logo path, and random 
 ## Useful Links in This Repo
 
 - [Deployment guide](DEPLOYMENT.md)
-- [Backend compose file](docker-compose.yml)
+- [Legacy Traefik compose file](deployment/legacy-docker-compose.yml)
 - [Demo data script](api/scripts/seed_demo_data.py)
 - [Technical documentation](docs/TECHNICAL_DOCUMENTATION.md)
 - [Documentation policy](docs/DOCUMENTATION_POLICY.md)
