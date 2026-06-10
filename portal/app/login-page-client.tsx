@@ -30,6 +30,7 @@ import {
   setStoredTokens,
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
+import Image from "next/image";
 
 type LoginPageClientProps = {
   returnToPath: string | null;
@@ -219,8 +220,11 @@ export default function LoginPageClient({
 
       <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="flex flex-col justify-center space-y-6 text-foreground">
-          <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
-            Incel Portal
+          <div className="flex items-center gap-2">
+            <Image src="/logo2.png" alt="Incel Group" width={50} height={50} />
+            <div className="inline-flex w-fit items-center rounded-full font-medium text-primary shadow-sm backdrop-blur">
+              Incel Workspace
+            </div>
           </div>
           <div className="space-y-4">
             <h1 className="max-w-xl text-5xl font-semibold tracking-tight text-foreground sm:text-6xl">
@@ -231,14 +235,14 @@ export default function LoginPageClient({
               applications, and manage your work from one central place.
             </p>
           </div>
-          <div className="grid max-w-xl gap-3 text-sm text-muted-foreground sm:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="max-w-xl text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+            <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
               Secure access
             </div>
-            <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur">
+            <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
               Department aware
             </div>
-            <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur">
+            <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
               Audit logged
             </div>
           </div>

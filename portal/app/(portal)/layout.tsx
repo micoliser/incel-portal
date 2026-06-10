@@ -46,6 +46,7 @@ import {
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import Image from "next/image";
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -492,17 +493,15 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           isSidebarOpen && "translate-x-0",
         )}
       >
-        <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-2xl px-1 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-foreground">
-              IG
-            </div>
+            <Image src="/logo2.png" alt="Incel Group" width={50} height={50} />
             <div>
               <p className="text-base font-semibold leading-tight text-sidebar-foreground">
                 Incel Group
               </p>
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
-                Portal
+                Workspace
               </p>
             </div>
           </div>
