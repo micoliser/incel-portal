@@ -721,6 +721,16 @@ class OrganizationSummarySerializer(serializers.Serializer):
     avg_completion_rate_percent = serializers.FloatField()
     avg_on_time_completion_rate_percent = serializers.FloatField()
     summaries_count = serializers.IntegerField()
+    total_comments_added = serializers.IntegerField(required=False, default=0)
+    total_files_attached = serializers.IntegerField(required=False, default=0)
+    total_files_received = serializers.IntegerField(required=False, default=0)
+    total_recurring_schedules_created = serializers.IntegerField(required=False, default=0)
+    total_active_recurring_schedules = serializers.IntegerField(required=False, default=0)
+    total_daily_reports_created = serializers.IntegerField(required=False, default=0)
+    total_daily_reports_subreports_created = serializers.IntegerField(required=False, default=0)
+    priority_distribution = serializers.DictField(required=False, default=dict)
+    status_distribution = serializers.DictField(required=False, default=dict)
+    comparison = serializers.DictField(required=False, allow_null=True, default=None)
 
 
 class DailyReportCommentSerializer(serializers.ModelSerializer):

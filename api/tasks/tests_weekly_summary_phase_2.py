@@ -20,6 +20,7 @@ from tasks.models import (
 from tasks.services import (
     calculate_weekly_comparison, calculate_organization_summary, check_user_goals
 )
+from tasks.tasks import cache_organization_summaries
 
 
 class BaseAPITestCase(TestCase):
@@ -407,6 +408,175 @@ class Phase2OrganizationTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total_active_users'], 2)
         self.assertEqual(response.data['total_tasks_completed'], 14)
+
+    def test_cache_organization_summaries_caches_all_available_weeks(self):
+        """Test cache task stores one org summary per available week."""
+        week_start = date(2024, 5, 13)
+        previous_week_start = week_start - timedelta(days=7)
+
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=8)
+        )
+        WeeklySummary.objects.create(
+            user=self.user2,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=6)
+        )
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=previous_week_start,
+            week_end_date=previous_week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=4)
+        )
+
+        result = cache_organization_summaries()
+
+        self.assertEqual(result['cached'], 2)
+        self.assertEqual(result['errors'], 0)
+        self.assertEqual(OrganizationSummaryCache.objects.count(), 2)
+
+        current_cache = OrganizationSummaryCache.objects.get(
+            week_start_date=week_start
+        )
+        previous_cache = OrganizationSummaryCache.objects.get(
+            week_start_date=previous_week_start
+        )
+
+        self.assertEqual(current_cache.week_end_date, week_start + timedelta(days=6))
+        self.assertEqual(current_cache.summary_data['total_active_users'], 2)
+        self.assertEqual(current_cache.summary_data['total_tasks_completed'], 14)
+        self.assertEqual(previous_cache.summary_data['total_active_users'], 1)
+        self.assertEqual(previous_cache.summary_data['total_tasks_completed'], 4)
+
+    def test_cache_organization_summaries_updates_existing_cache_row(self):
+        """Test cache task updates stale cache data instead of creating duplicates."""
+        week_start = date(2024, 5, 13)
+
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=8)
+        )
+        OrganizationSummaryCache.objects.create(
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data={'total_tasks_completed': 999}
+        )
+
+        result = cache_organization_summaries()
+
+        self.assertEqual(result['cached'], 1)
+        self.assertEqual(result['errors'], 0)
+        self.assertEqual(OrganizationSummaryCache.objects.count(), 1)
+
+        cache_row = OrganizationSummaryCache.objects.get(week_start_date=week_start)
+        self.assertEqual(cache_row.summary_data['total_tasks_completed'], 8)
+        self.assertEqual(cache_row.summary_data['total_active_users'], 1)
+
+    def test_organization_summary_uses_cached_data_when_available(self):
+        """Test endpoint returns cached data before live aggregation."""
+        week_start = date(2024, 5, 13)
+        cached_data = {
+            'week_start_date': str(week_start),
+            'week_end_date': str(week_start + timedelta(days=6)),
+            'total_active_users': 7,
+            'total_tasks_completed': 77,
+            'total_tasks_assigned': 88,
+            'avg_completion_rate_percent': 90.0,
+            'avg_on_time_completion_rate_percent': 85.0,
+            'summaries_count': 7,
+            'total_comments_added': 21,
+            'total_files_attached': 14,
+            'total_files_received': 7,
+            'total_recurring_schedules_created': 3,
+            'total_active_recurring_schedules': 2,
+            'total_daily_reports_created': 5,
+            'total_daily_reports_subreports_created': 10,
+            'priority_distribution': {'high': 21},
+            'status_distribution': {'completed': 77},
+            'comparison': None,
+        }
+
+        OrganizationSummaryCache.objects.create(
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=cached_data
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        with patch('tasks.services.calculate_organization_summary') as mock_calculate:
+            mock_calculate.side_effect = AssertionError('live calculation should not run')
+            response = self.client.get(
+                reverse('weekly-summary-organization-summary'),
+                {'week_start_date': str(week_start)}
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_calculate.assert_not_called()
+        self.assertEqual(response.data['total_active_users'], 7)
+        self.assertEqual(response.data['total_tasks_completed'], 77)
+        self.assertEqual(response.data['priority_distribution'], {'high': 21})
+
+    def test_organization_summary_falls_back_to_live_calculation_when_cache_missing(self):
+        """Test endpoint calculates live data when no cache row exists."""
+        week_start = date(2024, 5, 13)
+
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=8)
+        )
+        WeeklySummary.objects.create(
+            user=self.user2,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=6)
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get(
+            reverse('weekly-summary-organization-summary'),
+            {'week_start_date': str(week_start)}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_active_users'], 2)
+        self.assertEqual(response.data['total_tasks_completed'], 14)
+        self.assertEqual(OrganizationSummaryCache.objects.count(), 0)
+
+    def test_cache_organization_summaries_returns_error_count(self):
+        """Test cache task reports successes and errors separately."""
+        week_start = date(2024, 5, 13)
+        previous_week_start = week_start - timedelta(days=7)
+
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=8)
+        )
+        WeeklySummary.objects.create(
+            user=self.user2,
+            week_start_date=previous_week_start,
+            week_end_date=previous_week_start + timedelta(days=6),
+            summary_data=self.build_summary_data(tasks_completed=6)
+        )
+
+        with patch(
+            'tasks.services.calculate_organization_summary',
+            side_effect=Exception('boom')
+        ):
+            result = cache_organization_summaries()
+
+        self.assertEqual(result['cached'], 0)
+        self.assertEqual(result['errors'], 2)
+        self.assertEqual(OrganizationSummaryCache.objects.count(), 0)
 
 
 class Phase2ComparisonMetricsTest(BaseAPITestCase):

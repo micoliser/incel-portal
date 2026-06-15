@@ -270,4 +270,49 @@ def calculate_weekly_comparisons() -> dict[str, int]:
         'comparisons_created': comparisons_created,
         'errors': errors,
     }
-    return 1
+
+
+@shared_task(name='tasks.cache_organization_summaries')
+def cache_organization_summaries() -> dict[str, int]:
+    """Pre-compute organization summaries for all available weeks and cache them.
+
+    Runs after user weekly summaries are generated so admins see cached data
+    instead of live-aggregating on every page load.
+    """
+    from datetime import date
+    from .models import WeeklySummary, OrganizationSummaryCache
+    from .services import calculate_organization_summary
+
+    week_starts = (
+        WeeklySummary.objects
+        .values_list('week_start_date', flat=True)
+        .distinct()
+        .order_by('-week_start_date')
+    )
+
+    cached = 0
+    errors = 0
+
+    for week_start in week_starts:
+        try:
+            week_end = week_start + timedelta(days=6)
+            org_data = calculate_organization_summary(week_start, week_end)
+
+            OrganizationSummaryCache.objects.update_or_create(
+                week_start_date=week_start,
+                defaults={
+                    'week_end_date': week_end,
+                    'summary_data': org_data,
+                },
+            )
+            cached += 1
+        except Exception as e:
+            logger.error(
+                'Error caching org summary for week %s: %s', week_start, str(e)
+            )
+            errors += 1
+
+    logger.info(
+        'Organization summaries cached: %d stored, %d errors', cached, errors
+    )
+    return {'cached': cached, 'errors': errors}

@@ -193,6 +193,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'tasks.generate_weekly_summaries',
         'schedule': crontab(hour=0, minute=0, day_of_week=1),  # Every Monday at 00:00
     },
+    'cache-organization-summaries': {
+        'task': 'tasks.cache_organization_summaries',
+        'schedule': crontab(hour=0, minute=30, day_of_week=1),  # Every Monday at 00:30
+    },
     'send-weekly-summary-emails': {
         'task': 'tasks.send_weekly_summary_emails',
         'schedule': crontab(hour=8, minute=0, day_of_week=1),  # Every Monday at 08:00
