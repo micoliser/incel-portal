@@ -451,6 +451,16 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
             'avg_completion_rate_percent': 0,
             'avg_on_time_completion_rate_percent': 0,
             'summaries_count': 0,
+            'total_comments_added': 0,
+            'total_files_attached': 0,
+            'total_files_received': 0,
+            'total_recurring_schedules_created': 0,
+            'total_active_recurring_schedules': 0,
+            'total_daily_reports_created': 0,
+            'total_daily_reports_subreports_created': 0,
+            'priority_distribution': {},
+            'status_distribution': {},
+            'comparison': None,
         }
     
     total_users = summaries.count()
@@ -458,6 +468,15 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
     total_assigned = 0
     completion_rates = []
     on_time_rates = []
+    total_comments = 0
+    total_files_attached = 0
+    total_files_received = 0
+    total_recurring_created = 0
+    total_active_recurring = 0
+    total_daily_reports = 0
+    total_daily_subreports = 0
+    agg_priority_dist = {}
+    agg_status_dist = {}
     
     for summary in summaries:
         data = summary.summary_data
@@ -465,6 +484,18 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
         total_assigned += data.get('tasks_assigned', 0)
         completion_rates.append(data.get('completion_rate_percent', 0))
         on_time_rates.append(data.get('on_time_completion_rate_percent', 0))
+        total_comments += data.get('comments_added', 0)
+        total_files_attached += data.get('files_attached', 0)
+        total_files_received += data.get('files_received', 0)
+        total_recurring_created += data.get('recurring_schedules_created', 0)
+        total_active_recurring += data.get('active_recurring_schedules', 0)
+        total_daily_reports += data.get('daily_reports_created', 0)
+        total_daily_subreports += data.get('daily_reports_subreports_created', 0)
+
+        for k, v in (data.get('priority_distribution') or {}).items():
+            agg_priority_dist[k] = agg_priority_dist.get(k, 0) + v
+        for k, v in (data.get('status_distribution') or {}).items():
+            agg_status_dist[k] = agg_status_dist.get(k, 0) + v
     
     avg_completion_rate = (
         sum(completion_rates) / len(completion_rates) if completion_rates else 0
@@ -472,6 +503,37 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
     avg_on_time_rate = (
         sum(on_time_rates) / len(on_time_rates) if on_time_rates else 0
     )
+
+    # Calculate week-over-week comparison
+    from datetime import timedelta
+    prev_week = week_start - timedelta(days=7)
+    prev_summaries = WeeklySummary.objects.filter(week_start_date=prev_week)
+    comparison = None
+    if prev_summaries.exists():
+        prev_completed = sum(s.summary_data.get('tasks_completed', 0) for s in prev_summaries)
+        prev_assigned = sum(s.summary_data.get('tasks_assigned', 0) for s in prev_summaries)
+        prev_completion_rates = [s.summary_data.get('completion_rate_percent', 0) for s in prev_summaries]
+        prev_avg_completion = sum(prev_completion_rates) / len(prev_completion_rates) if prev_completion_rates else 0
+        prev_on_time_rates = [s.summary_data.get('on_time_completion_rate_percent', 0) for s in prev_summaries]
+        prev_avg_on_time = sum(prev_on_time_rates) / len(prev_on_time_rates) if prev_on_time_rates else 0
+        prev_users = prev_summaries.count()
+        prev_comments = sum(s.summary_data.get('comments_added', 0) for s in prev_summaries)
+        prev_files = sum(s.summary_data.get('files_attached', 0) for s in prev_summaries)
+
+        comparison = {
+            'delta_users': total_users - prev_users,
+            'delta_tasks_completed': total_completed - prev_completed,
+            'delta_tasks_assigned': total_assigned - prev_assigned,
+            'delta_completion_rate': round(avg_completion_rate - prev_avg_completion, 2),
+            'delta_on_time_completion_rate': round(avg_on_time_rate - prev_avg_on_time, 2),
+            'delta_comments': total_comments - prev_comments,
+            'delta_files': total_files_attached - prev_files,
+            'trend': 'up' if avg_completion_rate > prev_avg_completion else ('down' if avg_completion_rate < prev_avg_completion else 'flat'),
+            'previous_week_start': str(prev_week),
+            'previous_active_users': prev_users,
+            'previous_tasks_completed': prev_completed,
+            'previous_completion_rate': round(prev_avg_completion, 2),
+        }
     
     return {
         'week_start_date': str(week_start),
@@ -482,6 +544,16 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
         'avg_completion_rate_percent': round(avg_completion_rate, 2),
         'avg_on_time_completion_rate_percent': round(avg_on_time_rate, 2),
         'summaries_count': summaries.count(),
+        'total_comments_added': total_comments,
+        'total_files_attached': total_files_attached,
+        'total_files_received': total_files_received,
+        'total_recurring_schedules_created': total_recurring_created,
+        'total_active_recurring_schedules': total_active_recurring,
+        'total_daily_reports_created': total_daily_reports,
+        'total_daily_reports_subreports_created': total_daily_subreports,
+        'priority_distribution': agg_priority_dist,
+        'status_distribution': agg_status_dist,
+        'comparison': comparison,
     }
 
 

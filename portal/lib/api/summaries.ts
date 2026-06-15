@@ -108,6 +108,31 @@ export interface OrganizationSummary {
   avg_completion_rate_percent: number;
   avg_on_time_completion_rate_percent: number;
   summaries_count: number;
+  total_comments_added?: number;
+  total_files_attached?: number;
+  total_files_received?: number;
+  total_recurring_schedules_created?: number;
+  total_active_recurring_schedules?: number;
+  total_daily_reports_created?: number;
+  total_daily_reports_subreports_created?: number;
+  priority_distribution?: Record<string, number>;
+  status_distribution?: Record<string, number>;
+  comparison?: OrgComparisonMetrics | null;
+}
+
+export interface OrgComparisonMetrics {
+  delta_users: number;
+  delta_tasks_completed: number;
+  delta_tasks_assigned: number;
+  delta_completion_rate: number;
+  delta_on_time_completion_rate: number;
+  delta_comments: number;
+  delta_files: number;
+  trend: "up" | "down" | "flat";
+  previous_week_start?: string;
+  previous_active_users?: number;
+  previous_tasks_completed?: number;
+  previous_completion_rate?: number;
 }
 
 export const summariesAPI = {

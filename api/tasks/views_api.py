@@ -1009,7 +1009,11 @@ class WeeklySummaryViewSet(ViewSet):
 
     @action(detail=False, methods=['get'])
     def organization_summary(self, request):
-        """GET /summaries/organization-summary/ - Org-wide stats (admin only)"""
+        """GET /summaries/organization-summary/ - Org-wide stats (admin only)
+
+        Checks the OrganizationSummaryCache first. Falls back to live
+        aggregation if no cached entry exists for the requested week.
+        """
         if not request.user.is_staff:
             return Response(
                 {'error': 'Admin access required'},
@@ -1027,7 +1031,17 @@ class WeeklySummaryViewSet(ViewSet):
             from datetime import datetime
             week_start = datetime.strptime(week_start_str, '%Y-%m-%d').date()
             week_end = week_start + timedelta(days=6)
-            
+
+            from .models import OrganizationSummaryCache
+            cached_entry = OrganizationSummaryCache.objects.filter(
+                week_start_date=week_start
+            ).first()
+
+            if cached_entry is not None:
+                serializer = OrganizationSummarySerializer(cached_entry.summary_data)
+                return Response(serializer.data)
+
+            # Fall back to live aggregation
             from .services import calculate_organization_summary
             org_summary = calculate_organization_summary(week_start, week_end)
             
