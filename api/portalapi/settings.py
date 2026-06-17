@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'tasks',
     'notifications',
     'emails',
+    'support',
 ]
 
 MIDDLEWARE = [
@@ -201,7 +202,14 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'tasks.send_weekly_summary_emails',
         'schedule': crontab(hour=8, minute=0, day_of_week=1),  # Every Monday at 08:00
     },
+    'auto-close-support-requests': {
+        'task': 'support.auto_close_resolved_requests',
+        'schedule': crontab(hour=1, minute=0),  # Daily at 01:00
+    },
 }
+
+
+SUPPORT_AUTO_CLOSE_DAYS = int(os.getenv('SUPPORT_AUTO_CLOSE_DAYS', '7'))
 
 
 def _env_list(name: str, default: str = ''):

@@ -25,6 +25,7 @@ type User = {
   last_name?: string;
   email?: string;
   department_id?: string | null;
+  role_id?: string | null;
   is_active?: boolean;
 };
 
@@ -33,11 +34,18 @@ type Department = {
   name: string;
 };
 
+type Role = {
+  id: string;
+  name: string;
+  code: string;
+};
+
 type UserFormState = {
   first_name: string;
   last_name: string;
   email: string;
   department_id: string;
+  role_id: string;
   password: string;
   confirm_password: string;
   reset_password: boolean;
@@ -50,6 +58,7 @@ const initialFormState: UserFormState = {
   last_name: "",
   email: "",
   department_id: "",
+  role_id: "",
   password: "",
   confirm_password: "",
   reset_password: false,
@@ -60,6 +69,7 @@ const initialFormState: UserFormState = {
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [totalDepartments, setTotalDepartments] = useState<number>(0);
   const [searchInput, setSearchInput] = useState("");
@@ -100,8 +110,8 @@ export default function UsersPage() {
 
         isRequestInFlightRef.current = true;
 
-        const [depsResp, filteredUsersResp, totalUsersResp] = await Promise.all(
-          [
+        const [depsResp, filteredUsersResp, totalUsersResp, rolesResp] =
+          await Promise.all([
             apiClient.get("/organization/departments"),
             apiClient.get("/admin/users", {
               params: {
@@ -112,14 +122,20 @@ export default function UsersPage() {
               },
             }),
             apiClient.get("/admin/users"),
-          ],
-        );
+            apiClient.get("/organization/roles"),
+          ]);
 
         const depsData = depsResp.data || [];
         const depsList = Array.isArray(depsData)
           ? depsData
           : depsData.results || [];
         setDepartments(depsList);
+
+        const rolesData = rolesResp.data || [];
+        const rolesList = Array.isArray(rolesData)
+          ? rolesData
+          : rolesData.results || [];
+        setRoles(rolesList);
 
         const usersData = filteredUsersResp.data || {};
         const results = Array.isArray(usersData.results)
@@ -285,6 +301,7 @@ export default function UsersPage() {
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         department_id: form.department_id || null,
+        role_id: form.role_id || null,
         password: form.password,
       };
       const resp = await apiClient.post("/admin/users", payload);
@@ -310,6 +327,7 @@ export default function UsersPage() {
       last_name: user.last_name || "",
       email: user.email || "",
       department_id: user.department_id || "",
+      role_id: user.role_id || "",
       password: "",
       confirm_password: "",
       reset_password: false,
@@ -335,6 +353,7 @@ export default function UsersPage() {
       form.last_name.trim() !== (editingUser.last_name || "") ||
       form.email.trim() !== (editingUser.email || "") ||
       (form.department_id || "") !== (editingUser.department_id || "") ||
+      (form.role_id || "") !== (editingUser.role_id || "") ||
       (form.reset_password &&
         (form.new_password.length > 0 || form.confirm_new_password.length > 0));
 
@@ -358,6 +377,7 @@ export default function UsersPage() {
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         department_id: form.department_id || null,
+        role_id: form.role_id || null,
         reset_password: form.reset_password,
         ...(form.reset_password
           ? {
@@ -771,6 +791,26 @@ export default function UsersPage() {
               </select>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="role">Role</Label>
+              <select
+                id="role"
+                value={form.role_id}
+                onChange={(e) => {
+                  setForm({ ...form, role_id: e.target.value });
+                  setCreateApiError("");
+                }}
+                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+              >
+                <option value="">None</option>
+                {roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -888,6 +928,26 @@ export default function UsersPage() {
                 {departments.map((department) => (
                   <option key={department.id} value={department.id}>
                     {department.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit_role">Role</Label>
+              <select
+                id="edit_role"
+                value={form.role_id}
+                onChange={(e) => {
+                  setForm({ ...form, role_id: e.target.value });
+                  setEditApiError("");
+                }}
+                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+              >
+                <option value="">None</option>
+                {roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
                   </option>
                 ))}
               </select>

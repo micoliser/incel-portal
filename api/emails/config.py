@@ -19,6 +19,12 @@ class EmailType(Enum):
     USER_PASSWORD_CHANGED = "user_password_changed"
     USER_STATUS_CHANGED = "user_status_changed"
     DAILY_REPORT_FORWARD = "daily_report_forward"
+    SUPPORT_REQUEST_SUBMITTED = "support_request_submitted"
+    SUPPORT_REQUEST_ASSIGNED = "support_request_assigned"
+    SUPPORT_STATUS_UPDATED = "support_status_updated"
+    SUPPORT_COMMENT_ADDED = "support_comment_added"
+    SUPPORT_REQUEST_RESOLVED = "support_request_resolved"
+    SUPPORT_REQUEST_CLOSED = "support_request_closed"
 
 
 class EmailConfig:

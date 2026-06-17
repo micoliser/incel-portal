@@ -20,6 +20,7 @@ import {
   Target,
   ScrollText,
   Sun,
+  LifeBuoy,
   TrendingUp,
   Users,
   X,
@@ -660,6 +661,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               aria-hidden="true"
             />
             <span>Goals</span>
+          </Link>
+
+          <Link
+            href="/support"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname.startsWith("/support")
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname.startsWith("/support") ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <LifeBuoy
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname.startsWith("/support")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>Support</span>
           </Link>
 
           <Link
