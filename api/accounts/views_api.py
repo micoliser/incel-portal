@@ -361,14 +361,19 @@ class AdminUserListView(APIView):
         email = serializer.validated_data['email']
         department = Department.objects.filter(id=serializer.validated_data['department_id']).first()
 
-        role, _created = Role.objects.get_or_create(
-            code='STAFF',
-            defaults={
-                'name': 'Staff',
-                'has_global_access': False,
-                'is_active': True,
-            },
-        )
+        role = None
+        role_id = serializer.validated_data.get('role_id')
+        if role_id:
+            role = Role.objects.filter(id=role_id).first()
+        if not role:
+            role, _created = Role.objects.get_or_create(
+                code='STAFF',
+                defaults={
+                    'name': 'Staff',
+                    'has_global_access': False,
+                    'is_active': True,
+                },
+            )
 
         user = User.objects.create_user(
             username=email,
@@ -482,17 +487,23 @@ class AdminUserDetailView(APIView):
         department_id = serializer.validated_data.get('department_id')
         department = Department.objects.filter(id=department_id).first() if department_id else None
 
+        role_id = serializer.validated_data.get('role_id')
+        role = Role.objects.filter(id=role_id).first() if role_id else None
+
         profile = _profile_or_none(user)
         if profile is None:
             # Create a basic profile if it doesn't exist
-            role, _ = Role.objects.get_or_create(
-                code='STAFF',
-                defaults={'name': 'Staff', 'has_global_access': False, 'is_active': True},
-            )
+            if not role:
+                role, _ = Role.objects.get_or_create(
+                    code='STAFF',
+                    defaults={'name': 'Staff', 'has_global_access': False, 'is_active': True},
+                )
             profile = StaffProfile.objects.create(user=user, role=role, department=department, is_active=user.is_active)
         else:
             profile.department = department
-            profile.save(update_fields=['department', 'updated_at'])
+            if role:
+                profile.role = role
+            profile.save(update_fields=['department', 'role', 'updated_at'])
 
         log_audit(
             action='ADMIN_USER_UPDATED',
@@ -504,6 +515,9 @@ class AdminUserDetailView(APIView):
                 'email': user.email,
                 'department_id': department_id,
                 'department_name': department.name if department else None,
+                'role_id': role.id if role else None,
+                'role_code': role.code if role else None,
+                'role_name': role.name if role else None,
                 'reset_password': bool(serializer.validated_data.get('reset_password')),
             },
         )

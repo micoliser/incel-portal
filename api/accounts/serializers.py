@@ -3,7 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from accounts.models import StaffProfile
-from organization.models import Department
+from organization.models import Department, Role
 
 
 class BasicUserSerializer(serializers.ModelSerializer):
@@ -27,6 +27,7 @@ class StaffProfileSerializer(serializers.ModelSerializer):
 class UserWithProfileSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     role_code = serializers.SerializerMethodField()
+    role_id = serializers.SerializerMethodField()
     department = serializers.SerializerMethodField()
     department_id = serializers.SerializerMethodField()
 
@@ -41,6 +42,7 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'is_active',
             'role',
             'role_code',
+            'role_id',
             'department',
             'department_id',
         ]
@@ -55,6 +57,12 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     def get_role_code(self, obj):
         profile = self._profile(obj)
         return profile.role.code if profile and profile.role else None
+
+    def get_role_id(self, obj):
+        profile = self._profile(obj)
+        if profile and profile.role_id:
+            return str(profile.role_id)
+        return None
 
     def get_department(self, obj):
         profile = self._profile(obj)
@@ -109,6 +117,7 @@ class AdminCreateUserSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)
     department_id = serializers.UUIDField()
+    role_id = serializers.UUIDField(required=False, allow_null=True)
 
     def validate_first_name(self, value):
         value = value.strip()
@@ -133,6 +142,13 @@ class AdminCreateUserSerializer(serializers.Serializer):
             raise serializers.ValidationError('Department not found.')
         return value
 
+    def validate_role_id(self, value):
+        if value is None:
+            return None
+        if not Role.objects.filter(id=value).exists():
+            raise serializers.ValidationError('Role not found.')
+        return value
+
     def validate_password(self, value):
         email = self.initial_data.get('email', '')
         candidate_user = User(username=str(email).strip().lower(), email=str(email).strip().lower())
@@ -145,6 +161,7 @@ class UpdateAdminUserSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150, allow_blank=True)
     email = serializers.EmailField()
     department_id = serializers.UUIDField(allow_null=True, required=False)
+    role_id = serializers.UUIDField(allow_null=True, required=False)
     reset_password = serializers.BooleanField(required=False, default=False)
     new_password = serializers.CharField(required=False, write_only=True, allow_blank=False)
     confirm_password = serializers.CharField(required=False, write_only=True, allow_blank=False)
@@ -173,6 +190,13 @@ class UpdateAdminUserSerializer(serializers.Serializer):
             return None
         if not Department.objects.filter(id=value).exists():
             raise serializers.ValidationError('Department not found.')
+        return value
+
+    def validate_role_id(self, value):
+        if value is None:
+            return None
+        if not Role.objects.filter(id=value).exists():
+            raise serializers.ValidationError('Role not found.')
         return value
 
     def validate(self, attrs):

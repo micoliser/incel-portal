@@ -23,6 +23,13 @@ class StaffProfile(TimeStampedModel):
     )
     is_active = models.BooleanField(default=True)
     last_activity_at = models.DateTimeField(null=True, blank=True)
+    line_manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='direct_reports',
+    )
 
     class Meta:
         ordering = ['user__username']
