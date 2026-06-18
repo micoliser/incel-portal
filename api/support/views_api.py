@@ -3,6 +3,7 @@ import logging
 from django.contrib.auth.models import User
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
+from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -39,6 +40,7 @@ from .serializers import (
 from .services import (
     notify_comment_added,
     notify_request_assigned,
+    notify_request_closed,
     notify_request_resolved,
     route_support_request,
     update_request_status,
@@ -47,10 +49,15 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
+class SupportRequestPagination(PageNumberPagination):
+    page_size = 10
+
+
 class SupportRequestViewSet(ModelViewSet):
     """API endpoint for support requests."""
 
     permission_classes = [IsAuthenticated]
+    pagination_class = SupportRequestPagination
 
     def get_queryset(self):
         user = self.request.user
@@ -73,9 +80,14 @@ class SupportRequestViewSet(ModelViewSet):
             except StaffProfile.DoesNotExist:
                 pass
 
+        # Status filter
+        status_param = (self.request.query_params.get('status') or '').strip()
+        if status_param:
+            qs = qs.filter(status=status_param)
+
         return qs.distinct().select_related(
             'requester', 'department', 'assigned_to'
-        ).prefetch_related('comments', 'attachments')
+        )
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -220,7 +232,7 @@ class SupportRequestViewSet(ModelViewSet):
             )
 
         try:
-            update_request_status(
+            updated = update_request_status(
                 request_obj,
                 'closed',
                 user=request.user,
@@ -229,7 +241,9 @@ class SupportRequestViewSet(ModelViewSet):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        output = SupportRequestDetailSerializer(request_obj, context={'request': request})
+        notify_request_closed(updated)
+
+        output = SupportRequestDetailSerializer(updated, context={'request': request})
         return Response(output.data)
 
     @action(detail=True, methods=['post'])
@@ -357,6 +371,11 @@ class SupportRequestViewSet(ModelViewSet):
         requests_qs = SupportRequest.objects.filter(
             department=profile.department
         ).select_related('requester', 'department', 'assigned_to').order_by('-created_at')
+
+        # Status filter
+        status_param = (request.query_params.get('status') or '').strip()
+        if status_param:
+            requests_qs = requests_qs.filter(status=status_param)
 
         page = self.paginate_queryset(requests_qs)
         if page is not None:

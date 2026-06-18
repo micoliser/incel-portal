@@ -344,6 +344,161 @@ class SupportAPITests(BaseAPITestCase):
         )
         self.assertTrue(notifications.exists())
 
+    def test_creation_triggers_email_dispatch(self):
+        """Verify _send_support_email is called when a request is created."""
+        self._auth(self.staff_user)
+        with patch('support.services._send_support_email') as mock_email:
+            response = self.client.post('/api/v1/support/requests/', {
+                'title': 'Email Test',
+                'category': 'IT_SUPPORT',
+                'priority': 'high',
+                'description': 'Test emails',
+            })
+            self.assertEqual(response.status_code, 201)
+            # Should send email to at least the department line manager
+            self.assertGreaterEqual(mock_email.call_count, 1)
+            # Check the first call has the right subject
+            subject = mock_email.call_args_list[0][1].get('subject', '')
+            self.assertIn('New Support Request', subject)
+
+    def test_assignment_creates_notification_and_email(self):
+        """Assigning sends in-app notification + email to the handler."""
+        self._auth(self.staff_user)
+        create_resp = self.client.post('/api/v1/support/requests/', {
+            'title': 'Assign Notify',
+            'category': 'IT_SUPPORT',
+            'priority': 'medium',
+            'description': 'Test',
+        })
+        req_id = create_resp.data['id']
+
+        self._auth(self.lm_user)
+        with patch('support.services._send_support_email') as mock_email:
+            response = self.client.post(f'/api/v1/support/requests/{req_id}/assign/', {
+                'assigned_to': self.handler_user.id,
+            })
+            self.assertEqual(response.status_code, 200)
+
+            # In-app notification for the handler
+            notif = Notification.objects.filter(
+                notification_type='support_request_assigned',
+                recipient=self.handler_user,
+            )
+            self.assertTrue(notif.exists())
+
+            # Email to the handler
+            mock_email.assert_called_once()
+            subject = mock_email.call_args[1].get('subject', '')
+            self.assertIn('Assigned', subject)
+
+    def test_resolve_creates_notification_and_email(self):
+        """Resolving sends in-app notification + email to the requester."""
+        self._auth(self.staff_user)
+        create_resp = self.client.post('/api/v1/support/requests/', {
+            'title': 'Resolve Notify',
+            'category': 'IT_SUPPORT',
+            'priority': 'high',
+            'description': 'Test',
+        })
+        req_id = create_resp.data['id']
+
+        SupportRequest.objects.filter(id=req_id).update(
+            assigned_to=self.handler_user,
+            assigned_by=self.lm_user,
+            status='in_progress',
+        )
+
+        self._auth(self.handler_user)
+        with patch('support.services._send_support_email') as mock_email:
+            response = self.client.post(f'/api/v1/support/requests/{req_id}/resolve/')
+            self.assertEqual(response.status_code, 200)
+
+            # In-app notification for the requester
+            notif = Notification.objects.filter(
+                notification_type='support_request_resolved',
+                recipient=self.staff_user,
+            )
+            self.assertTrue(notif.exists())
+
+            # Email to the requester
+            mock_email.assert_called_once()
+            subject = mock_email.call_args[1].get('subject', '')
+            self.assertIn('Resolved', subject)
+
+    def test_confirm_sends_closed_notifications(self):
+        """Confirming (requester closes) sends notifications to requester + LM + handler."""
+        self._auth(self.staff_user)
+        create_resp = self.client.post('/api/v1/support/requests/', {
+            'title': 'Close Notify',
+            'category': 'IT_SUPPORT',
+            'priority': 'medium',
+            'description': 'Test',
+        })
+        req_id = create_resp.data['id']
+
+        SupportRequest.objects.filter(id=req_id).update(
+            status='resolved',
+            resolved_at=timezone.now(),
+            assigned_to=self.handler_user,
+            assigned_by=self.lm_user,
+        )
+
+        self._auth(self.staff_user)
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm/')
+        self.assertEqual(response.status_code, 200)
+
+        # Notifications for closed event
+        closed_notifs = Notification.objects.filter(
+            notification_type='support_request_closed',
+        )
+        # Should notify: requester + department line manager + handler (if not LM)
+        self.assertGreaterEqual(closed_notifs.count(), 2)
+
+    def test_confirm_sends_closed_email(self):
+        """Confirming (requester closes) sends email to requester, department LM, and handler."""
+        self._auth(self.staff_user)
+        create_resp = self.client.post('/api/v1/support/requests/', {
+            'title': 'Close Email Notify',
+            'category': 'IT_SUPPORT',
+            'priority': 'medium',
+            'description': 'Test',
+        })
+        req_id = create_resp.data['id']
+
+        SupportRequest.objects.filter(id=req_id).update(
+            status='resolved',
+            resolved_at=timezone.now(),
+            assigned_to=self.handler_user,
+            assigned_by=self.lm_user,
+        )
+
+        self._auth(self.staff_user)
+        with patch('support.services._send_support_email') as mock_email:
+            response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm/')
+            self.assertEqual(response.status_code, 200)
+
+            recipients = {call.kwargs['recipient'].id for call in mock_email.call_args_list}
+            self.assertEqual(recipients, {self.staff_user.id, self.lm_user.id, self.handler_user.id})
+            self.assertEqual(mock_email.call_count, 3)
+            self.assertTrue(
+                all('Support Request Closed' in call.kwargs['subject'] for call in mock_email.call_args_list)
+            )
+
+    def test_requester_line_manager_fallback(self):
+        """When staff has no explicit line_manager, falls back to department LINE_MANAGER."""
+        from support.services import get_requester_line_manager
+
+        # Ensure the requester's department has a LINE_MANAGER to fall back to.
+        profile = StaffProfile.objects.get(user=self.staff_user)
+        profile.line_manager = None
+        profile.department = self.dep_it
+        profile.save()
+
+        lm = get_requester_line_manager(self.staff_user)
+        self.assertIsNotNone(lm)
+        # Should fall back to lm_user (LINE_MANAGER in staff's department)
+        self.assertEqual(lm.id, self.lm_user.id)
+
     # ── Listing ──
 
     def test_user_sees_only_own_requests(self):

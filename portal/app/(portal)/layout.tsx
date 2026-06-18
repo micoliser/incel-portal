@@ -178,15 +178,20 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                   title: "Logs",
                   subtitle: "Review audit events and activity history.",
                 }
-              : pathname.startsWith("/tasks")
+              : pathname.startsWith("/support")
                 ? {
-                    title: "Tasks",
-                    subtitle: "Manage and track your tasks.",
+                    title: "Support",
+                    subtitle: "Submit and track support requests",
                   }
-                : {
-                    title: "Dashboard",
-                    subtitle: "Your portal workspace is ready.",
-                  };
+                : pathname.startsWith("/tasks")
+                  ? {
+                      title: "Tasks",
+                      subtitle: "Manage and track your tasks.",
+                    }
+                  : {
+                      title: "Dashboard",
+                      subtitle: "Your portal workspace is ready.",
+                    };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||

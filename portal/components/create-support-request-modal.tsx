@@ -81,6 +81,7 @@ export function CreateSupportRequestModal() {
             content_type: file.type || "application/octet-stream",
             size: file.size,
           });
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (uploadError) {
           toast.error(`Failed to upload ${file.name}`);
         }
