@@ -30,6 +30,7 @@ export interface SupportRequest {
     full_name: string;
     email: string;
   } | null;
+  can_manage?: boolean;
   resolved_at: string | null;
   closed_at: string | null;
   created_at: string;
@@ -73,11 +74,33 @@ export interface UploadUrlResult {
   expires_in: number;
 }
 
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
 // ── List my requests ──
 
-export async function getMyRequests(): Promise<SupportRequest[]> {
-  const response = await apiClient.get("/support/requests/");
-  return response.data.results ?? response.data;
+export async function getMyRequests(params?: {
+  status?: string;
+  page?: number;
+}): Promise<PaginatedResponse<SupportRequest>> {
+  const response = await apiClient.get("/support/requests/", { params });
+  return response.data;
+}
+
+// ── Department requests (manager view) ──
+
+export async function getDepartmentRequests(params?: {
+  status?: string;
+  page?: number;
+}): Promise<PaginatedResponse<SupportRequest>> {
+  const response = await apiClient.get("/support/requests/department/", {
+    params,
+  });
+  return response.data;
 }
 
 // ── Get single request with detail ──
@@ -198,11 +221,4 @@ export async function confirmUpload(
     data,
   );
   return response.data;
-}
-
-// ── Department requests (manager view) ──
-
-export async function getDepartmentRequests(): Promise<SupportRequest[]> {
-  const response = await apiClient.get("/support/requests/department/");
-  return response.data.results ?? response.data;
 }

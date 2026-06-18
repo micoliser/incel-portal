@@ -82,14 +82,31 @@ class SupportRequestListSerializer(serializers.ModelSerializer):
     requester = UserBasicSerializer(read_only=True)
     department = DepartmentBasicSerializer(read_only=True)
     assigned_to = UserBasicSerializer(read_only=True, allow_null=True)
+    can_manage = serializers.SerializerMethodField()
 
     class Meta:
         model = SupportRequest
         fields = [
             'id', 'title', 'category', 'priority', 'status',
             'requester', 'department', 'assigned_to',
+            'can_manage',
             'created_at', 'updated_at',
         ]
+
+    def get_can_manage(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        from accounts.models import StaffProfile
+        try:
+            profile = request.user.staff_profile
+        except StaffProfile.DoesNotExist:
+            return False
+        return (
+            profile.role.code == 'LINE_MANAGER'
+            and profile.department_id == obj.department_id
+            and profile.is_active
+        )
 
 
 class SupportRequestDetailSerializer(serializers.ModelSerializer):
