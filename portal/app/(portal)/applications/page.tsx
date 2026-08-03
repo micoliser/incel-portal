@@ -4,6 +4,7 @@ import axios from "axios";
 import Image from "next/image";
 import { AppWindow, ExternalLink, Loader2, Plus } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,6 +18,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UserCombobox, UserOption } from "@/components/ui/user-combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -85,16 +94,6 @@ type DepartmentOption = {
   id: string;
   name: string;
   code: string;
-};
-
-type UserOption = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  email?: string;
-  is_active?: boolean;
-  role_code?: string | null;
-  department_id?: string | null;
 };
 
 type RoleOption = {
@@ -273,49 +272,6 @@ function sameStringList(a: string[], b: string[]) {
   return left.every((value, index) => value === right[index]);
 }
 
-function extractPaginatedResults<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) {
-    return payload as T[];
-  }
-
-  if (payload && typeof payload === "object") {
-    const results = (payload as { results?: unknown }).results;
-    if (Array.isArray(results)) {
-      return results as T[];
-    }
-  }
-
-  return [];
-}
-
-async function fetchAllAdminUsers() {
-  const collectedUsers: UserOption[] = [];
-  let page = 1;
-
-  while (true) {
-    const response = await apiClient.get("/admin/users", {
-      params: { page },
-    });
-    const payload = response.data as
-      | { results?: UserOption[]; next_page?: number | null }
-      | UserOption[];
-    collectedUsers.push(...extractPaginatedResults<UserOption>(payload));
-
-    const nextPage =
-      !Array.isArray(payload) && payload && typeof payload === "object"
-        ? (payload.next_page ?? null)
-        : null;
-
-    if (!nextPage) {
-      break;
-    }
-
-    page = nextPage;
-  }
-
-  return collectedUsers;
-}
-
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -323,7 +279,6 @@ export default function ApplicationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
-  const [users, setUsers] = useState<UserOption[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -359,9 +314,11 @@ export default function ApplicationsPage() {
     string | null
   >(null);
   const [overrideUserId, setOverrideUserId] = useState<string>("");
-  const [overrideReason, setOverrideReason] = useState<string>("");
+  const [overrideSelectedUser, setOverrideSelectedUser] = useState<UserOption | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
   const [denyUserId, setDenyUserId] = useState<string>("");
-  const [denyReason, setDenyReason] = useState<string>("");
+  const [denySelectedUser, setDenySelectedUser] = useState<UserOption | null>(null);
+  const [denyReason, setDenyReason] = useState("");
   const [overridesByApp, setOverridesByApp] = useState<
     Record<string, AccessOverrideEntry[]>
   >({});
@@ -403,11 +360,7 @@ export default function ApplicationsPage() {
         }
 
         if (admin) {
-          const [usersList, rolesResponse] = await Promise.all([
-            fetchAllAdminUsers(),
-            apiClient.get("/organization/roles"),
-          ]);
-          setUsers(usersList);
+          const rolesResponse = await apiClient.get("/organization/roles");
           setRoles(rolesResponse.data as RoleOption[]);
         }
       } catch (error) {
@@ -593,98 +546,38 @@ export default function ApplicationsPage() {
       .join(", ");
   }, [departments, form.department_ids]);
 
-  const availableOverrideUsers = useMemo(() => {
-    if (!manageTarget || !manageForm) {
-      return [];
-    }
-
+  const checkUserAccess = useCallback((user: UserOption) => {
+    if (!manageTarget || !manageForm) return false;
+    
     const appOverrides = overridesByApp[manageTarget.id] ?? [];
-    const overrideEffectByUser = new Map<number, "ALLOW" | "DENY">();
+    const overrideEffectByUser = new Map<string, "ALLOW" | "DENY">();
     for (const item of appOverrides) {
-      overrideEffectByUser.set(item.user, item.effect);
+      overrideEffectByUser.set(String(item.user), item.effect);
     }
-
     const appDepartmentIds = new Set(manageForm.department_ids ?? []);
+    
+    const roleHasGlobalAccess = roles.some(
+      (role) => role.code === user.role_code && role.has_global_access,
+    );
+    if (roleHasGlobalAccess) return true;
 
-    const hasAccess = (user: UserOption) => {
-      const roleHasGlobalAccess = roles.some(
-        (role) => role.code === user.role_code && role.has_global_access,
-      );
-      if (roleHasGlobalAccess) {
-        return true;
-      }
+    const effect = overrideEffectByUser.get(String(user.id));
+    if (effect === "DENY") return false;
+    if (effect === "ALLOW") return true;
 
-      const effect = overrideEffectByUser.get(user.id);
-      if (effect === "DENY") {
-        return false;
-      }
-      if (effect === "ALLOW") {
-        return true;
-      }
+    if (manageForm.access_scope === "ALL_AUTHENTICATED") return true;
 
-      if (manageForm.access_scope === "ALL_AUTHENTICATED") {
-        return true;
-      }
+    const departmentId = user.department_id ?? null;
+    return Boolean(departmentId && appDepartmentIds.has(departmentId));
+  }, [manageTarget, manageForm, overridesByApp, roles]);
 
-      const departmentId = user.department_id ?? null;
-      return Boolean(departmentId && appDepartmentIds.has(departmentId));
-    };
+  const canBeGranted = overrideSelectedUser 
+    ? (overrideSelectedUser.is_active && !checkUserAccess(overrideSelectedUser))
+    : false;
 
-    return users.filter((user) => user.is_active && !hasAccess(user));
-  }, [manageForm, manageTarget, overridesByApp, roles, users]);
-
-  const removableAccessUsers = useMemo(() => {
-    if (!manageTarget || !manageForm) {
-      return [];
-    }
-
-    const appOverrides = overridesByApp[manageTarget.id] ?? [];
-    const overrideEffectByUser = new Map<number, "ALLOW" | "DENY">();
-    for (const item of appOverrides) {
-      overrideEffectByUser.set(item.user, item.effect);
-    }
-
-    const appDepartmentIds = new Set(manageForm.department_ids ?? []);
-
-    const hasAccess = (user: UserOption) => {
-      const roleHasGlobalAccess = roles.some(
-        (role) => role.code === user.role_code && role.has_global_access,
-      );
-      if (roleHasGlobalAccess) {
-        return true;
-      }
-
-      const effect = overrideEffectByUser.get(user.id);
-      if (effect === "DENY") {
-        return false;
-      }
-      if (effect === "ALLOW") {
-        return true;
-      }
-
-      if (manageForm.access_scope === "ALL_AUTHENTICATED") {
-        return true;
-      }
-
-      const departmentId = user.department_id ?? null;
-      return Boolean(departmentId && appDepartmentIds.has(departmentId));
-    };
-
-    return users.filter((user) => {
-      if (!user.is_active) {
-        return false;
-      }
-
-      const roleHasGlobalAccess = roles.some(
-        (role) => role.code === user.role_code && role.has_global_access,
-      );
-      if (roleHasGlobalAccess) {
-        return false;
-      }
-
-      return hasAccess(user);
-    });
-  }, [manageForm, manageTarget, overridesByApp, roles, users]);
+  const canBeDenied = denySelectedUser
+    ? (denySelectedUser.is_active && checkUserAccess(denySelectedUser) && !roles.some(r => r.code === denySelectedUser.role_code && r.has_global_access))
+    : false;
 
   function handleInputChange(
     event: ChangeEvent<
@@ -1577,31 +1470,35 @@ export default function ApplicationsPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="status">Status</Label>
-                      <select
-                        id="status"
-                        name="status"
+                      <Select
                         value={form.status}
-                        onChange={handleInputChange}
-                        className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+                        onValueChange={(value) => handleInputChange({ target: { name: "status", value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                       >
-                        <option value="ACTIVE">Active</option>
-                        <option value="INACTIVE">Inactive</option>
-                        <option value="MAINTENANCE">Maintenance</option>
-                      </select>
+                        <SelectTrigger id="status" className="w-full h-10">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ACTIVE">Active</SelectItem>
+                          <SelectItem value="INACTIVE">Inactive</SelectItem>
+                          <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="visibility_scope">Visibility Scope</Label>
-                      <select
-                        id="visibility_scope"
-                        name="visibility_scope"
+                      <Select
                         value={form.visibility_scope}
-                        onChange={handleInputChange}
-                        className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+                        onValueChange={(value) => handleInputChange({ target: { name: "visibility_scope", value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                       >
-                        <option value="VISIBLE_TO_ALL">Visible To All</option>
-                        <option value="HIDDEN">Hidden</option>
-                      </select>
+                        <SelectTrigger id="visibility_scope" className="w-full h-10">
+                          <SelectValue placeholder="Select visibility" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="VISIBLE_TO_ALL">Visible To All</SelectItem>
+                          <SelectItem value="HIDDEN">Hidden</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </>
@@ -1609,18 +1506,20 @@ export default function ApplicationsPage() {
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="access_scope">Access Scope</Label>
-                    <select
-                      id="access_scope"
-                      name="access_scope"
+                    <Select
                       value={form.access_scope}
-                      onChange={handleInputChange}
-                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+                      onValueChange={(value) => handleInputChange({ target: { name: "access_scope", value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                     >
-                      <option value="RESTRICTED">Restricted</option>
-                      <option value="ALL_AUTHENTICATED">
-                        All Authenticated
-                      </option>
-                    </select>
+                      <SelectTrigger id="access_scope" className="w-full h-10">
+                        <SelectValue placeholder="Select access scope" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="RESTRICTED">Restricted</SelectItem>
+                        <SelectItem value="ALL_AUTHENTICATED">
+                          All Authenticated
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
@@ -1958,31 +1857,35 @@ export default function ApplicationsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="manage-status">Status</Label>
-                    <select
-                      id="manage-status"
-                      name="status"
+                    <Select
                       value={manageForm.status}
-                      onChange={handleManageInputChange}
-                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+                      onValueChange={(value) => handleManageInputChange({ target: { name: "status", value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                     >
-                      <option value="ACTIVE">Active</option>
-                      <option value="INACTIVE">Inactive</option>
-                      <option value="MAINTENANCE">Maintenance</option>
-                    </select>
+                      <SelectTrigger id="manage-status" className="w-full h-10">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ACTIVE">Active</SelectItem>
+                        <SelectItem value="INACTIVE">Inactive</SelectItem>
+                        <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="manage-visibility">Visibility Scope</Label>
-                    <select
-                      id="manage-visibility"
-                      name="visibility_scope"
+                    <Select
                       value={manageForm.visibility_scope}
-                      onChange={handleManageInputChange}
-                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+                      onValueChange={(value) => handleManageInputChange({ target: { name: "visibility_scope", value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                     >
-                      <option value="VISIBLE_TO_ALL">Visible To All</option>
-                      <option value="HIDDEN">Hidden</option>
-                    </select>
+                      <SelectTrigger id="manage-visibility" className="w-full h-10">
+                        <SelectValue placeholder="Select visibility" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="VISIBLE_TO_ALL">Visible To All</SelectItem>
+                        <SelectItem value="HIDDEN">Hidden</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -2007,18 +1910,20 @@ export default function ApplicationsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="manage-access-scope">Access Scope</Label>
-                    <select
-                      id="manage-access-scope"
-                      name="access_scope"
+                    <Select
                       value={manageForm.access_scope}
-                      onChange={handleManageInputChange}
-                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
+                      onValueChange={(value) => handleManageInputChange({ target: { name: "access_scope", value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                     >
-                      <option value="RESTRICTED">Restricted</option>
-                      <option value="ALL_AUTHENTICATED">
-                        All Authenticated
-                      </option>
-                    </select>
+                      <SelectTrigger id="manage-access-scope" className="w-full h-10">
+                        <SelectValue placeholder="Select access scope" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="RESTRICTED">Restricted</SelectItem>
+                        <SelectItem value="ALL_AUTHENTICATED">
+                          All Authenticated
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="flex items-end justify-end">
@@ -2092,28 +1997,18 @@ export default function ApplicationsPage() {
                   <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                     <div className="space-y-2">
                       <Label htmlFor="override-user">User</Label>
-                      <select
-                        id="override-user"
+                      <UserCombobox
                         value={overrideUserId}
-                        onChange={(event) =>
-                          setOverrideUserId(event.target.value)
-                        }
-                        className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
-                      >
-                        <option value="">Select user</option>
-                        {availableOverrideUsers.map((user) => {
-                          const fullName = [user.first_name, user.last_name]
-                            .filter(Boolean)
-                            .join(" ");
-                          const label =
-                            fullName || user.email || `User ${user.id}`;
-                          return (
-                            <option key={user.id} value={String(user.id)}>
-                              {label}
-                            </option>
-                          );
-                        })}
-                      </select>
+                        onChange={(value, user) => {
+                          setOverrideUserId(value);
+                          setOverrideSelectedUser(user || null);
+                        }}
+                        apiEndpoint="/admin/users"
+                        placeholder="Search for a user..."
+                      />
+                      {overrideSelectedUser && !canBeGranted && (
+                        <p className="text-xs text-red-500 mt-1">This user already has access or is inactive.</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -2134,7 +2029,8 @@ export default function ApplicationsPage() {
                       disabled={
                         isGrantingAccess ||
                         isLoadingOverrides ||
-                        availableOverrideUsers.length === 0
+                        !canBeGranted ||
+                        !overrideUserId
                       }
                     >
                       {isGrantingAccess ? (
@@ -2157,11 +2053,6 @@ export default function ApplicationsPage() {
                     </p>
                   ) : null}
 
-                  {availableOverrideUsers.length === 0 ? (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      No eligible users found for override.
-                    </p>
-                  ) : null}
                 </div>
 
                 <div className="rounded-md border border-border bg-background p-4 dark:border-slate-700 dark:bg-slate-900">
@@ -2176,26 +2067,18 @@ export default function ApplicationsPage() {
                   <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                     <div className="space-y-2">
                       <Label htmlFor="deny-user">User</Label>
-                      <select
-                        id="deny-user"
+                      <UserCombobox
                         value={denyUserId}
-                        onChange={(event) => setDenyUserId(event.target.value)}
-                        className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
-                      >
-                        <option value="">Select user</option>
-                        {removableAccessUsers.map((user) => {
-                          const fullName = [user.first_name, user.last_name]
-                            .filter(Boolean)
-                            .join(" ");
-                          const label =
-                            fullName || user.email || `User ${user.id}`;
-                          return (
-                            <option key={user.id} value={String(user.id)}>
-                              {label}
-                            </option>
-                          );
-                        })}
-                      </select>
+                        onChange={(value, user) => {
+                          setDenyUserId(value);
+                          setDenySelectedUser(user || null);
+                        }}
+                        apiEndpoint="/admin/users"
+                        placeholder="Search for a user..."
+                      />
+                      {denySelectedUser && !canBeDenied && (
+                        <p className="text-xs text-red-500 mt-1">This user does not have removable access.</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -2215,7 +2098,8 @@ export default function ApplicationsPage() {
                       disabled={
                         isRevokingAccess ||
                         isLoadingOverrides ||
-                        removableAccessUsers.length === 0
+                        !canBeDenied ||
+                        !denyUserId
                       }
                     >
                       {isRevokingAccess ? (
@@ -2232,11 +2116,6 @@ export default function ApplicationsPage() {
                     </Button>
                   </div>
 
-                  {removableAccessUsers.length === 0 ? (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      No eligible users currently have removable access.
-                    </p>
-                  ) : null}
                 </div>
               </div>
             )}
