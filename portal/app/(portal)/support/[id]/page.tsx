@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { UserCombobox } from "@/components/ui/user-combobox";
 import { Badge } from "@/components/ui/badge";
 import { SupportDetailSkeleton } from "@/components/skeletons/support-skeleton";
 import {
@@ -27,7 +28,6 @@ import {
   reopenRequest,
   updateRequestStatus,
 } from "@/lib/api/support";
-import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { getUploadUrl, confirmUpload } from "@/lib/api/support";
 
@@ -50,14 +50,6 @@ const PRIORITY_COLORS: Record<string, string> = {
   urgent: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
 };
 
-interface DepartmentUser {
-  id: number;
-  full_name?: string;
-  first_name?: string;
-  last_name?: string;
-  email?: string;
-}
-
 export default function SupportDetailPage({
   params,
 }: {
@@ -70,7 +62,6 @@ export default function SupportDetailPage({
   const [commentText, setCommentText] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [departmentUsers, setDepartmentUsers] = useState<DepartmentUser[]>([]);
   const [assignUserId, setAssignUserId] = useState<string>("");
 
   const loadData = useCallback(async () => {
@@ -79,20 +70,7 @@ export default function SupportDetailPage({
       const data = await getRequest(id);
       setRequest(data);
 
-      // Fetch department users for the assign dropdown
-      if (data.department?.id) {
-        try {
-          const resp = await apiClient.get("/users", {
-            params: { department_id: data.department.id },
-          });
-          const usersData = resp.data || [];
-          setDepartmentUsers(
-            Array.isArray(usersData) ? usersData : usersData.results || [],
-          );
-        } catch {
-          // Silently fail — assign dropdown just won't have options
-        }
-      }
+
     } catch (err) {
       toast.error(extractApiErrorMessage(err, "Failed to load request."));
       router.push("/support");
@@ -210,15 +188,6 @@ export default function SupportDetailPage({
     }
   }
 
-  function userDisplayName(u: DepartmentUser) {
-    return (
-      u.full_name ||
-      `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
-      u.email ||
-      `User #${u.id}`
-    );
-  }
-
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl p-6">
@@ -297,25 +266,23 @@ export default function SupportDetailPage({
                   department to handle it.
                 </p>
                 <div className="flex items-center gap-2">
-                  <select
-                    value={assignUserId}
-                    onChange={(e) => setAssignUserId(e.target.value)}
-                    className="h-9 w-56 rounded-md border bg-background px-3 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <option value="">Select a team member...</option>
-                    {departmentUsers
-                      .filter((u) => u.id !== request.requester.id)
-                      .map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {userDisplayName(u)}
-                        </option>
-                      ))}
-                  </select>
+                  <div className="w-56">
+                    <UserCombobox
+                      value={assignUserId}
+                      onChange={(value) => setAssignUserId(value)}
+                      apiEndpoint="/users"
+                      additionalParams={{ department_id: request.department.id }}
+                      placeholder="Select a team member..."
+                    />
+                    {assignUserId === String(request.requester.id) && (
+                      <p className="text-xs text-red-500 mt-1">Cannot assign to requester.</p>
+                    )}
+                  </div>
                   <Button
                     className="min-w-28"
                     size="default"
                     onClick={handleAssign}
-                    disabled={actionLoading === "assign" || !assignUserId}
+                    disabled={actionLoading === "assign" || !assignUserId || assignUserId === String(request.requester.id)}
                   >
                     {actionLoading === "assign" && (
                       <Loader2 className="mr-1 size-3 animate-spin" />

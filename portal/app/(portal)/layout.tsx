@@ -24,6 +24,8 @@ import {
   TrendingUp,
   Users,
   X,
+  Package,
+  Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -178,7 +180,17 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                   title: "Logs",
                   subtitle: "Review audit events and activity history.",
                 }
-              : pathname.startsWith("/support")
+              : pathname.startsWith("/my-assets")
+                ? {
+                    title: "My Assets",
+                    subtitle: "View the hardware and equipment assigned to you.",
+                  }
+                : pathname.startsWith("/inventory")
+                  ? {
+                      title: "Inventory Management",
+                      subtitle: "Manage company assets, categories, and assignments.",
+                    }
+                  : pathname.startsWith("/support")
                 ? {
                     title: "Support",
                     subtitle: "Submit and track support requests",
@@ -726,6 +738,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span>Summaries</span>
           </Link>
 
+          <Link
+            href="/my-assets"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname.startsWith("/my-assets")
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname.startsWith("/my-assets") ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <Package
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname.startsWith("/my-assets")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>My Assets</span>
+          </Link>
+
           {isAdmin ? (
             <Link
               href="/users"
@@ -752,6 +793,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 aria-hidden="true"
               />
               <span>Users</span>
+            </Link>
+          ) : null}
+
+          {isAdmin ? (
+            <Link
+              href="/inventory"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname.startsWith("/inventory")
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname.startsWith("/inventory") ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <Archive
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname.startsWith("/inventory") ? "scale-110" : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Inventory</span>
             </Link>
           ) : null}
 

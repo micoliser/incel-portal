@@ -16,6 +16,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
@@ -698,6 +705,7 @@ export default function UsersPage() {
                   setCreateApiError("");
                 }}
                 className="mt-2"
+                autoComplete="off"
                 aria-invalid={Boolean(formErrors.email)}
               />
               {formErrors.email ? (
@@ -723,6 +731,7 @@ export default function UsersPage() {
                     setCreateApiError("");
                   }}
                   className="pr-10"
+                  autoComplete="new-password"
                   aria-invalid={Boolean(formErrors.password)}
                 />
                 <button
@@ -762,6 +771,7 @@ export default function UsersPage() {
                   setCreateApiError("");
                 }}
                 className="mt-2"
+                autoComplete="new-password"
                 aria-invalid={Boolean(formErrors.confirm_password)}
               />
               {formErrors.confirm_password ? (
@@ -773,42 +783,48 @@ export default function UsersPage() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="department">Department</Label>
-              <select
-                id="department"
-                value={form.department_id}
-                onChange={(e) => {
-                  setForm({ ...form, department_id: e.target.value });
+              <Select
+                value={form.department_id || undefined}
+                onValueChange={(value) => {
+                  setForm({ ...form, department_id: value === "none" ? "" : value });
                   setCreateApiError("");
                 }}
-                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
               >
-                <option value="">None</option>
-                {departments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="department" className="mt-2 w-full h-10">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {departments.map((department) => (
+                    <SelectItem key={department.id} value={String(department.id)}>
+                      {department.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="role">Role</Label>
-              <select
-                id="role"
-                value={form.role_id}
-                onChange={(e) => {
-                  setForm({ ...form, role_id: e.target.value });
+              <Select
+                value={form.role_id || undefined}
+                onValueChange={(value) => {
+                  setForm({ ...form, role_id: value === "none" ? "" : value });
                   setCreateApiError("");
                 }}
-                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
               >
-                <option value="">None</option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="role" className="mt-2 w-full h-10">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={String(role.id)}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex justify-end gap-2">
@@ -915,42 +931,48 @@ export default function UsersPage() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="edit_department">Department</Label>
-              <select
-                id="edit_department"
-                value={form.department_id}
-                onChange={(e) => {
-                  setForm({ ...form, department_id: e.target.value });
+              <Select
+                value={form.department_id || undefined}
+                onValueChange={(value) => {
+                  setForm({ ...form, department_id: value === "none" ? "" : value });
                   setEditApiError("");
                 }}
-                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
               >
-                <option value="">None</option>
-                {departments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="edit_department" className="mt-2 w-full h-10">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {departments.map((department) => (
+                    <SelectItem key={department.id} value={String(department.id)}>
+                      {department.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="edit_role">Role</Label>
-              <select
-                id="edit_role"
-                value={form.role_id}
-                onChange={(e) => {
-                  setForm({ ...form, role_id: e.target.value });
+              <Select
+                value={form.role_id || undefined}
+                onValueChange={(value) => {
+                  setForm({ ...form, role_id: value === "none" ? "" : value });
                   setEditApiError("");
                 }}
-                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus-visible:border-sky-400 dark:focus-visible:ring-sky-400/20"
               >
-                <option value="">None</option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="edit_role" className="mt-2 w-full h-10">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={String(role.id)}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
