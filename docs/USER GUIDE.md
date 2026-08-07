@@ -27,8 +27,9 @@ The portal is an enterprise-grade web application serving as the central hub for
 2. **Application management:** The portal controls access to internal applications and tools. Users can view which applications they have access to and launch them directly.
 3. **Recurring task scheduling:** For recurring work that happens regularly (daily/weekly), the system automatically generates task instances according to your defined schedule.
 4. **User and access control:** Administrators manage users, departments, roles, and granular access permissions throughout the organization.
-5. **Audit and compliance:** Every action is logged, creating tasks, changing access, and modifying users, providing a complete audit trail for compliance requirements.
-6. **Notifications and collaboration:** Users receive notifications when tasks are assigned, completed, or updated. Comments and activity history keep everyone informed.
+5. **Inventory management:** Administrators can catalog company assets and assign them to specific users. Users can view their assigned physical assets.
+6. **Audit and compliance:** Every action is logged, creating tasks, changing access, and modifying users, providing a complete audit trail for compliance requirements.
+7. **Notifications and collaboration:** Users receive notifications when tasks are assigned, completed, or updated. Comments and activity history keep everyone informed.
 
 ## KEY FEATURES OVERVIEW
 
@@ -61,7 +62,24 @@ The portal is an enterprise-grade web application serving as the central hub for
    - Department-based and role-based access control
    - Quick launch to applications through the portal
 
-6. **REAL-TIME NOTIFICATIONS**
+6. **INVENTORY & ASSET MANAGEMENT**
+   - Centralized catalog of physical company assets
+   - Assign items to users and process returns
+   - Search and filter by category or status
+   - Users have a dedicated view for their personal assigned assets
+
+7. **GOALS & REPORTING**
+   - Track performance targets and daily progress
+   - Generate automated weekly summaries and organization-level metrics
+   - Share progress reports with team members
+   - Export summaries to PDF
+
+8. **SUPPORT TICKETING**
+   - Create IT support requests directly within the portal
+   - Track ticket resolution lifecycle with automated closing
+   - Add comments and attachments to tickets
+
+9. **REAL-TIME NOTIFICATIONS**
    - Email notifications for task assignments and completions
    - Updates for recurring schedule changes
    - Web push notifications (where supported)
@@ -110,8 +128,14 @@ The sidebar contains links to:
 
 - Dashboard - Your personalized home screen
 - Tasks - View and manage all tasks
+- Goals - Track your performance targets
+- Reports & Summaries - Submit daily reports and view weekly metrics
+- Org Summary - View organization-wide performance
 - Applications - Browse available applications
-- Users - (Admin only) Manage organization members
+- Support - Request IT assistance and track your tickets
+- My Assets - View the physical assets and inventory assigned to you
+- Inventory - (Admin only) Manage company assets and process assignments/returns
+- Users - View organization members (Admins can also manage them)
 - Logs - (Admin only) View audit trail
 
 ### STEP 4: UPDATE YOUR PASSWORD (Recommended)
@@ -237,7 +261,69 @@ Click on any application card you have access to - It opens in a new tab/window.
 
 Administrators can create, edit, and manage applications, control access (role-based, department-based, or per-user), and view access history in audit logs.
 
-### USERS AND ADMINISTRATION (Admin Only)
+### INVENTORY & ASSET MANAGEMENT
+
+Manage company physical assets and assignments.
+
+**Viewing Inventory (Admins):**
+
+- Go to the Inventory section
+- View all company assets across different categories
+- Filter assets by status (e.g. available, assigned, maintenance) or category
+- Search for items by name or serial number
+
+**Managing Inventory (Admins):**
+
+- **Create Items**: Add new inventory items, attach a serial number, select a category and purchase date.
+- **Assign Items**: Open an item's details and click "Assign" to link the physical asset to a specific user.
+- **Process Returns**: When a user returns an item, click "Process Return" to mark it as available again. Condition notes can be added upon return.
+
+**Viewing My Assets (All Users):**
+
+- Click on "My Assets" in the sidebar
+- View a dedicated list of all physical assets (laptops, phones, etc.) assigned to you
+- Review assignment dates and item details
+
+### GOALS & TARGETS
+
+Set measurable targets and track your personal progress.
+
+**Setting Goals:**
+- Navigate to the Goals section
+- Define a metric (e.g., tasks completed, files attached)
+- Set a target value and select the time period
+
+### REPORTS & SUMMARIES
+
+Maintain a record of your daily work and weekly performance.
+
+**Daily Reports:**
+- Go to Reports to submit your daily activities
+- Add multiple subreports to break down different pieces of work
+- Receive threaded comments on your daily subreports for feedback
+
+**Weekly Summaries:**
+- Automatically generated metrics based on your week's activity
+- Compare performance week-over-week
+- Share your summary with specific users, via public link, or export it to PDF
+
+**Organization Summary:**
+- View high-level metrics aggregated across the entire workspace
+
+### SUPPORT TICKETING
+
+Request assistance from the IT Support team or other departments.
+
+**Creating a Ticket:**
+- Navigate to the Support section and click "New Request"
+- Select a category, priority, and provide a detailed description
+- The ticket progresses through lifecycle stages (Open, Assigned, In Progress, Resolved, Closed)
+
+**Managing Tickets:**
+- Add comments and file attachments to provide additional context
+- Tickets are automatically closed 7 days after being resolved
+
+### USERS AND ADMINISTRATION
 
 Administrators can:
 
