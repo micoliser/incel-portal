@@ -22,6 +22,7 @@ The portal is designed to centralize internal work and access control. It lets u
 - add comments and follow task activity history
 - inspect audit logs
 - manage users, departments, and roles through admin endpoints
+- track and assign company inventory and physical assets
 
 It also supports access control logic based on role, department, global access, and application-level overrides.
 
@@ -91,6 +92,15 @@ incel-portal/
 - Admins can upload logos through signed upload URLs
 - Admins can manage access scope, department restrictions, and per-user overrides
 
+### Inventory
+
+- Browse company inventory and physical assets
+- Search and filter inventory by status and category
+- Admins can create and edit inventory items and categories
+- Admins can assign inventory items to specific users and process returns
+- Users can view their assigned assets via the dedicated My Assets page
+- Complete audit trail of assignments and returns
+
 ### Tasks
 
 - Create tasks
@@ -110,6 +120,29 @@ incel-portal/
 - In-app notifications for assignment, status changes, and comments
 - Optional browser push notifications with service-worker delivery
 - Loading skeletons for list and detail views
+
+### Goals & Targets
+
+- Set performance goals across multiple metrics (tasks completed, files attached, comments added)
+- Track progress toward target values over custom time periods
+- Active/inactive goal lifecycle management
+
+### Reporting & Summaries
+
+- **Daily Reports**: Users can submit daily reports containing detailed subreports
+- Threaded comments on daily subreports for team feedback
+- **Weekly Summaries**: Automated weekly metrics with week-over-week comparisons
+- Share summaries with specific users or generate secure public links
+- Export summaries to PDF format
+- **Organization Summary**: High-level aggregated metrics across the entire workspace for leadership
+
+### Support Ticketing
+
+- Internal support request system (IT Support and Other)
+- Ticket lifecycle management (Open, Assigned, In Progress, Resolved, Closed)
+- Auto-closing of resolved tickets after 7 days
+- Comments and file attachments for troubleshooting
+- Department and Line Manager visibility routing
 
 ### Notifications
 
@@ -167,7 +200,16 @@ The frontend lives in `portal/` and uses the Next.js App Router.
 - `/tasks` - task list with filters and infinite scroll
 - `/tasks/[id]` - task detail, status controls, comments, and activity timeline
 - `/tasks/recurring/[id]` - recurring task details, edit controls, pause/resume, and end actions
+- `/inventory` - full catalog of inventory items (admin view)
+- `/inventory/[id]` - detailed view of a specific inventory item and assignment history
+- `/my-assets` - personal view of assets assigned to the current user
 - `/logs` - audit log viewer
+- `/goals` - set and track performance goals
+- `/reports` - daily reporting and month calendar view
+- `/summaries` - weekly personal summaries and sharing tools
+- `/organization-summary` - org-wide performance overview
+- `/support` - create and manage internal support requests
+- `/users` - organization directory for viewing colleagues
 
 ### Frontend behavior
 
@@ -256,6 +298,15 @@ There is also a health endpoint at:
 - `GET /api/v1/admin/audit-logs`
 - `GET /api/v1/admin/audit-logs/{id}`
 
+#### Inventory
+
+- `GET /api/v1/inventory/categories/`
+- `GET /api/v1/inventory/items/`
+- `GET /api/v1/inventory/items/stats/`
+- `POST /api/v1/inventory/items/{id}/assign/`
+- `POST /api/v1/inventory/items/{id}/return_item/`
+- `GET /api/v1/me/inventory/`
+
 #### Tasks
 
 - `GET /api/v1/tasks`
@@ -274,6 +325,23 @@ There is also a health endpoint at:
 - `POST /api/v1/recurring-schedules/{id}/pause`
 - `POST /api/v1/recurring-schedules/{id}/resume`
 - `POST /api/v1/recurring-schedules/{id}/end`
+
+#### Goals, Summaries, and Reports
+
+- `GET /api/v1/goals`
+- `GET /api/v1/summaries`
+- `GET /api/v1/summaries/organization-summary/`
+- `POST /api/v1/summaries/share-with-user/`
+- `GET /api/v1/reports/month/`
+- `GET /api/v1/reports/day/`
+- `GET /api/v1/reports/daily/{report_id}/`
+
+#### Support
+
+- `GET /api/v1/support/requests/`
+- `POST /api/v1/support/requests/`
+- `GET /api/v1/support/requests/{id}/`
+- `PATCH /api/v1/support/requests/{id}/`
 
 #### Notifications
 
