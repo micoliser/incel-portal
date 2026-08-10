@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ApplicationAccessOverride, AuditLog, InternalApplication
+from .models import ApplicationAccessOverride, AuditLog, InternalApplication, RecentApplication
 
 
 @admin.register(InternalApplication)
@@ -31,3 +31,10 @@ class AuditLogAdmin(admin.ModelAdmin):
         'actor_user__email',
     )
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(RecentApplication)
+class RecentApplicationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'application', 'opened_at')
+    list_filter = ('opened_at',)
+    search_fields = ('user__username', 'application__name')
