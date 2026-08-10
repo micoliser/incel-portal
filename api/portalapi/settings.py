@@ -59,6 +59,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'common.middleware.AdminIPAllowlistMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -217,6 +218,8 @@ def _env_list(name: str, default: str = ''):
     raw = os.getenv(name, default)
     return [item.strip() for item in raw.split(',') if item.strip()]
 
+
+ADMIN_ALLOWED_IPS = _env_list('ADMIN_ALLOWED_IPS', '127.0.0.1')
 
 TASK_ATTACHMENT_S3_PREFIX = os.getenv('TASK_ATTACHMENT_S3_PREFIX', 'task-attachments')
 TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
