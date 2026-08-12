@@ -263,6 +263,8 @@ class SupportAPITests(BaseAPITestCase):
         StaffProfile.objects.create(
             user=self.lm_user, role=self.role_lm, department=self.dep_it
         )
+        self.dep_it.line_manager = self.lm_user
+        self.dep_it.save()
 
         # Handler in IT department
         self.handler_user = User.objects.create_user(
@@ -272,9 +274,8 @@ class SupportAPITests(BaseAPITestCase):
             user=self.handler_user, role=self.role_handler, department=self.dep_it
         )
 
-        # Set a line manager for staff_user and move to IT dept
+        # Move staff_user to IT dept
         profile = StaffProfile.objects.get(user=self.staff_user)
-        profile.line_manager = self.admin_user
         profile.department = self.dep_it
         profile.save()
 
@@ -485,18 +486,19 @@ class SupportAPITests(BaseAPITestCase):
             )
 
     def test_requester_line_manager_fallback(self):
-        """When staff has no explicit line_manager, falls back to department LINE_MANAGER."""
+        """When staff has no explicit team/unit, falls back to department line_manager."""
         from support.services import get_requester_line_manager
 
-        # Ensure the requester's department has a LINE_MANAGER to fall back to.
+        # Ensure the requester's department has a line manager to fall back to.
         profile = StaffProfile.objects.get(user=self.staff_user)
-        profile.line_manager = None
+        profile.team = None
+        profile.unit = None
         profile.department = self.dep_it
         profile.save()
 
         lm = get_requester_line_manager(self.staff_user)
         self.assertIsNotNone(lm)
-        # Should fall back to lm_user (LINE_MANAGER in staff's department)
+        # Should fall back to lm_user (line_manager in staff's department)
         self.assertEqual(lm.id, self.lm_user.id)
 
     # ── Listing ──

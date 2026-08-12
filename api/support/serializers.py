@@ -97,16 +97,7 @@ class SupportRequestListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        from accounts.models import StaffProfile
-        try:
-            profile = request.user.staff_profile
-        except StaffProfile.DoesNotExist:
-            return False
-        return (
-            profile.role.code == 'LINE_MANAGER'
-            and profile.department_id == obj.department_id
-            and profile.is_active
-        )
+        return obj.department and obj.department.line_manager_id == request.user.id
 
 
 class SupportRequestDetailSerializer(serializers.ModelSerializer):
@@ -135,20 +126,11 @@ class SupportRequestDetailSerializer(serializers.ModelSerializer):
         return obj.attachments.count()
 
     def _is_line_manager(self, obj):
-        """Check if the requesting user is a LINE_MANAGER in the request's department."""
+        """Check if the requesting user is the line manager of the request's department."""
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        from accounts.models import StaffProfile
-        try:
-            profile = request.user.staff_profile
-        except StaffProfile.DoesNotExist:
-            return False
-        return (
-            profile.role.code == 'LINE_MANAGER'
-            and profile.department_id == obj.department_id
-            and profile.is_active
-        )
+        return obj.department and obj.department.line_manager_id == request.user.id
 
     def get_can_manage(self, obj):
         """Current user can manage (assign) this request."""

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Eye, EyeOff, Pencil, Plus, Trash } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, Eye, EyeOff, Pencil, Plus, Trash, ChevronDown, ChevronRight, Network, Users as UsersIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { UsersSkeleton } from "@/components/skeletons/users-skeleton";
@@ -31,15 +31,19 @@ type User = {
   first_name?: string;
   last_name?: string;
   email?: string;
+  department?: string | null;
   department_id?: string | null;
+  unit_id?: string | null;
+  unit_name?: string | null;
+  team_id?: string | null;
+  team_name?: string | null;
   role_id?: string | null;
   is_active?: boolean;
 };
 
-type Department = {
-  id: string;
-  name: string;
-};
+type Team = { id: string; name: string; code: string; };
+type Unit = { id: string; name: string; code: string; teams: Team[]; };
+type Department = { id: string; name: string; code: string; units: Unit[]; };
 
 type Role = {
   id: string;
@@ -52,6 +56,8 @@ type UserFormState = {
   last_name: string;
   email: string;
   department_id: string;
+  unit_id: string;
+  team_id: string;
   role_id: string;
   password: string;
   confirm_password: string;
@@ -65,6 +71,8 @@ const initialFormState: UserFormState = {
   last_name: "",
   email: "",
   department_id: "",
+  unit_id: "",
+  team_id: "",
   role_id: "",
   password: "",
   confirm_password: "",
@@ -106,6 +114,8 @@ export default function UsersPage() {
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
 
+  const [expandedUsers, setExpandedUsers] = useState<Set<number>>(new Set());
+
   useEffect(() => {
     async function load() {
       try {
@@ -119,7 +129,7 @@ export default function UsersPage() {
 
         const [depsResp, filteredUsersResp, totalUsersResp, rolesResp] =
           await Promise.all([
-            apiClient.get("/organization/departments"),
+            apiClient.get("/organization/hierarchy"),
             apiClient.get("/admin/users", {
               params: {
                 q: search,
@@ -308,6 +318,8 @@ export default function UsersPage() {
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         department_id: form.department_id || null,
+        unit_id: form.unit_id || null,
+        team_id: form.team_id || null,
         role_id: form.role_id || null,
         password: form.password,
       };
@@ -334,6 +346,8 @@ export default function UsersPage() {
       last_name: user.last_name || "",
       email: user.email || "",
       department_id: user.department_id || "",
+      unit_id: user.unit_id || "",
+      team_id: user.team_id || "",
       role_id: user.role_id || "",
       password: "",
       confirm_password: "",
@@ -360,6 +374,8 @@ export default function UsersPage() {
       form.last_name.trim() !== (editingUser.last_name || "") ||
       form.email.trim() !== (editingUser.email || "") ||
       (form.department_id || "") !== (editingUser.department_id || "") ||
+      (form.unit_id || "") !== (editingUser.unit_id || "") ||
+      (form.team_id || "") !== (editingUser.team_id || "") ||
       (form.role_id || "") !== (editingUser.role_id || "") ||
       (form.reset_password &&
         (form.new_password.length > 0 || form.confirm_new_password.length > 0));
@@ -384,6 +400,8 @@ export default function UsersPage() {
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         department_id: form.department_id || null,
+        unit_id: form.unit_id || null,
+        team_id: form.team_id || null,
         role_id: form.role_id || null,
         reset_password: form.reset_password,
         ...(form.reset_password
@@ -562,23 +580,43 @@ export default function UsersPage() {
                     </td>
                   </tr>
                 ) : (
-                  users.map((user) => (
-                    <tr key={user.id} className="border-t">
-                      <td className="px-4 py-3 font-medium text-base">
-                        {user.first_name || "—"}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-base">
-                        {user.last_name || "—"}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-base">
-                        {user.email}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-base">
-                        {user.department_id
-                          ? (departmentMap[user.department_id] ??
-                            user.department_id)
-                          : "—"}
-                      </td>
+                  users.map((user) => {
+                    const hasSubPlacement = user.unit_name || user.team_name;
+                    const isExpanded = expandedUsers.has(user.id);
+
+                    return (
+                      <React.Fragment key={user.id}>
+                        <tr className="border-t">
+                          <td className="px-4 py-3 font-medium text-base">
+                            {user.first_name || "—"}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-base">
+                            {user.last_name || "—"}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-base">
+                            {user.email}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-base">
+                            <div className="flex items-center gap-2">
+                              {hasSubPlacement && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="size-6 shrink-0" 
+                                  onClick={() => {
+                                    const next = new Set(expandedUsers);
+                                    if (next.has(user.id)) next.delete(user.id);
+                                    else next.add(user.id);
+                                    setExpandedUsers(next);
+                                  }}
+                                >
+                                  {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                                </Button>
+                              )}
+                              {!hasSubPlacement && <div className="size-6 shrink-0" />}
+                              <span>{user.department || "—"}</span>
+                            </div>
+                          </td>
                       <td className="px-4 py-3">
                         <span
                           className={
@@ -617,7 +655,30 @@ export default function UsersPage() {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    {hasSubPlacement && isExpanded && (
+                      <tr className="bg-muted/10 border-b">
+                        <td colSpan={3}></td>
+                        <td colSpan={3} className="px-4 py-3 text-sm">
+                          <div className="flex flex-col gap-2 pl-8">
+                            {user.unit_name && (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Network className="size-4 text-emerald-500" />
+                                <span>Unit: <span className="font-medium text-foreground">{user.unit_name}</span></span>
+                              </div>
+                            )}
+                            {user.team_name && (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <UsersIcon className="size-4 text-orange-500" />
+                                <span>Team: <span className="font-medium text-foreground">{user.team_name}</span></span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -786,7 +847,7 @@ export default function UsersPage() {
               <Select
                 value={form.department_id || undefined}
                 onValueChange={(value) => {
-                  setForm({ ...form, department_id: value === "none" ? "" : value });
+                  setForm({ ...form, department_id: value === "none" ? "" : value, unit_id: "", team_id: "" });
                   setCreateApiError("");
                 }}
               >
@@ -803,6 +864,53 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {form.department_id && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="unit">Unit</Label>
+                <Select
+                  value={form.unit_id || undefined}
+                  onValueChange={(value) => {
+                    setForm({ ...form, unit_id: value === "none" ? "" : value, team_id: "" });
+                  }}
+                >
+                  <SelectTrigger id="unit" className="mt-2 w-full h-10">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {departments.find(d => String(d.id) === form.department_id)?.units.map(unit => (
+                      <SelectItem key={unit.id} value={String(unit.id)}>
+                        {unit.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {form.unit_id && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="team">Team</Label>
+                <Select
+                  value={form.team_id || undefined}
+                  onValueChange={(value) => {
+                    setForm({ ...form, team_id: value === "none" ? "" : value });
+                  }}
+                >
+                  <SelectTrigger id="team" className="mt-2 w-full h-10">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {departments.find(d => String(d.id) === form.department_id)?.units.find(u => String(u.id) === form.unit_id)?.teams.map(team => (
+                      <SelectItem key={team.id} value={String(team.id)}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="role">Role</Label>
@@ -934,7 +1042,7 @@ export default function UsersPage() {
               <Select
                 value={form.department_id || undefined}
                 onValueChange={(value) => {
-                  setForm({ ...form, department_id: value === "none" ? "" : value });
+                  setForm({ ...form, department_id: value === "none" ? "" : value, unit_id: "", team_id: "" });
                   setEditApiError("");
                 }}
               >
@@ -951,6 +1059,54 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {form.department_id && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit_unit">Unit</Label>
+                <Select
+                  value={form.unit_id || undefined}
+                  onValueChange={(value) => {
+                    setForm({ ...form, unit_id: value === "none" ? "" : value, team_id: "" });
+                  }}
+                >
+                  <SelectTrigger id="edit_unit" className="mt-2 w-full h-10">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {departments.find(d => String(d.id) === form.department_id)?.units.map(unit => (
+                      <SelectItem key={unit.id} value={String(unit.id)}>
+                        {unit.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {form.unit_id && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit_team">Team</Label>
+                <Select
+                  value={form.team_id || undefined}
+                  onValueChange={(value) => {
+                    setForm({ ...form, team_id: value === "none" ? "" : value });
+                  }}
+                >
+                  <SelectTrigger id="edit_team" className="mt-2 w-full h-10">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {departments.find(d => String(d.id) === form.department_id)?.units.find(u => String(u.id) === form.unit_id)?.teams.map(team => (
+                      <SelectItem key={team.id} value={String(team.id)}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="edit_role">Role</Label>

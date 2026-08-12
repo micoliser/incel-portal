@@ -23,6 +23,7 @@ import {
   LifeBuoy,
   TrendingUp,
   Users,
+  Network,
   X,
   Package,
   Archive,
@@ -170,11 +171,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               title: "Applications",
               subtitle: "Browse and manage internal application access.",
             }
-          : pathname === "/users" || pathname.startsWith("/users")
-            ? {
-                title: "Users",
-                subtitle: "Manage workspace users.",
-              }
+            : pathname === "/users" || pathname.startsWith("/users")
+              ? {
+                  title: "Users",
+                  subtitle: "Manage workspace users.",
+                }
+              : pathname === "/departments" || pathname.startsWith("/departments")
+                ? {
+                    title: "Departments",
+                    subtitle: "Manage organizational structure and hierarchies.",
+                  }
             : pathname === "/logs"
               ? {
                   title: "Logs",
@@ -793,6 +799,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 aria-hidden="true"
               />
               <span>Users</span>
+            </Link>
+          ) : null}
+
+          {isAdmin ? (
+            <Link
+              href="/departments"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname === "/departments"
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname === "/departments" ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <Network
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname === "/departments" ? "scale-110" : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Departments</span>
             </Link>
           ) : null}
 
