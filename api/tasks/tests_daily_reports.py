@@ -405,3 +405,46 @@ class DailyReportsApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_first_report_sends_manager_email(self, mock_send):
+        # Create department and assign manager
+        from organization.models import Department
+        from accounts.models import StaffProfile
+        
+        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
+        
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        # First subreport should trigger email
+        self._create_report(title='First')
+        self.assertEqual(mock_send.call_count, 1)
+        
+        # Second subreport should NOT trigger email
+        self._create_report(title='Second')
+        self.assertEqual(mock_send.call_count, 1)
+        
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_report_sends_manager_email(self, mock_send):
+        # Create department and assign manager
+        from organization.models import Department
+        from accounts.models import StaffProfile
+        
+        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
+        
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        self._create_report(title='First')
+        
+        # Reset mock call count because the first creation triggers an email
+        mock_send.reset_mock()
+        
+        from tasks.tasks import send_eod_daily_reports
+        result = send_eod_daily_reports()
+        
+        self.assertEqual(result['sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)

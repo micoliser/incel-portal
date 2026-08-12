@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { UserCombobox, UserOption } from "@/components/ui/user-combobox";
+import { UserCombobox } from "@/components/ui/user-combobox";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 

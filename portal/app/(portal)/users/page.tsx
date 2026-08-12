@@ -468,13 +468,7 @@ export default function UsersPage() {
     return fullName || "Unknown user";
   }
 
-  const departmentMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    departments.forEach((department) => {
-      map[department.id] = department.name;
-    });
-    return map;
-  }, [departments]);
+
 
   const activeFilterCount = useMemo(() => {
     return departmentFilter ? 1 : 0;

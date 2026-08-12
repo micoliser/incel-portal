@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash, ChevronDown, ChevronRight, Building2, Network, Users } from "lucide-react";
+import { Plus, Pencil, Trash, ChevronDown, ChevronRight, Building2, Network, Users, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";

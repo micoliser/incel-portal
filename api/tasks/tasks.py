@@ -316,3 +316,19 @@ def cache_organization_summaries() -> dict[str, int]:
         'Organization summaries cached: %d stored, %d errors', cached, errors
     )
     return {'cached': cached, 'errors': errors}
+@shared_task(name='tasks.send_eod_daily_reports')
+def send_eod_daily_reports() -> dict[str, int]:
+    from django.utils import timezone
+    from tasks.models import DailyReport
+    from emails.services.daily_report_emails import DailyReportEmailManager
+
+    today = timezone.localdate()
+    reports = DailyReport.objects.filter(report_date=today)
+    
+    count = 0
+    for report in reports:
+        sent = DailyReportEmailManager.send_manager_notification(report, report.user, is_eod=True)
+        if sent:
+            count += 1
+            
+    return {'sent': count}
