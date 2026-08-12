@@ -1572,6 +1572,8 @@ class ReportsDayView(APIView):
             },
         )
 
+        _handle_first_subreport_notification(daily_report, request.user)
+
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 
 
@@ -1597,6 +1599,13 @@ class DailyReportDetailView(APIView):
                 return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
         return Response(_serialize_daily_report_detail(report))
+
+
+def _handle_first_subreport_notification(daily_report, user):
+    """Trigger the manager notification email if this is the first report of the day for the user."""
+    if daily_report.subreports.count() == 1:
+        from emails.services.daily_report_emails import DailyReportEmailManager
+        DailyReportEmailManager.send_manager_notification(daily_report, user)
 
 
 class DailyReportSubreportCreateView(APIView):
@@ -1630,6 +1639,8 @@ class DailyReportSubreportCreateView(APIView):
             author=request.user,
             body=serializer.validated_data['comment'],
         )
+
+        _handle_first_subreport_notification(report, request.user)
 
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 

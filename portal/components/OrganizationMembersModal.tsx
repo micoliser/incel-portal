@@ -98,7 +98,7 @@ export function OrganizationMembersModal({
     try {
       isRequestInFlight.current = true;
       setLoading(true);
-      let params: any = { page_size: 50 };
+      const params: Record<string, string | number> = { page_size: 50 };
       
       if (searchQuery) {
         params.q = searchQuery;
@@ -106,9 +106,9 @@ export function OrganizationMembersModal({
       
       if (entityType === "department") {
         // Fetch all users for department
-      } else if (entityType === "unit") {
+      } else if (entityType === "unit" && parentEntityId) {
         params.department_id = parentEntityId;
-      } else if (entityType === "team") {
+      } else if (entityType === "team" && parentEntityId) {
         params.unit_id = parentEntityId;
       }
       
@@ -116,7 +116,7 @@ export function OrganizationMembersModal({
       let data: User[] = resp.data.results || resp.data;
       
       // Filter out users who are ALREADY exactly in this entity
-      data = data.filter((u: any) => u[`${entityType}_id`] !== entityId);
+      data = data.filter((u: User) => (u as Record<string, unknown>)[`${entityType}_id`] !== entityId);
       
       setCandidates(data);
       setCandidates(data);

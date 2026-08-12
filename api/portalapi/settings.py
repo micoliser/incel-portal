@@ -188,6 +188,10 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BEAT_SCHEDULE = {
+    'send-eod-daily-reports': {
+        'task': 'tasks.send_eod_daily_reports',
+        'schedule': crontab(hour=17, minute=5, day_of_week='1-5'),  # 5:05 PM Mon-Fri
+    },
     'generate-recurring-task-occurrences': {
         'task': 'tasks.generate_recurring_task_occurrences',
         'schedule': 60.0,
