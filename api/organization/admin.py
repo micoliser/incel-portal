@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Department, Role
+from .models import Department, Role, Team, Unit
 
 
 @admin.register(Role)
@@ -12,6 +12,20 @@ class RoleAdmin(admin.ModelAdmin):
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'is_active', 'updated_at')
+    list_display = ('name', 'code', 'line_manager', 'is_active', 'updated_at')
     list_filter = ('is_active',)
+    search_fields = ('name', 'code')
+
+
+@admin.register(Unit)
+class UnitAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'department', 'supervisor', 'is_active', 'updated_at')
+    list_filter = ('is_active', 'department')
+    search_fields = ('name', 'code')
+
+
+@admin.register(Team)
+class TeamAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'unit', 'team_lead', 'is_active', 'updated_at')
+    list_filter = ('is_active', 'unit')
     search_fields = ('name', 'code')

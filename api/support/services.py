@@ -74,38 +74,24 @@ def route_support_request(category: str) -> Department:
 
 
 def get_department_managers(department: Department) -> list[User]:
-    """Return users who are LINE_MANAGERs within the given department."""
-    from accounts.models import StaffProfile
-    manager_profiles = StaffProfile.objects.filter(
-        department=department,
-        role__code='LINE_MANAGER',
-        is_active=True,
-    ).select_related('user', 'user__staff_profile')
-    return [profile.user for profile in manager_profiles]
+    """Return the line manager of the given department."""
+    if department and department.line_manager:
+        return [department.line_manager]
+    return []
 
 
 def get_requester_line_manager(requester: User) -> User | None:
-    """Return the requester's line manager if set, else the first LINE_MANAGER in the requester's department."""
+    """Return the requester's direct superior based on the hierarchy."""
     from accounts.models import StaffProfile
     try:
         profile = (
             StaffProfile.objects
-            .select_related('department', 'role', 'line_manager')
+            .select_related('department__line_manager', 'unit__supervisor', 'team__team_lead')
             .get(user=requester)
         )
+        return profile.direct_manager
     except StaffProfile.DoesNotExist:
-        profile = None
-
-    if profile and profile.line_manager:
-        return profile.line_manager
-
-    # Fallback: any LINE_MANAGER in the requester's department
-    if profile and profile.department:
-        managers = get_department_managers(profile.department)
-        if managers:
-            return managers[0]
-    return None
-
+        return None
 
 # ---------------------------------------------------------------------------
 # Notification dispatchers

@@ -31,7 +31,7 @@ from applications.models import InternalApplication
 from common.access import can_user_access_application
 from common.permissions import IsGlobalAccessUser, has_admin_access, has_global_access
 from emails.services.user_emails import UserEmailManager
-from organization.models import Department, Role
+from organization.models import Department, Role, Unit, Team
 
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,22 @@ class AdminUserListView(APIView):
         if department_id:
             users = users.filter(staff_profile__department_id=department_id)
 
+        unit_id = request.query_params.get('unit_id')
+        if unit_id:
+            users = users.filter(staff_profile__unit_id=unit_id)
+
+        team_id = request.query_params.get('team_id')
+        if team_id:
+            users = users.filter(staff_profile__team_id=team_id)
+
+        unassigned = request.query_params.get('unassigned')
+        if unassigned == 'department':
+            users = users.filter(staff_profile__department__isnull=True)
+        elif unassigned == 'unit':
+            users = users.filter(staff_profile__unit__isnull=True)
+        elif unassigned == 'team':
+            users = users.filter(staff_profile__team__isnull=True)
+
         # Support 'q' param for admin search to mirror other list endpoints
         search = (request.query_params.get('q') or '').strip()
         if search:
@@ -359,7 +375,15 @@ class AdminUserListView(APIView):
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data['email']
-        department = Department.objects.filter(id=serializer.validated_data['department_id']).first()
+        
+        department_id = serializer.validated_data.get('department_id')
+        department = Department.objects.filter(id=department_id).first() if department_id else None
+        
+        unit_id = serializer.validated_data.get('unit_id')
+        unit = Unit.objects.filter(id=unit_id).first() if unit_id else None
+        
+        team_id = serializer.validated_data.get('team_id')
+        team = Team.objects.filter(id=team_id).first() if team_id else None
 
         role = None
         role_id = serializer.validated_data.get('role_id')
@@ -388,6 +412,8 @@ class AdminUserListView(APIView):
             user=user,
             role=role,
             department=department,
+            unit=unit,
+            team=team,
             is_active=True,
         )
 
@@ -411,8 +437,10 @@ class AdminUserListView(APIView):
                 'role_id': role.id,
                 'role_code': role.code,
                 'role_name': role.name,
-                'department_id': department.id,
-                'department_name': department.name,
+                'department_id': department.id if department else None,
+                'department_name': department.name if department else None,
+                'unit_id': unit.id if unit else None,
+                'team_id': team.id if team else None,
             },
         )
 
@@ -487,6 +515,12 @@ class AdminUserDetailView(APIView):
         department_id = serializer.validated_data.get('department_id')
         department = Department.objects.filter(id=department_id).first() if department_id else None
 
+        unit_id = serializer.validated_data.get('unit_id')
+        unit = Unit.objects.filter(id=unit_id).first() if unit_id else None
+
+        team_id = serializer.validated_data.get('team_id')
+        team = Team.objects.filter(id=team_id).first() if team_id else None
+
         role_id = serializer.validated_data.get('role_id')
         role = Role.objects.filter(id=role_id).first() if role_id else None
 
@@ -498,12 +532,21 @@ class AdminUserDetailView(APIView):
                     code='STAFF',
                     defaults={'name': 'Staff', 'has_global_access': False, 'is_active': True},
                 )
-            profile = StaffProfile.objects.create(user=user, role=role, department=department, is_active=user.is_active)
+            profile = StaffProfile.objects.create(
+                user=user, 
+                role=role, 
+                department=department, 
+                unit=unit,
+                team=team,
+                is_active=user.is_active
+            )
         else:
             profile.department = department
+            profile.unit = unit
+            profile.team = team
             if role:
                 profile.role = role
-            profile.save(update_fields=['department', 'role', 'updated_at'])
+            profile.save(update_fields=['department', 'unit', 'team', 'role', 'updated_at'])
 
         log_audit(
             action='ADMIN_USER_UPDATED',

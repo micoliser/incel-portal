@@ -63,27 +63,14 @@ class IsHandlerOrDepartmentManager(BasePermission):
 
 
 def _is_department_manager(user, request_obj: SupportRequest) -> bool:
-    """Check if user is a LINE_MANAGER in the request's department."""
-    from accounts.models import StaffProfile
-    try:
-        profile = user.staff_profile
-    except StaffProfile.DoesNotExist:
+    """Check if user is the line manager of the request's department."""
+    if not request_obj.department:
         return False
-    return (
-        profile.role.code == 'LINE_MANAGER'
-        and profile.department_id == request_obj.department_id
-        and profile.is_active
-    )
+    return request_obj.department.line_manager_id == user.id
 
 
 def user_is_any_department_manager(user) -> bool:
-    """Check if user is a LINE_MANAGER for any department."""
-    from accounts.models import StaffProfile
-    try:
-        profile = user.staff_profile
-    except StaffProfile.DoesNotExist:
+    """Check if user is a line manager for any department."""
+    if not user.is_authenticated:
         return False
-    return (
-        profile.role.code == 'LINE_MANAGER'
-        and profile.is_active
-    )
+    return user.managed_departments.exists()
