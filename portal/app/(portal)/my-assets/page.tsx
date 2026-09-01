@@ -25,6 +25,7 @@ type InventoryAssignment = {
 
 type InventoryItem = {
   id: string;
+  code: string;
   name: string;
   category: InventoryCategory;
   serial_number: string;

@@ -291,7 +291,7 @@ class AuthenticatedUserListView(APIView):
         if department_id:
             users = users.filter(staff_profile__department_id=department_id)
 
-        search = (request.query_params.get('search') or '').strip()
+        search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
         if search:
             search_terms = [term for term in search.split() if term]
             search_query = (

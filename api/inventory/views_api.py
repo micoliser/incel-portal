@@ -8,14 +8,20 @@ from django.db.models import Q
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 
-from .models import InventoryCategory, InventoryItem, InventoryAssignment
+from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog
 from .serializers import (
     InventoryCategorySerializer,
     InventoryItemSerializer,
     InventoryItemCreateUpdateSerializer,
     InventoryItemAssignSerializer,
     InventoryItemReturnSerializer,
+    InventoryMaintenanceLogSerializer,
+    InventoryMaintenanceLogWriteSerializer,
+    MaintenanceAttachmentUploadUrlSerializer,
+    InventoryPhotoUploadUrlSerializer,
 )
+from .permissions import IsAdminOrITDepartment
+from .s3 import generate_maintenance_attachment_upload_url, MaintenanceAttachmentUploadError
 from applications.audit import log_audit
 from notifications.services import create_notification
 
@@ -49,7 +55,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         search = (self.request.query_params.get('q') or '').strip()
         if search:
             queryset = queryset.filter(
-                Q(name__icontains=search) | Q(serial_number__icontains=search)
+                Q(name__icontains=search) | Q(serial_number__icontains=search) | Q(code__icontains=search)
             )
 
         category_id = self.request.query_params.get('category')
@@ -188,6 +194,30 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
 
         return Response(InventoryItemSerializer(item).data)
 
+    @action(detail=False, methods=['post'])
+    def upload_photo_url(self, request):
+        serializer = InventoryPhotoUploadUrlSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        file_name = serializer.validated_data['file_name']
+        content_type = serializer.validated_data['content_type']
+        
+        # Quick validation
+        if not content_type.startswith('image/'):
+            return Response({'detail': 'Only image files are allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from inventory.s3 import generate_inventory_photo_upload_url
+            url_data = generate_inventory_photo_upload_url(
+                file_name=file_name,
+                content_type=content_type
+            )
+            return Response(url_data)
+        except Exception as e:
+            return Response(
+                {'detail': 'Could not generate upload URL. Storage service may be unavailable.'}, 
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
 
 class MyInventoryView(generics.ListAPIView):
     serializer_class = InventoryItemSerializer
@@ -195,3 +225,106 @@ class MyInventoryView(generics.ListAPIView):
 
     def get_queryset(self):
         return InventoryItem.objects.filter(current_assignee=self.request.user).select_related('category', 'current_assignee').prefetch_related('assignments')
+
+
+class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdminOrITDepartment]
+    pagination_class = InventoryPagination
+
+    def get_queryset(self):
+        queryset = InventoryMaintenanceLog.objects.all().select_related('item__category', 'assigned_to', 'created_by')
+        
+        item_id = self.request.query_params.get('item')
+        if item_id:
+            queryset = queryset.filter(item_id=item_id)
+            
+        status_filter = self.request.query_params.get('status')
+        if status_filter and status_filter != 'all':
+            queryset = queryset.filter(status=status_filter)
+            
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return InventoryMaintenanceLogWriteSerializer
+        return InventoryMaintenanceLogSerializer
+
+    def perform_create(self, serializer):
+        attachments_data = self.request.data.get('attachments', [])
+        if len(attachments_data) > 5:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"attachments": "Maximum of 5 attachments allowed per maintenance log."})
+            
+        log = serializer.save(created_by=self.request.user)
+        self._sync_item_status(log)
+        log_audit(
+            action='inventory.maintenance.created',
+            request=self.request,
+            target_type='inventory_maintenance_log',
+            target_id=str(log.id),
+            metadata={'item_id': str(log.item_id), 'status': log.status}
+        )
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import PermissionDenied
+        if serializer.instance.status == 'completed':
+            raise PermissionDenied("Cannot edit a maintenance log that is already completed.")
+            
+        attachments_data = self.request.data.get('attachments', [])
+        if len(attachments_data) > 5:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"attachments": "Maximum of 5 attachments allowed per maintenance log."})
+
+        log = serializer.save()
+        self._sync_item_status(log)
+        log_audit(
+            action='inventory.maintenance.updated',
+            request=self.request,
+            target_type='inventory_maintenance_log',
+            target_id=str(log.id),
+            metadata={'item_id': str(log.item_id), 'status': log.status}
+        )
+        
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import PermissionDenied
+        if instance.status == 'completed':
+            raise PermissionDenied("Cannot delete a maintenance log that is already completed.")
+        log_id = str(instance.id)
+        item_id = str(instance.item_id)
+        instance.delete()
+        log_audit(
+            action='inventory.maintenance.deleted',
+            request=self.request,
+            target_type='inventory_maintenance_log',
+            target_id=log_id,
+            metadata={'item_id': item_id}
+        )
+
+    def _sync_item_status(self, log):
+        item = log.item
+        if log.status in ['open', 'in_progress'] and item.status != 'maintenance':
+            item.status = 'maintenance'
+            item.save(update_fields=['status'])
+        elif log.status == 'completed' and item.status == 'maintenance':
+            open_logs = InventoryMaintenanceLog.objects.filter(item=item, status__in=['open', 'in_progress']).exclude(id=log.id).exists()
+            if not open_logs:
+                if item.current_assignee:
+                    item.status = 'assigned'
+                else:
+                    item.status = 'available'
+                item.save(update_fields=['status'])
+
+    @action(detail=False, methods=['post'], url_path='upload-url')
+    def upload_url(self, request):
+        serializer = MaintenanceAttachmentUploadUrlSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = generate_maintenance_attachment_upload_url(
+                file_name=serializer.validated_data['file_name'],
+                content_type=serializer.validated_data['content_type'],
+            )
+        except MaintenanceAttachmentUploadError as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(result)

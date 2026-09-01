@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import { format } from "date-fns";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,10 +18,12 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { UserCombobox } from "@/components/ui/user-combobox";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { InventoryDetailSkeleton } from "@/components/skeletons/inventory-detail-skeleton";
+import { MaintenanceLogsList } from "@/components/inventory/MaintenanceLogsList";
 
 type UserOption = {
   id: number;
@@ -40,12 +43,14 @@ type InventoryAssignment = {
 
 type InventoryItem = {
   id: string;
+  code: string;
   name: string;
   category: { id: string; name: string };
   serial_number: string;
   purchase_date: string | null;
   status: string;
   notes: string;
+  photo_url?: string;
   current_assignee: UserOption | null;
   assignments: InventoryAssignment[];
 };
@@ -151,9 +156,40 @@ export default function InventoryItemDetail() {
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold">{item.name}</h1>
-            <p className="text-gray-600 mt-2">Asset Details</p>
+          <div className="flex items-center gap-4">
+            {item.photo_url && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <div className="relative w-16 h-16 shrink-0 cursor-pointer">
+                    <Image
+                      src={item.photo_url}
+                      alt={item.name}
+                      className="rounded-lg object-cover shadow-sm border border-border"
+                      fill
+                      unoptimized
+                    />
+                  </div>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-2xl p-0 border-none bg-transparent shadow-none">
+                  <DialogTitle className="sr-only">Photo of {item.name}</DialogTitle>
+                  <div className="relative w-full h-[80vh]">
+                    <Image
+                      src={item.photo_url}
+                      alt={item.name}
+                      className="object-contain rounded-lg"
+                      fill
+                      unoptimized
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+            <div>
+              <h1 className="text-3xl font-bold">
+                {item.name} <span className="text-muted-foreground text-2xl font-normal">({item.code})</span>
+              </h1>
+              <p className="text-gray-600 mt-2">Asset Details</p>
+            </div>
           </div>
           <span
             className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${statusColors[item.status]}`}
@@ -247,6 +283,8 @@ export default function InventoryItemDetail() {
           )}
         </Card>
       </div>
+
+      <MaintenanceLogsList itemId={id} item={item} />
 
       {/* Assign Modal */}
       <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
-import { Archive, Loader2, Plus, Search, Filter, Monitor, CheckCircle, Clock } from "lucide-react";
+import Image from "next/image";
+import { Archive, Loader2, Plus, Search, Filter, Monitor, CheckCircle, Clock, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { Card } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -35,10 +37,12 @@ type InventoryCategory = {
 
 type InventoryItem = {
   id: string;
+  code: string;
   name: string;
   category: InventoryCategory;
   serial_number: string;
   status: string;
+  photo_url?: string;
   current_assignee: { id: string | number; first_name?: string; last_name?: string; email?: string; full_name?: string } | null;
 };
 
@@ -67,6 +71,7 @@ export default function InventoryDashboard() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
   const loadMoreRef = useRef<HTMLTableRowElement>(null);
   const isRequestInFlightRef = useRef(false);
 
@@ -88,7 +93,9 @@ export default function InventoryDashboard() {
     category: "",
     serial_number: "",
     status: "available",
+    photo_url: "",
   });
+  const [itemPhoto, setItemPhoto] = useState<File | null>(null);
 
   const fetchStatsAndCategories = async () => {
     try {
@@ -153,7 +160,7 @@ export default function InventoryDashboard() {
     }
 
     void loadItems();
-  }, [searchQuery, statusFilter, categoryFilter, currentPage]);
+  }, [searchQuery, statusFilter, categoryFilter, currentPage, refreshCounter]);
 
   useEffect(() => {
     setItems([]);
@@ -209,14 +216,40 @@ export default function InventoryDashboard() {
 
     try {
       setIsSubmitting(true);
-      await apiClient.post("/inventory/items/", itemForm);
+      
+      let finalPhotoUrl = "";
+      if (itemPhoto) {
+        // Upload photo
+        const { getInventoryPhotoUploadUrl } = await import("@/lib/api/inventory");
+        const uploadData = await getInventoryPhotoUploadUrl({
+          file_name: itemPhoto.name,
+          content_type: itemPhoto.type
+        });
+        
+        await fetch(uploadData.upload_url, {
+          method: "PUT",
+          body: itemPhoto,
+          headers: {
+            "Content-Type": itemPhoto.type,
+          },
+        });
+        finalPhotoUrl = uploadData.public_url;
+      }
+      
+      const payload = {
+        ...itemForm,
+        ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {})
+      };
+      await apiClient.post("/inventory/items/", payload);
       toast.success("Item created");
       setIsItemModalOpen(false);
-      setItemForm({ name: "", category: "", serial_number: "", status: "available" });
+      setItemForm({ name: "", category: "", serial_number: "", status: "available", photo_url: "" });
+      setItemPhoto(null);
       fetchStatsAndCategories();
       // Reload items
       setCurrentPage(1);
       setItems([]);
+      setRefreshCounter((prev) => prev + 1);
     } catch (error) {
       toast.error(extractApiErrorMessage(error, "Failed to create item"));
     } finally {
@@ -288,7 +321,7 @@ export default function InventoryDashboard() {
             id="inventory-search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search by asset name or serial number..."
+            placeholder="Search by asset code, name or serial number..."
             className="h-11 rounded-full pl-10 pr-5 text-base"
           />
         </div>
@@ -343,6 +376,11 @@ export default function InventoryDashboard() {
           </Select>
         </div>
         <div className="flex gap-3">
+          <Button variant="outline" asChild>
+            <Link href="/inventory/maintenance">
+              <Wrench className="mr-2 h-4 w-4" /> Maintenance Logs
+            </Link>
+          </Button>
           <Button variant="outline" onClick={() => setIsCategoryModalOpen(true)}>
             <Plus className="mr-2 h-4 w-4" /> Category
           </Button>
@@ -360,6 +398,7 @@ export default function InventoryDashboard() {
             <table className="w-full text-left text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
+                  <th className="px-4 py-3 font-medium">Code</th>
                   <th className="px-4 py-3 font-medium">Item Name</th>
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium">Serial Number</th>
@@ -370,13 +409,13 @@ export default function InventoryDashboard() {
               <tbody className="divide-y divide-border">
                 {loading && items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center">
+                    <td colSpan={6} className="px-4 py-8 text-center">
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                       No items found matching your filters.
                     </td>
                   </tr>
@@ -384,10 +423,42 @@ export default function InventoryDashboard() {
                   <>
                     {items.map((item) => (
                       <tr key={item.id} className="hover:bg-muted/50 transition-colors">
-                        <td className="px-4 py-3 font-medium">
-                          <Link href={`/inventory/${item.id}`} className="text-primary hover:underline">
-                            {item.name}
-                          </Link>
+                        <td className="px-4 py-3 font-mono text-sm font-semibold text-muted-foreground">
+                          {item.code}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            {item.photo_url && (
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <div className="relative h-10 w-10 flex-shrink-0 cursor-pointer">
+                                    <Image
+                                      src={item.photo_url}
+                                      alt={item.name}
+                                      className="rounded-md object-cover border border-border"
+                                      fill
+                                      unoptimized
+                                    />
+                                  </div>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-2xl p-0 border-none bg-transparent shadow-none">
+                                  <DialogTitle className="sr-only">Photo of {item.name}</DialogTitle>
+                                  <div className="relative w-full h-[80vh]">
+                                    <Image
+                                      src={item.photo_url}
+                                      alt={item.name}
+                                      className="object-contain rounded-lg"
+                                      fill
+                                      unoptimized
+                                    />
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            )}
+                            <Link href={`/inventory/${item.id}`} className="font-medium text-primary hover:underline">
+                              {item.name}
+                            </Link>
+                          </div>
                         </td>
                         <td className="px-4 py-3">{item.category.name}</td>
                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
@@ -407,7 +478,7 @@ export default function InventoryDashboard() {
                     ))}
                     {hasNextPage && (
                       <tr ref={loadMoreRef}>
-                        <td colSpan={5} className="py-6 text-center">
+                        <td colSpan={6} className="py-6 text-center">
                           <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                         </td>
                       </tr>
@@ -496,6 +567,19 @@ export default function InventoryDashboard() {
                 value={itemForm.serial_number}
                 onChange={(e) => setItemForm({ ...itemForm, serial_number: e.target.value })}
                 placeholder="Optional serial number"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="item_photo">Photo (Optional)</Label>
+              <Input
+                id="item_photo"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setItemPhoto(file);
+                  else setItemPhoto(null);
+                }}
               />
             </div>
             <div className="space-y-2">
