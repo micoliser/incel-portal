@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Archive, Loader2, Plus, Search, Filter, Monitor, CheckCircle, Clock, Wrench } from "lucide-react";
+import { Archive, Loader2, Plus, Search, Filter, Monitor, CheckCircle, Clock, Wrench, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { Card } from "@/components/ui/card";
@@ -43,6 +43,7 @@ type InventoryItem = {
   serial_number: string;
   status: string;
   photo_url?: string;
+  purchase_date?: string | null;
   current_assignee: { id: string | number; first_name?: string; last_name?: string; email?: string; full_name?: string } | null;
 };
 
@@ -79,6 +80,7 @@ export default function InventoryDashboard() {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Filters
   const [searchInput, setSearchInput] = useState("");
@@ -94,6 +96,7 @@ export default function InventoryDashboard() {
     serial_number: "",
     status: "available",
     photo_url: "",
+    purchase_date: "",
   });
   const [itemPhoto, setItemPhoto] = useState<File | null>(null);
 
@@ -192,6 +195,33 @@ export default function InventoryDashboard() {
     return () => observer.disconnect();
   }, [hasNextPage, loading, isLoadingMore]);
 
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const params: Record<string, string> = {};
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (categoryFilter !== "all") params.category = categoryFilter;
+      if (searchQuery) params.q = searchQuery;
+      
+      const response = await apiClient.get("/inventory/items/export/", { 
+        params,
+        responseType: "blob" 
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "inventory.csv");
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Failed to export inventory items");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoryForm.name) return toast.error("Name is required");
@@ -236,14 +266,17 @@ export default function InventoryDashboard() {
         finalPhotoUrl = uploadData.public_url;
       }
       
-      const payload = {
+      const payload: Record<string, string> = {
         ...itemForm,
         ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {})
       };
+      if (!payload.purchase_date) {
+        delete payload.purchase_date;
+      }
       await apiClient.post("/inventory/items/", payload);
       toast.success("Item created");
       setIsItemModalOpen(false);
-      setItemForm({ name: "", category: "", serial_number: "", status: "available", photo_url: "" });
+      setItemForm({ name: "", category: "", serial_number: "", status: "available", photo_url: "", purchase_date: "" });
       setItemPhoto(null);
       fetchStatsAndCategories();
       // Reload items
@@ -376,6 +409,10 @@ export default function InventoryDashboard() {
           </Select>
         </div>
         <div className="flex gap-3">
+          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+            Export
+          </Button>
           <Button variant="outline" asChild>
             <Link href="/inventory/maintenance">
               <Wrench className="mr-2 h-4 w-4" /> Maintenance Logs
@@ -402,6 +439,7 @@ export default function InventoryDashboard() {
                   <th className="px-4 py-3 font-medium">Item Name</th>
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium">Serial Number</th>
+                  <th className="px-4 py-3 font-medium">Purchase Date</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Assignee</th>
                 </tr>
@@ -409,13 +447,13 @@ export default function InventoryDashboard() {
               <tbody className="divide-y divide-border">
                 {loading && items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center">
+                    <td colSpan={7} className="px-4 py-8 text-center">
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                       No items found matching your filters.
                     </td>
                   </tr>
@@ -464,6 +502,9 @@ export default function InventoryDashboard() {
                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                           {item.serial_number || "—"}
                         </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                          {item.purchase_date || "—"}
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusColors[item.status]}`}>
                             {item.status.toUpperCase()}
@@ -478,7 +519,7 @@ export default function InventoryDashboard() {
                     ))}
                     {hasNextPage && (
                       <tr ref={loadMoreRef}>
-                        <td colSpan={6} className="py-6 text-center">
+                        <td colSpan={7} className="py-6 text-center">
                           <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                         </td>
                       </tr>
@@ -567,6 +608,15 @@ export default function InventoryDashboard() {
                 value={itemForm.serial_number}
                 onChange={(e) => setItemForm({ ...itemForm, serial_number: e.target.value })}
                 placeholder="Optional serial number"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="item_purchase_date">Purchase Date (Optional)</Label>
+              <Input
+                id="item_purchase_date"
+                type="date"
+                value={itemForm.purchase_date}
+                onChange={(e) => setItemForm({ ...itemForm, purchase_date: e.target.value })}
               />
             </div>
             <div className="space-y-2">
