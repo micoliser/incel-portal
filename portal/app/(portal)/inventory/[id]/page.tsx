@@ -211,6 +211,10 @@ export default function InventoryItemDetail() {
               <div className="font-mono mt-1">{item.serial_number || "—"}</div>
             </div>
             <div>
+              <div className="text-sm font-medium text-muted-foreground">Purchase Date</div>
+              <div className="font-mono mt-1">{item.purchase_date || "—"}</div>
+            </div>
+            <div>
               <div className="text-sm font-medium text-muted-foreground">Current Assignee</div>
               <div className="font-medium mt-1">
                 {item.current_assignee 

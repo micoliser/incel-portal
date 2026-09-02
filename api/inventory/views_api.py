@@ -1,3 +1,5 @@
+import csv
+from django.http import HttpResponse
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -81,6 +83,33 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update']:
             return InventoryItemCreateUpdateSerializer
         return InventoryItemSerializer
+
+    @action(detail=False, methods=['get'])
+    def export(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="inventory.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['Code', 'Name', 'Category', 'Serial Number', 'Status', 'Current Assignee', 'Purchase Date'])
+        
+        for item in queryset:
+            assignee = f"{item.current_assignee.first_name} {item.current_assignee.last_name}".strip() if item.current_assignee else ""
+            if not assignee and item.current_assignee:
+                assignee = item.current_assignee.username
+                
+            writer.writerow([
+                item.code,
+                item.name,
+                item.category.name if item.category else "",
+                item.serial_number,
+                item.status,
+                assignee,
+                item.purchase_date or ""
+            ])
+            
+        return response
 
     def perform_create(self, serializer):
         item = serializer.save()
@@ -241,6 +270,14 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter and status_filter != 'all':
             queryset = queryset.filter(status=status_filter)
+
+        category_id = self.request.query_params.get('category')
+        if category_id and category_id != 'all':
+            queryset = queryset.filter(item__category_id=category_id)
+
+        search = (self.request.query_params.get('q') or '').strip()
+        if search:
+            queryset = queryset.filter(item__code__icontains=search)
             
         return queryset
 
@@ -248,6 +285,38 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update']:
             return InventoryMaintenanceLogWriteSerializer
         return InventoryMaintenanceLogSerializer
+
+    @action(detail=False, methods=['get'])
+    def export(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="maintenance_logs.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['Date', 'Asset Code', 'Asset Name', 'Issue Reported', 'Action Taken', 'Assigned To', 'Status', 'Created By'])
+        
+        for log in queryset:
+            assigned_to = f"{log.assigned_to.first_name} {log.assigned_to.last_name}".strip() if log.assigned_to else ""
+            if not assigned_to and log.assigned_to:
+                assigned_to = log.assigned_to.username
+                
+            created_by = f"{log.created_by.first_name} {log.created_by.last_name}".strip() if log.created_by else ""
+            if not created_by and log.created_by:
+                created_by = log.created_by.username
+                
+            writer.writerow([
+                log.date,
+                log.item.code if log.item else "",
+                log.item.name if log.item else "",
+                log.issue_reported,
+                log.action_taken,
+                assigned_to,
+                log.status,
+                created_by
+            ])
+            
+        return response
 
     def perform_create(self, serializer):
         attachments_data = self.request.data.get('attachments', [])

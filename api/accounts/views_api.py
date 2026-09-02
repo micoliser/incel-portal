@@ -309,6 +309,13 @@ class AuthenticatedUserListView(APIView):
             users = users.filter(search_query)
 
         users = users.order_by(Lower('username'))
+        
+        paginator = AdminUserPagination()
+        page = paginator.paginate_queryset(users, request, view=self)
+        if page is not None:
+            serializer = UserWithProfileSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+            
         return Response(UserWithProfileSerializer(users, many=True).data)
 
 

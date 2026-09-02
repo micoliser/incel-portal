@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Loader2, Plus, Paperclip, CheckCircle, Wrench, AlertCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Plus, Paperclip, CheckCircle, Wrench, AlertCircle, Search, ArrowLeft, X, FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { apiClient } from "@/lib/api-client";
 import { PageErrorCard } from "@/components/page-error-card";
-import { fetchMaintenanceLogs, MaintenanceLog } from "@/lib/api/inventory";
+import { fetchMaintenanceLogs, exportMaintenanceLogs, MaintenanceLog } from "@/lib/api/inventory";
 import { AddMaintenanceLogModal } from "@/components/inventory/AddMaintenanceLogModal";
 import {
   Select,
@@ -16,34 +20,141 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+type InventoryCategory = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+const backButtonClassName =
+  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+
 export default function MaintenanceLogsPage() {
+  const router = useRouter();
   const [logs, setLogs] = useState<MaintenanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [logToEdit, setLogToEdit] = useState<MaintenanceLog | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const isRequestInFlightRef = useRef(false);
+  const loadMoreRef = useRef<HTMLTableRowElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setLogs([]);
+  }, [statusFilter, categoryFilter, debouncedSearch]);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const response = await apiClient.get("/inventory/categories/");
+        setCategories(response.data.results || response.data);
+      } catch (err) {
+        console.error("Failed to load categories", err);
+      }
+    };
+    loadCategories();
+  }, []);
 
   const loadLogs = useCallback(async () => {
+    if (isRequestInFlightRef.current) return;
+
     try {
-      setLoading(true);
-      const params: Record<string, string> = {};
-      if (statusFilter !== "all") params.status = statusFilter;
+      isRequestInFlightRef.current = true;
+      if (currentPage === 1) {
+        setLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
       
-      const data = await fetchMaintenanceLogs(params);
-      setLogs(data.results || data);
+      const params: Record<string, string | number> = { page: currentPage };
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (categoryFilter !== "all") params.category = categoryFilter;
+      if (debouncedSearch) params.q = debouncedSearch;
+      
+      const payload = await fetchMaintenanceLogs(params);
+      
+      let results: MaintenanceLog[] = [];
+      if (Array.isArray(payload)) {
+        results = payload;
+      } else if (payload && typeof payload === "object") {
+        const typedPayload = payload as { results?: MaintenanceLog[] };
+        results = Array.isArray(typedPayload.results) ? typedPayload.results : [];
+      }
+
+      setLogs((current) => (currentPage === 1 ? results : [...current, ...results]));
+      
+      const hasNext = !Array.isArray(payload) && payload && typeof payload === "object"
+        ? Boolean((payload as { next_page?: unknown }).next_page)
+        : false;
+      
+      setHasNextPage(hasNext);
       setError(null);
     } catch (err) {
       const errorObj = err as { response?: { data?: { detail?: string } } };
       setError(errorObj?.response?.data?.detail || "Failed to load maintenance logs");
     } finally {
+      isRequestInFlightRef.current = false;
       setLoading(false);
+      setIsLoadingMore(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, categoryFilter, debouncedSearch, currentPage]);
 
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !loading && !isLoadingMore) {
+          setCurrentPage((page) => page + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, loading, isLoadingMore]);
+
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const params: Record<string, string> = {};
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (categoryFilter !== "all") params.category = categoryFilter;
+      if (debouncedSearch) params.q = debouncedSearch;
+      
+      const blob = await exportMaintenanceLogs(params);
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "maintenance_logs.csv");
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Failed to export maintenance logs");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -53,12 +164,55 @@ export default function MaintenanceLogsPage() {
     }
   };
 
+  const handleClearFilters = () => {
+    setStatusFilter("all");
+    setCategoryFilter("all");
+    setSearchQuery("");
+    setDebouncedSearch("");
+    setCurrentPage(1);
+  };
+
   return (
     <div className="space-y-6">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => router.push("/inventory")}
+        className={backButtonClassName}
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" />
+        Back to Inventory
+      </Button>
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-1">
+          <div className="relative w-full sm:w-[300px]">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by code..."
+              className="pl-8"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Filter by category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -68,10 +222,22 @@ export default function MaintenanceLogsPage() {
               <SelectItem value="completed">Completed</SelectItem>
             </SelectContent>
           </Select>
+
+          {(statusFilter !== "all" || categoryFilter !== "all" || searchQuery !== "") && (
+            <Button variant="outline" size="sm" onClick={handleClearFilters} className="shrink-0 text-muted-foreground hover:text-foreground">
+              <X className="mr-2 h-4 w-4" /> Clear Filters
+            </Button>
+          )}
         </div>
-        <Button onClick={() => { setLogToEdit(null); setIsModalOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" /> Add Log
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport} disabled={isExporting} className="shrink-0">
+            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+            Export
+          </Button>
+          <Button onClick={() => { setLogToEdit(null); setIsModalOpen(true); }} className="shrink-0">
+            <Plus className="mr-2 h-4 w-4" /> Add Log
+          </Button>
+        </div>
       </div>
 
       {error ? (
@@ -149,6 +315,13 @@ export default function MaintenanceLogsPage() {
                       </td>
                     </tr>
                   ))
+                )}
+                {hasNextPage && (
+                  <tr ref={loadMoreRef}>
+                    <td colSpan={7} className="py-6 text-center">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>

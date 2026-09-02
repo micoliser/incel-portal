@@ -62,3 +62,19 @@ export async function getInventoryPhotoUploadUrl(payload: { file_name: string; c
     object_key: string;
   };
 }
+
+export async function exportInventoryItems(params?: Record<string, string | number | boolean>) {
+  const response = await apiClient.get("/inventory/items/export/", {
+    params,
+    responseType: "blob",
+  });
+  return response.data;
+}
+
+export async function exportMaintenanceLogs(params?: Record<string, string | number | boolean>) {
+  const response = await apiClient.get("/inventory/maintenance-logs/export/", {
+    params,
+    responseType: "blob",
+  });
+  return response.data;
+}
