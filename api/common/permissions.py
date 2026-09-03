@@ -40,3 +40,17 @@ def has_admin_access(user):
 class IsAdminUser(BasePermission):
     def has_permission(self, request, _view):
         return has_admin_access(request.user)
+
+
+class IsAdminOrGlobalReadOnly(BasePermission):
+    def has_permission(self, request, _view):
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return has_global_access(request.user)
+        return has_admin_access(request.user)
+
+
+class IsAdminOrAuthenticatedReadOnly(BasePermission):
+    def has_permission(self, request, _view):
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return bool(request.user and request.user.is_authenticated)
+        return has_admin_access(request.user)

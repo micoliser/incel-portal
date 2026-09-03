@@ -34,6 +34,8 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     unit_name = serializers.SerializerMethodField()
     team_id = serializers.SerializerMethodField()
     team_name = serializers.SerializerMethodField()
+    has_global_access = serializers.SerializerMethodField()
+    department_code = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -49,14 +51,20 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'role_id',
             'department',
             'department_id',
+            'department_code',
             'unit_id',
             'unit_name',
             'team_id',
             'team_name',
+            'has_global_access',
         ]
 
     def _profile(self, obj):
         return getattr(obj, 'staff_profile', None)
+
+    def get_has_global_access(self, obj):
+        from common.permissions import has_global_access
+        return has_global_access(obj)
 
     def get_role(self, obj):
         profile = self._profile(obj)
@@ -83,6 +91,12 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
         if not profile:
             return None
         return profile.department_id
+
+    def get_department_code(self, obj):
+        profile = self._profile(obj)
+        if not profile or not profile.department:
+            return None
+        return profile.department.code
 
     def get_unit_id(self, obj):
         profile = self._profile(obj)

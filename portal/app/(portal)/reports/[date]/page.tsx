@@ -145,10 +145,7 @@ export default function ReportDayPage() {
       setLoadError(null);
       setActionError(null);
     } catch (err) {
-      const message = extractApiErrorMessage(
-        err,
-        err instanceof Error ? err.message : "Failed to load report day",
-      );
+      const message = extractApiErrorMessage(err, "Failed to load report day");
       setLoadError(message);
     } finally {
       setLoading(false);
@@ -210,10 +207,7 @@ export default function ReportDayPage() {
       setComment("");
       await loadData();
     } catch (err) {
-      const message = extractApiErrorMessage(
-        err,
-        err instanceof Error ? err.message : "Failed to save the report",
-      );
+      const message = extractApiErrorMessage(err, "Failed to save the report");
       setActionError(message);
       toast.error(message);
     } finally {

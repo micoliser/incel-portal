@@ -321,8 +321,13 @@ def send_eod_daily_reports() -> dict[str, int]:
     from django.utils import timezone
     from tasks.models import DailyReport
     from emails.services.daily_report_emails import DailyReportEmailManager
+    from django.core.cache import cache
 
     today = timezone.localdate()
+    lock_key = f"eod_emails_sent_{today.isoformat()}"
+    if not cache.add(lock_key, True, timeout=60 * 60 * 24):
+        return {'sent': 0, 'status': 'already_sent'}
+
     reports = DailyReport.objects.filter(report_date=today)
     
     count = 0

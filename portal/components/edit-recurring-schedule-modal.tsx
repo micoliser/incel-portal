@@ -275,9 +275,7 @@ export function EditRecurringScheduleModal({
       resetAndClose();
     } catch (err) {
       setApiError(
-        err instanceof Error
-          ? err.message
-          : "Failed to update recurring schedule",
+        extractApiErrorMessage(err, "Failed to update recurring schedule"),
       );
     } finally {
       setSubmitting(false);

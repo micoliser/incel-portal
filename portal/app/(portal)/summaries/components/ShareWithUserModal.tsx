@@ -123,7 +123,7 @@ export function ShareWithUserModal({
       onClose();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to share summary");
+      toast.error(extractApiErrorMessage(err, "Failed to share summary"));
     } finally {
       setSharing(false);
     }

@@ -6,8 +6,10 @@ from django.db import transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 
 from applications.audit import log_audit
 from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication, RecentApplication
@@ -26,7 +28,7 @@ from applications.s3 import (
     generate_application_logo_upload_url,
 )
 from common.access import can_user_access_application
-from common.permissions import IsAdminUser, IsGlobalAccessUser, has_global_access
+from common.permissions import IsAdminUser, IsGlobalAccessUser, IsAdminOrAuthenticatedReadOnly, has_global_access
 from emails.services.application_emails import ApplicationEmailManager
 from emails.utils import EmailNotificationHelper
 from organization.models import Department
@@ -177,7 +179,7 @@ class ApplicationDetailView(APIView):
     def get(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         payload = InternalApplicationSerializer(app).data
         can_access, reason = can_user_access_application(request.user, app)
@@ -192,7 +194,7 @@ class ApplicationCanAccessView(APIView):
     def get(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         can_access, reason = can_user_access_application(request.user, app)
         return Response({'application_id': app.id, 'can_access': can_access, 'reason': reason})
@@ -204,7 +206,7 @@ class ApplicationOpenView(APIView):
     def post(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         can_access, reason = can_user_access_application(request.user, app)
         action = 'APPLICATION_OPEN_GRANTED' if can_access else 'APPLICATION_OPEN_DENIED'
@@ -218,7 +220,7 @@ class ApplicationOpenView(APIView):
         )
 
         if not can_access:
-            return Response({'detail': reason}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied(reason)
 
         # Upsert a RecentApplication for this user/application and update timestamp
         RecentApplication.objects.update_or_create(
@@ -255,7 +257,7 @@ class RecentApplicationsView(APIView):
 
 
 class AdminApplicationCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     @transaction.atomic
     def post(self, request):
@@ -269,7 +271,7 @@ class AdminApplicationCreateView(APIView):
             departments = list(Department.objects.filter(id__in=department_ids))
             if len(departments) != len(set(department_ids)):
                 app.delete()
-                return Response({'detail': 'One or more department IDs are invalid.'}, status=status.HTTP_400_BAD_REQUEST)
+                raise ValidationError('One or more department IDs are invalid.')
             app.departments.set(departments)
 
         ApplicationEmailManager.send_application_created_to_users(app)
@@ -291,7 +293,9 @@ class AdminApplicationCreateView(APIView):
 
 
 class AdminApplicationLogoUploadUrlView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'uploads'
 
     def post(self, request):
         serializer = ApplicationLogoUploadUrlSerializer(data=request.data)
@@ -304,19 +308,19 @@ class AdminApplicationLogoUploadUrlView(APIView):
                 content_type=serializer.validated_data['content_type'],
             )
         except ApplicationLogoUploadError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(exc))
 
         return Response(payload)
 
 
 class AdminApplicationUpdateDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     @transaction.atomic
     def patch(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         previous_logo_url = app.logo_url
         serializer = InternalApplicationWriteSerializer(app, data=request.data, partial=True)
@@ -333,13 +337,13 @@ class AdminApplicationUpdateDeleteView(APIView):
             except ApplicationLogoUploadError as exc:
                 app.logo_url = previous_logo_url
                 app.save(update_fields=['logo_url', 'updated_at'])
-                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                raise ValidationError(str(exc))
 
         if department_ids is not None:
             previous_department_ids = list(app.departments.values_list('id', flat=True))
             departments = list(Department.objects.filter(id__in=department_ids))
             if len(departments) != len(set(department_ids)):
-                return Response({'detail': 'One or more department IDs are invalid.'}, status=status.HTTP_400_BAD_REQUEST)
+                raise ValidationError('One or more department IDs are invalid.')
             app.departments.set(departments)
 
             added_department_ids = [department_id for department_id in department_ids if department_id not in previous_department_ids]
@@ -373,7 +377,7 @@ class AdminApplicationUpdateDeleteView(APIView):
     def delete(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         app.status = InternalApplication.Status.INACTIVE
         app.visibility_scope = InternalApplication.VisibilityScope.HIDDEN
@@ -391,13 +395,13 @@ class AdminApplicationUpdateDeleteView(APIView):
 
 
 class AdminApplicationDepartmentsView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     @transaction.atomic
     def put(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         serializer = SetApplicationDepartmentsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -406,7 +410,7 @@ class AdminApplicationDepartmentsView(APIView):
         previous_department_ids = list(app.departments.values_list('id', flat=True))
         departments = list(Department.objects.filter(id__in=department_ids))
         if len(departments) != len(set(department_ids)):
-            return Response({'detail': 'One or more department IDs are invalid.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('One or more department IDs are invalid.')
 
         app.departments.set(departments)
         app.save(update_fields=['updated_at'])
@@ -441,12 +445,12 @@ class AdminApplicationDepartmentsView(APIView):
 
 
 class AdminApplicationOverridesCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     def get(self, _request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         overrides = ApplicationAccessOverride.objects.filter(application=app).order_by('-created_at')
         return Response(AccessOverrideSerializer(overrides, many=True).data)
@@ -454,14 +458,14 @@ class AdminApplicationOverridesCreateView(APIView):
     def post(self, request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         serializer = AccessOverrideCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = User.objects.filter(id=serializer.validated_data['user_id']).first()
         if not user:
-            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('User not found.')
 
         override, _created = ApplicationAccessOverride.objects.update_or_create(
             application=app,
@@ -492,16 +496,16 @@ class AdminApplicationOverridesCreateView(APIView):
 
 
 class AdminApplicationOverrideDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     def delete(self, request, application_id, override_id):
         app = InternalApplication.objects.filter(id=application_id).first()
         if not app:
-            return Response({'detail': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Application not found.')
 
         override = ApplicationAccessOverride.objects.filter(id=override_id, application=app).first()
         if not override:
-            return Response({'detail': 'Override not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Override not found.')
 
         deleted_override_id = override.id
         override.delete()
@@ -519,7 +523,7 @@ class AdminApplicationOverrideDeleteView(APIView):
 
 
 class AdminAuditLogListView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     def get(self, request):
         logs = AuditLog.objects.select_related('actor_user').all().order_by('-created_at')
@@ -579,10 +583,10 @@ class AdminAuditLogListView(APIView):
 
 
 class AdminAuditLogDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     def get(self, _request, log_id):
         log = AuditLog.objects.select_related('actor_user').filter(id=log_id).first()
         if not log:
-            return Response({'detail': 'Audit log not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Audit log not found.')
         return Response(AuditLogSerializer(log).data)

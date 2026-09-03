@@ -88,7 +88,7 @@ export interface SummaryFilesTask {
 export interface SummaryFilesResponse {
   week_start: string;
   week_end: string;
-  view_type: "sent" | "recieved";
+  view_type: "sent" | "received";
   tasks: SummaryFilesTask[];
 }
 
@@ -282,14 +282,14 @@ export const summariesAPI = {
   /**
    * Get files for a specific summary, grouped by task
    * @param summaryId - UUID of the weekly summary
-   * @param viewType - 'sent' for files attached by user, 'recieved' for files from others
+   * @param viewType - 'sent' for files attached by user, 'received' for files from others
    */
   async getWeekFiles(
     summaryId: string,
-    viewType: "sent" | "recieved" = "sent",
+    viewType: "sent" | "received" = "sent",
     token?: string,
   ): Promise<SummaryFilesResponse> {
-    const params: { view: "sent" | "recieved"; token?: string } = {
+    const params: { view: "sent" | "received"; token?: string } = {
       view: viewType,
     };
     if (token) params.token = token;

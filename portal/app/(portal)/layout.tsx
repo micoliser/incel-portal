@@ -45,8 +45,6 @@ import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
   buildLoginPath,
-  getStoredAccessToken,
-  getStoredRefreshToken,
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
@@ -69,7 +67,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     role?: string | null;
     role_code?: string | null;
     department?: string | null;
-    department_id?: number | null;
+    department_id?: number | string | null;
+    department_code?: string | null;
+    has_global_access?: boolean;
   } | null>(null);
   const [changePasswordForm, setChangePasswordForm] = useState({
     old_password: "",
@@ -96,16 +96,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
 
-    const accessToken = getStoredAccessToken();
-    const refreshToken = getStoredRefreshToken();
     const search =
       typeof window !== "undefined" ? (window.location.search ?? "") : "";
     const currentPath = `${pathname}${search}`;
-
-    if (!accessToken || !refreshToken) {
-      router.replace(buildLoginPath(currentPath));
-      return;
-    }
 
     async function loadUserContext() {
       try {
@@ -122,7 +115,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           role?: string | null;
           role_code?: string | null;
           department?: string | null;
-          department_id?: number | null;
+          department_id?: number | string | null;
+          department_code?: string | null;
+          has_global_access?: boolean;
         };
         const permissionsData = permissionsResponse.data as {
           is_superuser?: boolean;
@@ -130,10 +125,23 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         };
 
         setUserInfo(data);
-        setIsAdmin(
-          Boolean(permissionsData.is_superuser) ||
-            String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN",
-        );
+        const isAdminUser = Boolean(permissionsData.is_superuser) ||
+            String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN";
+        setIsAdmin(isAdminUser);
+
+        // Route guarding
+        const hasGlobalAccess = Boolean(data.has_global_access);
+        const isIT = String(data.department_code ?? "").toUpperCase() === "IT";
+        
+        if (pathname.startsWith("/users") && !isAdminUser && !hasGlobalAccess) {
+          router.replace("/dashboard");
+        } else if ((pathname.startsWith("/departments") || pathname.startsWith("/organization-summary")) && !isAdminUser && !hasGlobalAccess) {
+          router.replace("/dashboard");
+        } else if (pathname.startsWith("/inventory") && !isAdminUser && !hasGlobalAccess && !isIT) {
+          router.replace("/dashboard");
+        } else if (pathname.startsWith("/logs") && !isAdminUser && !hasGlobalAccess) {
+          router.replace("/dashboard");
+        }
       } catch (error) {
         if (axios.isAxiosError(error) && error.response) {
           clearStoredTokens();
@@ -233,13 +241,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(
     async (reason?: "inactivity" | "manual") => {
-      const accessToken = getStoredAccessToken();
-      const refreshToken = getStoredRefreshToken();
-
       try {
-        if (accessToken && refreshToken) {
-          await apiClient.post("/auth/logout", { refresh: refreshToken });
-        }
+        await apiClient.post("/auth/logout", {});
+      } catch (e) {
+        // ignore errors on logout
       } finally {
         clearStoredTokens();
         if (reason === "inactivity") {
@@ -460,7 +465,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       setChangePasswordApiError(
         extractApiErrorMessage(error, "Failed to change password."),
       );
-      toast.error("Failed to change password.");
+      toast.error(extractApiErrorMessage(error, "Failed to change password."));
     } finally {
       setIsChangingPassword(false);
     }
@@ -773,7 +778,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span>My Assets</span>
           </Link>
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/users"
               onClick={handleCloseSidebar}
@@ -802,7 +807,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/departments"
               onClick={handleCloseSidebar}
@@ -831,7 +836,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access || userInfo?.department === 'IT' ? (
             <Link
               href="/inventory"
               onClick={handleCloseSidebar}
@@ -862,7 +867,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
 
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/organization-summary"
               onClick={handleCloseSidebar}
@@ -895,7 +900,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/logs"
               onClick={handleCloseSidebar}

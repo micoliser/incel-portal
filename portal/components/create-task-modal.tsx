@@ -7,6 +7,7 @@ import { createRecurringSchedule, createTask, getUsers } from "@/lib/api/tasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 import {
   Dialog,
   DialogContent,
@@ -326,7 +327,7 @@ export function CreateTaskModal({
       onOpenChange(false);
       onTaskCreated();
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : "Failed to create task");
+      setApiError(extractApiErrorMessage(err, "Failed to create task"));
     } finally {
       setSubmitting(false);
     }

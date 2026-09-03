@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
 import { TasksSkeleton } from "@/components/skeletons/tasks-skeleton";
 import { CreateTaskModal } from "@/components/create-task-modal";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
@@ -98,9 +99,7 @@ export default function TasksPage() {
         setCreatedRecurringSchedules(schedules);
       } catch (err) {
         const message =
-          err instanceof Error
-            ? err.message
-            : "Failed to load recurring schedules";
+          extractApiErrorMessage(err, "Failed to load recurring schedules");
         toast.error(message);
       }
     };
@@ -141,7 +140,7 @@ export default function TasksPage() {
         setError(null);
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to load tasks";
+          extractApiErrorMessage(err, "Failed to load tasks");
         toast.error(message);
         if (currentPage === 1) {
           setLoadError(message);

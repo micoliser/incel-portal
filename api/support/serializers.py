@@ -1,3 +1,4 @@
+from django.core.validators import RegexValidator
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
@@ -50,8 +51,17 @@ class SupportAttachmentUploadRequestSerializer(serializers.Serializer):
     size = serializers.IntegerField(min_value=1)
 
 
+
 class SupportAttachmentConfirmSerializer(serializers.Serializer):
-    object_key = serializers.CharField(max_length=1024)
+    object_key = serializers.CharField(
+        max_length=1024,
+        validators=[
+            RegexValidator(
+                regex=r'^[\w-]+/[\w-]+/[0-9a-f]{32}(?:\.[a-zA-Z0-9_.-]+)?$',
+                message='Invalid attachment key format.'
+            )
+        ]
+    )
     file_name = serializers.CharField(max_length=255)
     content_type = serializers.CharField(max_length=255)
     size = serializers.IntegerField(min_value=1)

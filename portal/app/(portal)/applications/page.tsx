@@ -249,15 +249,6 @@ function validateCreateStepTwo(form: FormState): FormErrors {
   return errors;
 }
 
-function errorMessage(error: unknown, fallback: string) {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail;
-    }
-  }
-  return fallback;
-}
 
 function sortedStringList(values: string[]) {
   return [...values].sort();
@@ -364,7 +355,7 @@ export default function ApplicationsPage() {
           setRoles(rolesResponse.data as RoleOption[]);
         }
       } catch (error) {
-        toast.error(errorMessage(error, "Failed to load user context."));
+        toast.error(extractApiErrorMessage(error, "Failed to load user context."));
       } finally {
         setIsPermissionsReady(true);
       }
@@ -445,7 +436,7 @@ export default function ApplicationsPage() {
         );
         setHasNextPage(Boolean(payload.next_page));
       } catch (error) {
-        toast.error(errorMessage(error, "Failed to load applications."));
+        toast.error(extractApiErrorMessage(error, "Failed to load applications."));
       } finally {
         isRequestInFlightRef.current = false;
         setIsLoading(false);
@@ -742,7 +733,7 @@ export default function ApplicationsPage() {
       setCreateApiError(
         extractApiErrorMessage(error, "Failed to create application."),
       );
-      toast.error(errorMessage(error, "Failed to create application."));
+      toast.error(extractApiErrorMessage(error, "Failed to create application."));
     } finally {
       setIsSubmitting(false);
       setUploadProgress(null);
@@ -806,7 +797,7 @@ export default function ApplicationsPage() {
         return;
       }
 
-      toast.error(errorMessage(error, "Failed to open application."));
+      toast.error(extractApiErrorMessage(error, "Failed to open application."));
     } finally {
       setOpeningApplicationId((current) =>
         current === application.id ? null : current,
@@ -851,7 +842,7 @@ export default function ApplicationsPage() {
         [application.id]: response.data as AccessOverrideEntry[],
       }));
     } catch (error) {
-      toast.error(errorMessage(error, "Failed to load access."));
+      toast.error(extractApiErrorMessage(error, "Failed to load access."));
     } finally {
       setIsLoadingOverrides(false);
     }
@@ -1072,7 +1063,7 @@ export default function ApplicationsPage() {
       setManageApiError(
         extractApiErrorMessage(error, "Failed to update application."),
       );
-      toast.error(errorMessage(error, "Failed to update application."));
+      toast.error(extractApiErrorMessage(error, "Failed to update application."));
     } finally {
       setIsSavingManage(false);
     }
@@ -1120,7 +1111,7 @@ export default function ApplicationsPage() {
       setManageApiError(
         extractApiErrorMessage(error, "Failed to grant access."),
       );
-      toast.error(errorMessage(error, "Failed to grant access."));
+      toast.error(extractApiErrorMessage(error, "Failed to grant access."));
     } finally {
       setIsGrantingAccess(false);
     }
@@ -1168,7 +1159,7 @@ export default function ApplicationsPage() {
       setManageApiError(
         extractApiErrorMessage(error, "Failed to remove user access."),
       );
-      toast.error(errorMessage(error, "Failed to remove user access."));
+      toast.error(extractApiErrorMessage(error, "Failed to remove user access."));
     } finally {
       setIsRevokingAccess(false);
     }

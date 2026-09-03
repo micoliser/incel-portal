@@ -92,3 +92,23 @@ class DepartmentHierarchySerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields = ['id', 'name', 'code', 'line_manager_info', 'is_active', 'units']
+
+
+class BulkMemberSerializer(serializers.Serializer):
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=True,
+        max_length=500
+    )
+    action = serializers.ChoiceField(choices=['add', 'remove'], default='add', required=False)
+
+    def validate_user_ids(self, value):
+        if not value:
+            return value
+        
+        # Verify all users exist and are active
+        existing_users = User.objects.filter(id__in=value, is_active=True).values_list('id', flat=True)
+        missing = set(value) - set(existing_users)
+        if missing:
+            raise serializers.ValidationError(f"The following user IDs do not exist or are inactive: {list(missing)}")
+        return value

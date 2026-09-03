@@ -1,5 +1,5 @@
 import os
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from unittest.mock import patch
 from emails.config import EmailConfig
@@ -28,6 +28,7 @@ class EmailServiceTestCase(TestCase):
         """Test email config is properly enabled."""
         self.assertTrue(EmailConfig.is_enabled())
 
+    @override_settings(PORTAL_BASE_URL='http://localhost:3000')
     @patch('emails.services.base_email_service.BaseEmailService._send_sync')
     def test_user_created_email(self, mock_send):
         """Test user created email is sent."""

@@ -693,3 +693,35 @@ class SupportAPITests(BaseAPITestCase):
         self._auth(self.staff_user)
         response = self.client.get('/api/v1/support/requests/department/')
         self.assertEqual(response.status_code, 403)
+
+class SupportAttachmentKeyTests(TestCase):
+    def test_invalid_object_key_rejected(self):
+        from support.serializers import SupportAttachmentConfirmSerializer
+        
+        # Valid key (requires 32 hex chars for UUID)
+        serializer = SupportAttachmentConfirmSerializer(data={
+            'object_key': 'support/request/1234567890abcdef1234567890abcdef.pdf',
+            'file_name': 'test.pdf',
+            'content_type': 'application/pdf',
+            'size': 1024
+        })
+        self.assertTrue(serializer.is_valid())
+
+        # Invalid keys (path traversal, absolute paths, wrong format)
+        invalid_keys = [
+            '../support/file.pdf',
+            '/support/file.pdf',
+            'support/../file.pdf',
+            'file.pdf',  # missing folder prefix
+            'support/subfolder/file.pdf'  # too many slashes
+        ]
+        
+        for key in invalid_keys:
+            serializer = SupportAttachmentConfirmSerializer(data={
+                'object_key': key,
+                'file_name': 'test.pdf',
+                'content_type': 'application/pdf',
+                'size': 1024
+            })
+            self.assertFalse(serializer.is_valid(), f"Key {key} should be invalid")
+            self.assertIn('object_key', serializer.errors)

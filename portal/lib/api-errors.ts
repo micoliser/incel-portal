@@ -40,9 +40,21 @@ export function extractApiErrorMessage(
   }
 
   if (data && typeof data === "object") {
+    // Check for our custom backend validation error format first
+    const customError = data.error as { type?: string; details?: Record<string, unknown> } | undefined;
+    if (customError?.type === "validation_error" && customError.details && typeof customError.details === "object") {
+      for (const [field, value] of Object.entries(customError.details)) {
+        const fieldMessage = firstString(value);
+        if (fieldMessage) {
+          return field === "non_field_errors" ? fieldMessage : `${field}: ${fieldMessage}`;
+        }
+      }
+    }
+
     const direct =
       firstString(data.detail) ||
       firstString(data.message) ||
+      firstString(data.error) ||
       firstString(data.error?.message) ||
       firstString(data.non_field_errors);
 

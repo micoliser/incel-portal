@@ -42,7 +42,8 @@ class ActivityTests(BaseAPITestCase):
 
         resp = self.client.post('/api/v1/auth/refresh', {'refresh': str(refresh)}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertIn('Session expired', resp.data.get('detail', ''))
+        error_msg = resp.data.get('error', {}).get('message', '') if isinstance(resp.data, dict) else str(resp.data)
+        self.assertIn('Session expired', error_msg)
 
         # The refresh token should be blacklisted
         jti = refresh['jti']

@@ -47,11 +47,13 @@ class AdminIPAllowlistMiddleware:
             if getattr(settings, 'DEBUG', False):
                 return self.get_response(request)
 
+            client_ip = request.META.get('REMOTE_ADDR')
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            
             if x_forwarded_for:
-                client_ip = x_forwarded_for.split(',')[0].strip()
-            else:
-                client_ip = request.META.get('REMOTE_ADDR')
+                # The rightmost IP is appended by the proxy connecting to Django,
+                # making it much harder to spoof than the leftmost IP.
+                client_ip = x_forwarded_for.split(',')[-1].strip()
 
             allowed_ips = getattr(settings, 'ADMIN_ALLOWED_IPS', ['127.0.0.1'])
             
@@ -59,3 +61,26 @@ class AdminIPAllowlistMiddleware:
                 return HttpResponseForbidden("Forbidden: Your IP is not allowed to access this area.")
 
         return self.get_response(request)
+
+class CSPMiddleware:
+    """Adds a Content-Security-Policy header to every response."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        csp = (
+            "default-src 'none'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https://*; "
+            "font-src 'self'; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'none'; "
+            "form-action 'self';"
+        )
+        if 'Content-Security-Policy' not in response:
+            response['Content-Security-Policy'] = csp
+        return response

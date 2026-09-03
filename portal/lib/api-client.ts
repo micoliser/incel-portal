@@ -3,9 +3,6 @@ import axios from "axios";
 import {
   clearStoredTokens,
   getApiBaseUrl,
-  getStoredAccessToken,
-  getStoredRefreshToken,
-  setStoredTokens,
 } from "@/lib/auth";
 
 export const apiClient = axios.create({
@@ -13,6 +10,9 @@ export const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
+  xsrfCookieName: "csrftoken",
+  xsrfHeaderName: "X-CSRFToken",
 });
 
 const refreshClient = axios.create({
@@ -20,6 +20,9 @@ const refreshClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
+  xsrfCookieName: "csrftoken",
+  xsrfHeaderName: "X-CSRFToken",
 });
 
 let refreshTokenPromise: Promise<string | null> | null = null;
@@ -31,16 +34,7 @@ function shouldSkipAuthRefresh(url?: string) {
 }
 
 async function refreshAccessToken() {
-  const refreshToken = getStoredRefreshToken();
-
-  if (!refreshToken) {
-    clearStoredTokens();
-    return null;
-  }
-
-  const response = await refreshClient.post("/auth/refresh", {
-    refresh: refreshToken,
-  });
+  const response = await refreshClient.post("/auth/refresh", {});
 
   const accessToken = response.data?.access as string | undefined;
   if (!accessToken) {
@@ -48,18 +42,12 @@ async function refreshAccessToken() {
     return null;
   }
 
-  setStoredTokens(accessToken, refreshToken);
   return accessToken;
 }
 
+// The token is now sent automatically via HttpOnly cookies, so we don't
+// need to manually inject it here.
 apiClient.interceptors.request.use((config) => {
-  const accessToken = getStoredAccessToken();
-
-  if (accessToken) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${accessToken}`;
-  }
-
   return config;
 });
 
@@ -85,18 +73,17 @@ apiClient.interceptors.response.use(
       const refreshedAccessToken = await refreshTokenPromise;
       if (!refreshedAccessToken) {
         clearStoredTokens();
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && window.location.pathname !== "/") {
           window.location.replace("/");
         }
         return Promise.reject(error);
       }
 
       originalRequest.headers = originalRequest.headers ?? {};
-      originalRequest.headers.Authorization = `Bearer ${refreshedAccessToken}`;
       return apiClient.request(originalRequest);
     } catch (refreshError) {
       clearStoredTokens();
-      if (typeof window !== "undefined") {
+      if (typeof window !== "undefined" && window.location.pathname !== "/") {
         window.location.replace("/");
       }
       return Promise.reject(refreshError);

@@ -116,10 +116,7 @@ export default function DailyReportPage() {
       setLoadError(null);
       setActionError(null);
     } catch (err) {
-      const message = extractApiErrorMessage(
-        err,
-        err instanceof Error ? err.message : "Failed to load report",
-      );
+      const message = extractApiErrorMessage(err, "Failed to load report");
       setLoadError(message);
     } finally {
       setLoading(false);
@@ -213,10 +210,7 @@ export default function DailyReportPage() {
       setIsSendEmailOpen(false);
       resetSendEmailForm();
     } catch (err) {
-      const message = extractApiErrorMessage(
-        err,
-        err instanceof Error ? err.message : "Failed to send report email",
-      );
+      const message = extractApiErrorMessage(err, "Failed to send report email");
       setSendEmailError(message);
       toast.error(message);
     } finally {
@@ -258,10 +252,7 @@ export default function DailyReportPage() {
       toast.success("Report created.");
       await loadData();
     } catch (err) {
-      const message = extractApiErrorMessage(
-        err,
-        err instanceof Error ? err.message : "Failed to create the subreport",
-      );
+      const message = extractApiErrorMessage(err, "Failed to create the subreport");
       setActionError(message);
       toast.error(message);
     } finally {

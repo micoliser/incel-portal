@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/card";
 import { ReportsCalendarSkeleton } from "@/components/skeletons/reports-skeleton";
 import { reportsAPI, type ReportCalendarDay } from "@/lib/api/reports";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 function buildMonthGrid(month: Date) {
   const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
@@ -59,7 +60,7 @@ export default function ReportsPage() {
         setCalendarDays(data.dates);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load reports");
+        setError(extractApiErrorMessage(err, "Failed to load reports"));
       } finally {
         setLoading(false);
       }

@@ -10,8 +10,8 @@ class BulkMemberAssignmentTests(APITestCase):
     def setUp(self):
         # Create an admin user to perform the actions
         self.admin_user = User.objects.create_user(username='admin', password='password')
-        self.role_ed = Role.objects.create(name='Executive Director', code='ED', has_global_access=True)
-        StaffProfile.objects.create(user=self.admin_user, role=self.role_ed)
+        self.role_admin = Role.objects.create(name='Admin', code='ADMIN', has_global_access=True)
+        StaffProfile.objects.create(user=self.admin_user, role=self.role_admin)
         self.client.force_authenticate(user=self.admin_user)
 
         # Create hierarchy
@@ -27,9 +27,9 @@ class BulkMemberAssignmentTests(APITestCase):
         self.user3 = User.objects.create_user(username='u3', email='u3@test.com')
 
         # We need StaffProfiles for them
-        StaffProfile.objects.create(user=self.user1, role=self.role_ed)
-        StaffProfile.objects.create(user=self.user2, role=self.role_ed)
-        StaffProfile.objects.create(user=self.user3, role=self.role_ed, department=self.dept2)
+        StaffProfile.objects.create(user=self.user1, role=self.role_admin)
+        StaffProfile.objects.create(user=self.user2, role=self.role_admin)
+        StaffProfile.objects.create(user=self.user3, role=self.role_admin, department=self.dept2)
 
     def test_bulk_add_to_department(self):
         url = reverse('admin-departments-bulk-members', kwargs={'pk': self.dept.id})
@@ -110,5 +110,5 @@ class BulkMemberAssignmentTests(APITestCase):
         url = reverse('admin-teams-bulk-members', kwargs={'pk': self.team.id})
         data = {'user_ids': [99999], 'action': 'add'}
         response = self.client.post(url, data, format='json')
-        # Filter simply doesn't match anything, so it returns 200 without crashing
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Serializer now correctly validates and returns 400 Bad Request
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

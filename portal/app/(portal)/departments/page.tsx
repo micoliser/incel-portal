@@ -62,6 +62,7 @@ type FormState = {
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Form states for creating/editing
   const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
@@ -110,10 +111,22 @@ export default function DepartmentsPage() {
   const fetchHierarchy = async () => {
     try {
       setLoading(true);
-      const resp = await apiClient.get("/organization/hierarchy");
-      setDepartments(resp.data || []);
+      const [hierarchyResp, permsResp] = await Promise.all([
+        apiClient.get("/organization/hierarchy"),
+        apiClient.get("/me/permissions")
+      ]);
+      setDepartments(hierarchyResp.data || []);
+      
+      const permissionsData = permsResp.data as {
+        is_superuser?: boolean;
+        role_code?: string | null;
+      };
+      setIsAdmin(
+        Boolean(permissionsData.is_superuser) ||
+          String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN"
+      );
     } catch (err) {
-      toast.error("Failed to load organization hierarchy.");
+      toast.error(extractApiErrorMessage(err, "Failed to load organization hierarchy."));
     } finally {
       setLoading(false);
     }
@@ -255,9 +268,11 @@ export default function DepartmentsPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Organization Structure</h2>
-        <Button onClick={() => { resetForm(); setIsCreateDeptOpen(true); }}>
-          <Plus className="mr-2 size-4" /> Add Department
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => { resetForm(); setIsCreateDeptOpen(true); }}>
+            <Plus className="mr-2 size-4" /> Add Department
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-4">
@@ -292,22 +307,30 @@ export default function DepartmentsPage() {
                       {dep.line_manager_info ? (
                         <>
                           <span className="mr-2">Manager: {dep.line_manager_info.first_name} {dep.line_manager_info.last_name}</span>
-                          <button onClick={() => openLeaderModal("department", dep.id, dep.name, dep.line_manager_info?.id)} className="text-muted-foreground hover:text-foreground">
-                            <Pencil className="size-3" />
-                          </button>
+                          {isAdmin && (
+                            <button onClick={() => openLeaderModal("department", dep.id, dep.name, dep.line_manager_info?.id)} className="text-muted-foreground hover:text-foreground">
+                              <Pencil className="size-3" />
+                            </button>
+                          )}
                         </>
                       ) : (
-                        <button onClick={() => openLeaderModal("department", dep.id, dep.name)} className="text-muted-foreground hover:text-foreground flex items-center">
-                          <Plus className="mr-1 size-3" /> Assign Manager
-                        </button>
+                        isAdmin ? (
+                          <button onClick={() => openLeaderModal("department", dep.id, dep.name)} className="text-muted-foreground hover:text-foreground flex items-center">
+                            <Plus className="mr-1 size-3" /> Assign Manager
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">No manager</span>
+                        )
                       )}
                     </div>
                     <Button variant="outline" size="sm" onClick={() => openMembersModal("department", dep.id, dep.name)}>
                       <Users className="mr-1 size-3" /> Members
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => openCreateUnit(dep.id)}>
-                      <Plus className="mr-1 size-3" /> Unit
-                    </Button>
+                    {isAdmin && (
+                      <Button variant="outline" size="sm" onClick={() => openCreateUnit(dep.id)}>
+                        <Plus className="mr-2 size-4" /> Add Unit
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardHeader>
@@ -341,22 +364,30 @@ export default function DepartmentsPage() {
                                 {unit.supervisor_info ? (
                                   <>
                                     <span className="mr-2">Supervisor: {unit.supervisor_info.first_name} {unit.supervisor_info.last_name}</span>
-                                    <button onClick={() => openLeaderModal("unit", unit.id, unit.name, unit.supervisor_info?.id)} className="text-muted-foreground hover:text-foreground">
-                                      <Pencil className="size-3" />
-                                    </button>
+                                    {isAdmin && (
+                                      <button onClick={() => openLeaderModal("unit", unit.id, unit.name, unit.supervisor_info?.id)} className="text-muted-foreground hover:text-foreground">
+                                        <Pencil className="size-3" />
+                                      </button>
+                                    )}
                                   </>
                                 ) : (
-                                  <button onClick={() => openLeaderModal("unit", unit.id, unit.name)} className="text-muted-foreground hover:text-foreground flex items-center">
-                                    <Plus className="mr-1 size-3" /> Assign Supervisor
-                                  </button>
+                                  isAdmin ? (
+                                    <button onClick={() => openLeaderModal("unit", unit.id, unit.name)} className="text-muted-foreground hover:text-foreground flex items-center">
+                                      <Plus className="mr-1 size-3" /> Assign Supervisor
+                                    </button>
+                                  ) : (
+                                    <span className="text-muted-foreground">No supervisor</span>
+                                  )
                                 )}
                               </div>
                               <Button variant="ghost" size="sm" onClick={() => openMembersModal("unit", unit.id, unit.name, dep.id)}>
                                 <Users className="mr-1 size-3" /> Members
                               </Button>
-                              <Button variant="ghost" size="sm" onClick={() => openCreateTeam(unit.id)}>
-                                <Plus className="mr-1 size-3" /> Team
-                              </Button>
+                              {isAdmin && (
+                                <Button variant="ghost" size="sm" onClick={() => openCreateTeam(unit.id)}>
+                                  <Plus className="mr-2 size-4" /> Add Team
+                                </Button>
+                              )}
                             </div>
                           </div>
 
@@ -378,14 +409,18 @@ export default function DepartmentsPage() {
                                           {team.team_lead_info ? (
                                             <>
                                               <span className="mr-2">Lead: {team.team_lead_info.first_name} {team.team_lead_info.last_name}</span>
-                                              <button onClick={() => openLeaderModal("team", team.id, team.name, team.team_lead_info?.id)} className="text-muted-foreground hover:text-foreground">
+                                              {isAdmin && (
+                                                <button onClick={() => openLeaderModal("team", team.id, team.name, team.team_lead_info?.id)} className="text-muted-foreground hover:text-foreground">
                                                 <Pencil className="size-3" />
                                               </button>
+                                              )}
                                             </>
-                                          ) : (
+                                          ) : isAdmin ? (
                                             <button onClick={() => openLeaderModal("team", team.id, team.name)} className="text-muted-foreground hover:text-foreground flex items-center">
                                               <Plus className="mr-1 size-3" /> Assign Lead
                                             </button>
+                                          ) : (
+                                            <span className="text-muted-foreground italic text-xs">No lead assigned</span>
                                           )}
                                         </div>
                                         <Button variant="ghost" size="sm" onClick={() => openMembersModal("team", team.id, team.name, unit.id)}>
@@ -523,6 +558,7 @@ export default function DepartmentsPage() {
           entityName={memberModalConfig.name}
           parentEntityId={memberModalConfig.parentId}
           onSuccess={() => {}}
+          isAdmin={isAdmin}
         />
       )}
 
