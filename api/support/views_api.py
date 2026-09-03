@@ -4,11 +4,13 @@ from django.contrib.auth.models import User
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import SupportAttachment, SupportComment, SupportRequest
 from .permissions import (
@@ -58,6 +60,8 @@ class SupportRequestViewSet(ModelViewSet):
 
     permission_classes = [IsAuthenticated]
     pagination_class = SupportRequestPagination
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'support'
 
     def get_queryset(self):
         user = self.request.user
@@ -195,7 +199,7 @@ class SupportRequestViewSet(ModelViewSet):
                 user=request.user,
             )
         except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(e))
 
         output = SupportRequestDetailSerializer(updated, context={'request': request})
         return Response(output.data)
@@ -213,7 +217,7 @@ class SupportRequestViewSet(ModelViewSet):
                 comment_body='Request marked as resolved.',
             )
         except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(e))
 
         notify_request_resolved(updated)
 
@@ -239,7 +243,7 @@ class SupportRequestViewSet(ModelViewSet):
                 comment_body='Requester confirmed resolution. Request closed.',
             )
         except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(e))
 
         notify_request_closed(updated)
 
@@ -265,7 +269,7 @@ class SupportRequestViewSet(ModelViewSet):
                 comment_body='Requester reopened this request.',
             )
         except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(e))
 
         # Clear assignment on reopen
         request_obj.assigned_to = None
@@ -307,7 +311,7 @@ class SupportRequestViewSet(ModelViewSet):
                 content_type=serializer.validated_data['content_type'],
             )
         except SupportAttachmentStorageError as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            raise ValidationError(str(e))
 
         return Response(result)
 

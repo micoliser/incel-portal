@@ -7,14 +7,15 @@ from django.db import transaction
 
 from accounts.models import StaffProfile
 
-from common.permissions import IsGlobalAccessUser
+from common.permissions import IsGlobalAccessUser, IsAdminOrAuthenticatedReadOnly, IsAdminOrGlobalReadOnly
 from organization.models import Department, Role, Unit, Team
 from organization.serializers import (
     DepartmentSerializer, 
     RoleSerializer,
     UnitSerializer,
     TeamSerializer,
-    DepartmentHierarchySerializer
+    DepartmentHierarchySerializer,
+    BulkMemberSerializer
 )
 
 
@@ -27,7 +28,7 @@ class DepartmentListView(APIView):
 
 
 class RoleListView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
 
     def get(self, _request):
         roles = Role.objects.filter(is_active=True).order_by('name')
@@ -47,13 +48,15 @@ class HierarchyView(APIView):
 class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all().order_by('name')
     serializer_class = DepartmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     @action(detail=True, methods=['post'])
     @transaction.atomic
     def bulk_members(self, request, pk=None):
         department = self.get_object()
-        user_ids = request.data.get('user_ids', [])
+        serializer = BulkMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_ids = serializer.validated_data.get('user_ids', [])
         
         # Departments only support "add" (which acts as a move if they are already in a department)
         profiles = StaffProfile.objects.filter(user_id__in=user_ids)
@@ -66,14 +69,16 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 class UnitViewSet(viewsets.ModelViewSet):
     queryset = Unit.objects.all().order_by('name')
     serializer_class = UnitSerializer
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     @action(detail=True, methods=['post'])
     @transaction.atomic
     def bulk_members(self, request, pk=None):
         unit = self.get_object()
-        user_ids = request.data.get('user_ids', [])
-        action_type = request.data.get('action', 'add')
+        serializer = BulkMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_ids = serializer.validated_data.get('user_ids', [])
+        action_type = serializer.validated_data.get('action', 'add')
         
         profiles = StaffProfile.objects.filter(user_id__in=user_ids)
         if action_type == 'add':
@@ -88,14 +93,16 @@ class UnitViewSet(viewsets.ModelViewSet):
 class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.all().order_by('name')
     serializer_class = TeamSerializer
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
 
     @action(detail=True, methods=['post'])
     @transaction.atomic
     def bulk_members(self, request, pk=None):
         team = self.get_object()
-        user_ids = request.data.get('user_ids', [])
-        action_type = request.data.get('action', 'add')
+        serializer = BulkMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_ids = serializer.validated_data.get('user_ids', [])
+        action_type = serializer.validated_data.get('action', 'add')
         
         profiles = StaffProfile.objects.filter(user_id__in=user_ids)
         if action_type == 'add':

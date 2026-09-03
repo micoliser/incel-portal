@@ -86,10 +86,7 @@ export default function SubreportDetailPage() {
         setLoadError(null);
         setActionError(null);
       } catch (err) {
-        const message = extractApiErrorMessage(
-          err,
-          err instanceof Error ? err.message : "Failed to load subreport",
-        );
+        const message = extractApiErrorMessage(err, "Failed to load subreport");
         setLoadError(message);
       } finally {
         setLoading(false);
@@ -141,10 +138,7 @@ export default function SubreportDetailPage() {
           : current,
       );
     } catch (err) {
-      const message = extractApiErrorMessage(
-        err,
-        err instanceof Error ? err.message : "Failed to post the comment",
-      );
+      const message = extractApiErrorMessage(err, "Failed to post the comment");
       setActionError(message);
       toast.error(message);
     } finally {

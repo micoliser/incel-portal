@@ -1,3 +1,6 @@
+import logging
+logger = logging.getLogger(__name__)
+
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -674,8 +677,8 @@ class WeeklySummaryUserShareSerializer(serializers.Serializer):
             token = getattr(obj, 'share_token', None)
             if token:
                 return f"/summaries?token={token}"
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Silent exception caught")
         return None
 
 

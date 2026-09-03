@@ -1,9 +1,12 @@
 import csv
 from django.http import HttpResponse
-from rest_framework import viewsets, status, generics
+from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound, AuthenticationFailed
+from rest_framework import status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated
+from common.permissions import IsAdminUser
 from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
 from django.db.models import Q
@@ -22,7 +25,7 @@ from .serializers import (
     MaintenanceAttachmentUploadUrlSerializer,
     InventoryPhotoUploadUrlSerializer,
 )
-from .permissions import IsAdminOrITDepartment
+from .permissions import IsITOrAdminOrGlobalReadOnly
 from .s3 import generate_maintenance_attachment_upload_url, MaintenanceAttachmentUploadError
 from applications.audit import log_audit
 from notifications.services import create_notification
@@ -31,7 +34,7 @@ from notifications.services import create_notification
 class InventoryCategoryViewSet(viewsets.ModelViewSet):
     queryset = InventoryCategory.objects.all().order_by('name')
     serializer_class = InventoryCategorySerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, IsITOrAdminOrGlobalReadOnly]
 
 
 class InventoryPagination(PageNumberPagination):
@@ -48,7 +51,7 @@ class InventoryPagination(PageNumberPagination):
 
 
 class InventoryItemViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, IsITOrAdminOrGlobalReadOnly]
     pagination_class = InventoryPagination
     
     def get_queryset(self):
@@ -199,7 +202,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         if item.status != 'assigned':
-            return Response({'detail': 'Item is not currently assigned.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Item is not currently assigned.')
 
         last_assignment = item.assignments.filter(returned_at__isnull=True).first()
         if last_assignment:
@@ -232,7 +235,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         
         # Quick validation
         if not content_type.startswith('image/'):
-            return Response({'detail': 'Only image files are allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Only image files are allowed.')
 
         try:
             from inventory.s3 import generate_inventory_photo_upload_url
@@ -257,7 +260,7 @@ class MyInventoryView(generics.ListAPIView):
 
 
 class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdminOrITDepartment]
+    permission_classes = [IsAuthenticated, IsITOrAdminOrGlobalReadOnly]
     pagination_class = InventoryPagination
 
     def get_queryset(self):
@@ -394,6 +397,6 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
                 content_type=serializer.validated_data['content_type'],
             )
         except MaintenanceAttachmentUploadError as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            raise ValidationError(str(e))
 
         return Response(result)

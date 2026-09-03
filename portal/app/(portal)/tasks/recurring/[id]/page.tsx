@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
 import { EditRecurringScheduleModal } from "@/components/edit-recurring-schedule-modal";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 import {
   Dialog,
   DialogContent,
@@ -73,9 +74,7 @@ export default function RecurringTaskDetailPage() {
         setError(null);
       } catch (err) {
         const message =
-          err instanceof Error
-            ? err.message
-            : "Failed to load recurring task details";
+          extractApiErrorMessage(err, "Failed to load recurring task details");
         toast.error(message);
         setError(message);
       } finally {
@@ -99,7 +98,7 @@ export default function RecurringTaskDetailPage() {
       setEndConfirmOpen(false);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to end recurring task";
+        extractApiErrorMessage(err, "Failed to end recurring task");
       toast.error(message);
       setError(message);
     } finally {
@@ -123,11 +122,9 @@ export default function RecurringTaskDetailPage() {
       );
     } catch (err) {
       const message =
-        err instanceof Error
-          ? err.message
-          : schedule.is_paused
+        extractApiErrorMessage(err, schedule.is_paused
             ? "Failed to resume recurring task"
-            : "Failed to pause recurring task";
+            : "Failed to pause recurring task");
       toast.error(message);
       setError(message);
     } finally {

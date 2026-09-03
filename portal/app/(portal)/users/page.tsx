@@ -115,6 +115,7 @@ export default function UsersPage() {
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
 
   const [expandedUsers, setExpandedUsers] = useState<Set<number>>(new Set());
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -127,7 +128,7 @@ export default function UsersPage() {
 
         isRequestInFlightRef.current = true;
 
-        const [depsResp, filteredUsersResp, totalUsersResp, rolesResp] =
+        const [depsResp, filteredUsersResp, totalUsersResp, rolesResp, permsResp] =
           await Promise.all([
             apiClient.get("/organization/hierarchy"),
             apiClient.get("/admin/users", {
@@ -140,7 +141,11 @@ export default function UsersPage() {
             }),
             apiClient.get("/admin/users"),
             apiClient.get("/organization/roles"),
+            apiClient.get("/me/permissions")
           ]);
+
+        const permissionsData = permsResp.data as { is_superuser?: boolean; role_code?: string | null };
+        setIsAdmin(Boolean(permissionsData.is_superuser) || String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN");
 
         const depsData = depsResp.data || [];
         const depsList = Array.isArray(depsData)
@@ -182,7 +187,7 @@ export default function UsersPage() {
         setTotalDepartments(depsList.length);
       } catch (err) {
         console.error(err);
-        toast.error("Failed to load users.");
+        toast.error(extractApiErrorMessage(err, "Failed to load users."));
       } finally {
         isRequestInFlightRef.current = false;
         setLoading(false);
@@ -333,7 +338,7 @@ export default function UsersPage() {
       setCreateApiError(
         extractApiErrorMessage(error, "Failed to create user."),
       );
-      toast.error("Failed to create user.");
+      toast.error(extractApiErrorMessage(error, "Failed to create user."));
     } finally {
       setIsCreatingUser(false);
     }
@@ -424,7 +429,7 @@ export default function UsersPage() {
       toast.success("User updated.");
     } catch (error) {
       setEditApiError(extractApiErrorMessage(error, "Failed to update user."));
-      toast.error("Failed to update user.");
+      toast.error(extractApiErrorMessage(error, "Failed to update user."));
     } finally {
       setIsUpdatingUser(false);
     }
@@ -518,9 +523,11 @@ export default function UsersPage() {
       </div>
 
       <div className="flex justify-end">
-        <Button onClick={() => setIsCreateOpen(true)}>
-          <Plus className="mr-2 size-4" /> Create User
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <Plus className="mr-2 size-4" /> Create User
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -624,28 +631,32 @@ export default function UsersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEdit(user)}
-                            aria-label="Edit user"
-                          >
-                            <Pencil className="size-5 text-blue-400/90" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => requestStatusToggle(user)}
-                            aria-label={
-                              user.is_active ? "Disable user" : "Enable user"
-                            }
-                          >
-                            {user.is_active ? (
-                              <Trash className="size-5 text-red-400/90" />
-                            ) : (
-                              <CheckCircle2 className="size-5 text-emerald-500/90" />
-                            )}
-                          </Button>
+                          {isAdmin && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEdit(user)}
+                                aria-label="Edit user"
+                              >
+                                <Pencil className="size-5 text-blue-400/90" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => requestStatusToggle(user)}
+                                aria-label={
+                                  user.is_active ? "Disable user" : "Enable user"
+                                }
+                              >
+                                {user.is_active ? (
+                                  <Trash className="size-5 text-red-500/90" />
+                                ) : (
+                                  <CheckCircle2 className="size-5 text-green-500/90" />
+                                )}
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

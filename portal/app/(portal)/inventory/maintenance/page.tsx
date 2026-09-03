@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
@@ -41,6 +42,7 @@ export default function MaintenanceLogsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
+  const [hasWriteAccess, setHasWriteAccess] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -59,15 +61,27 @@ export default function MaintenanceLogsPage() {
   }, [statusFilter, categoryFilter, debouncedSearch]);
 
   useEffect(() => {
-    const loadCategories = async () => {
+    const loadMetadata = async () => {
       try {
-        const response = await apiClient.get("/inventory/categories/");
-        setCategories(response.data.results || response.data);
+        const [catsRes, meRes, permsRes] = await Promise.all([
+          apiClient.get("/inventory/categories/"),
+          apiClient.get("/me"),
+          apiClient.get("/me/permissions")
+        ]);
+        setCategories(catsRes.data.results || catsRes.data);
+        
+        const meData = meRes.data as { department_code?: string | null };
+        const permsData = permsRes.data as { is_superuser?: boolean; role_code?: string | null };
+        
+        const isAdmin = Boolean(permsData.is_superuser) || String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
+        const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
+        
+        setHasWriteAccess(isAdmin || isIT);
       } catch (err) {
-        console.error("Failed to load categories", err);
+        console.error("Failed to load metadata", err);
       }
     };
-    loadCategories();
+    loadMetadata();
   }, []);
 
   const loadLogs = useCallback(async () => {
@@ -105,8 +119,7 @@ export default function MaintenanceLogsPage() {
       setHasNextPage(hasNext);
       setError(null);
     } catch (err) {
-      const errorObj = err as { response?: { data?: { detail?: string } } };
-      setError(errorObj?.response?.data?.detail || "Failed to load maintenance logs");
+      setError(extractApiErrorMessage(err, "Failed to load maintenance logs"));
     } finally {
       isRequestInFlightRef.current = false;
       setLoading(false);
@@ -150,7 +163,7 @@ export default function MaintenanceLogsPage() {
       link.parentNode?.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error("Failed to export maintenance logs");
+      toast.error(extractApiErrorMessage(err, "Failed to export maintenance logs"));
     } finally {
       setIsExporting(false);
     }
@@ -234,9 +247,11 @@ export default function MaintenanceLogsPage() {
             {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
             Export
           </Button>
-          <Button onClick={() => { setLogToEdit(null); setIsModalOpen(true); }} className="shrink-0">
-            <Plus className="mr-2 h-4 w-4" /> Add Log
-          </Button>
+          {hasWriteAccess && (
+            <Button onClick={() => { setLogToEdit(null); setIsModalOpen(true); }} className="shrink-0">
+              <Plus className="mr-2 h-4 w-4" /> Add Log
+            </Button>
+          )}
         </div>
       </div>
 
@@ -307,7 +322,7 @@ export default function MaintenanceLogsPage() {
                         ) : "—"}
                       </td>
                       <td className="px-4 py-3">
-                        {log.status !== "completed" && (
+                        {hasWriteAccess && log.status !== "completed" && (
                           <Button variant="outline" size="sm" onClick={() => { setLogToEdit(log); setIsModalOpen(true); }}>
                             Edit
                           </Button>

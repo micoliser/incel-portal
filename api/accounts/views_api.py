@@ -1,13 +1,17 @@
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
+from django.core.cache import cache
 import logging
 from rest_framework import permissions, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.exceptions import ValidationError, NotFound, AuthenticationFailed, PermissionDenied
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -29,7 +33,7 @@ from accounts.serializers import (
 from applications.audit import log_audit
 from applications.models import InternalApplication
 from common.access import can_user_access_application
-from common.permissions import IsGlobalAccessUser, has_admin_access, has_global_access
+from common.permissions import IsGlobalAccessUser, IsAdminOrGlobalReadOnly, has_admin_access, has_global_access
 from emails.services.user_emails import UserEmailManager
 from organization.models import Department, Role, Unit, Team
 
@@ -49,8 +53,37 @@ def _jwt_payload_for_user(user):
     }
 
 
+def _set_jwt_cookies(response, tokens):
+    max_age_access = settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()
+    max_age_refresh = settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()
+    
+    response.set_cookie(
+        'access_token',
+        tokens['access'],
+        max_age=max_age_access,
+        httponly=True,
+        samesite='Lax'
+    )
+    response.set_cookie(
+        'refresh_token',
+        tokens['refresh'],
+        max_age=max_age_refresh,
+        httponly=True,
+        samesite='Lax'
+    )
+    return response
+
+
+def _clear_jwt_cookies(response):
+    response.delete_cookie('access_token')
+    response.delete_cookie('refresh_token')
+    return response
+
+
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -58,6 +91,15 @@ class LoginView(APIView):
 
         email = serializer.validated_data['email'].strip().lower()
         password = serializer.validated_data['password']
+
+        lockout_key = f"login_lockout_{email}"
+        fails_key = f"login_fails_{email}"
+
+        if cache.get(lockout_key):
+            return Response(
+                {'detail': 'Account is temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
 
         user = User.objects.filter(email__iexact=email).first()
         if not user:
@@ -67,7 +109,8 @@ class LoginView(APIView):
                 target_type='User',
                 metadata={'email': email},
             )
-            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+            remaining = self._handle_failed_attempt(fails_key, lockout_key)
+            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': remaining})
 
         if not user.is_active:
             log_audit(
@@ -91,7 +134,11 @@ class LoginView(APIView):
                 target_id=user.id,
                 metadata={'email': email},
             )
-            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+            remaining = self._handle_failed_attempt(fails_key, lockout_key)
+            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': remaining})
+
+        # Success - clear the failure counter
+        cache.delete(fails_key)
 
         tokens = _jwt_payload_for_user(authenticated)
         log_audit(
@@ -101,22 +148,34 @@ class LoginView(APIView):
             target_type='User',
             target_id=authenticated.id,
         )
-        return Response({'tokens': tokens, 'user': UserWithProfileSerializer(authenticated).data})
+        response = Response({'tokens': tokens, 'user': UserWithProfileSerializer(authenticated).data})
+        return _set_jwt_cookies(response, tokens)
 
+    def _handle_failed_attempt(self, fails_key, lockout_key):
+        fails = cache.get(fails_key, 0) + 1
+        if fails >= 10:
+            cache.set(lockout_key, True, 15 * 60)
+            cache.delete(fails_key)
+            return 0
+        else:
+            cache.set(fails_key, fails, 15 * 60)
+            return 10 - fails
 
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        refresh_token = serializer.validated_data['refresh']
-
+        # Logout might not send refresh token in data if it's HttpOnly
+        refresh_token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
+        if not refresh_token:
+            return _clear_jwt_cookies(Response(status=status.HTTP_204_NO_CONTENT))
+            
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
         except Exception:
-            return Response({'detail': 'Invalid refresh token.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Invalid refresh token.')
 
         log_audit(
             action='AUTH_LOGOUT',
@@ -125,23 +184,22 @@ class LogoutView(APIView):
             target_type='User',
             target_id=request.user.id,
         )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return _clear_jwt_cookies(Response(status=status.HTTP_204_NO_CONTENT))
 
 
 class RefreshTokenView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'refresh'
 
     def post(self, request):
-        serializer = TokenRefreshSerializer(data=request.data)
-        try:
-            serializer.is_valid(raise_exception=True)
-        except TokenError:
-            return Response({'detail': 'Invalid or blacklisted refresh token.'}, status=status.HTTP_401_UNAUTHORIZED)
-
+        refresh_token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
+        if not refresh_token:
+            raise AuthenticationFailed('Refresh token required.')
+        
         # Enforce server-side inactivity timeout: if the user has not been
         # active for more than 1 hour, reject the refresh and blacklist the
         # presented refresh token to force a full re-login.
-        refresh_token = request.data.get('refresh')
         try:
             if refresh_token:
                 token = RefreshToken(refresh_token)
@@ -152,25 +210,30 @@ class RefreshTokenView(APIView):
                         profile = getattr(user, 'staff_profile', None)
                         if profile is not None:
                             last = profile.last_activity_at
-                            # If we've never recorded activity, treat this as a fresh session
-                            # and initialize last_activity_at rather than rejecting immediately.
                             if last is None:
                                 profile.last_activity_at = timezone.now()
                                 profile.save(update_fields=['last_activity_at'])
                             elif (timezone.now() - last > timedelta(hours=1)):
-                                # Blacklist the refresh token and deny
                                 try:
                                     token.blacklist()
                                 except Exception:
-                                    pass
-                                return Response({'detail': 'Session expired due to inactivity.'}, status=status.HTTP_401_UNAUTHORIZED)
+                                    logger.debug("Failed to blacklist token during inactivity check")
+                                raise AuthenticationFailed('Session expired due to inactivity.')
                     except User.DoesNotExist:
                         pass
-        except Exception:
-            # If token decode fails, fall back to normal behavior already covered above
-            pass
+        except AuthenticationFailed:
+            raise
+        except Exception as exc:
+            logger.exception("Silent exception caught")
 
-        return Response(serializer.validated_data)
+        serializer = TokenRefreshSerializer(data={'refresh': refresh_token})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError:
+            return _clear_jwt_cookies(Response({'detail': 'Invalid or blacklisted refresh token.'}, status=status.HTTP_401_UNAUTHORIZED))
+
+        response = Response(serializer.validated_data)
+        return _set_jwt_cookies(response, serializer.validated_data)
 
 
 class HeartbeatView(APIView):
@@ -182,13 +245,15 @@ class HeartbeatView(APIView):
             if profile is not None:
                 profile.last_activity_at = timezone.now()
                 profile.save(update_fields=['last_activity_at'])
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Silent exception caught")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data, context={'user': request.user})
@@ -206,7 +271,7 @@ class ChangePasswordView(APIView):
                 target_id=request.user.id,
                 metadata={'reason': 'incorrect_old_password'},
             )
-            return Response({'detail': 'Old password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Old password is incorrect.')
 
         request.user.set_password(new_password)
         request.user.save(update_fields=['password'])
@@ -227,7 +292,8 @@ class ChangePasswordView(APIView):
             target_type='User',
             target_id=request.user.id,
         )
-        return Response({'detail': 'Password changed.', 'tokens': tokens})
+        response = Response({'detail': 'Password changed.', 'tokens': tokens})
+        return _set_jwt_cookies(response, tokens)
 
 
 class MeView(APIView):
@@ -320,10 +386,17 @@ class AuthenticatedUserListView(APIView):
 
 
 class AdminUserListView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'admin'
 
     def get(self, request):
-        users = User.objects.all()
+        users = User.objects.all().select_related(
+            'staff_profile__role',
+            'staff_profile__department',
+            'staff_profile__unit',
+            'staff_profile__team'
+        )
 
         department_id = request.query_params.get('department_id')
         if department_id:
@@ -375,8 +448,6 @@ class AdminUserListView(APIView):
 
     @transaction.atomic
     def post(self, request):
-        if not has_admin_access(request.user):
-            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = AdminCreateUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -469,25 +540,25 @@ class AdminUserPagination(PageNumberPagination):
 
 
 class AdminUserDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'admin'
 
     def get(self, _request, user_id):
         user = User.objects.filter(id=user_id).first()
         if not user:
-            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('User not found.')
         return Response(UserWithProfileSerializer(user).data)
 
     @transaction.atomic
     def patch(self, request, user_id):
-        if not has_admin_access(request.user):
-            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = UpdateAdminUserSerializer(data=request.data, context={'user_id': user_id})
         serializer.is_valid(raise_exception=True)
 
         user = User.objects.filter(id=user_id).first()
         if not user:
-            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('User not found.')
 
         user.email = serializer.validated_data['email']
         user.username = serializer.validated_data['email']
@@ -576,22 +647,22 @@ class AdminUserDetailView(APIView):
 
 
 class AdminUserRoleUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'admin'
 
     def patch(self, request, user_id):
-        if not has_admin_access(request.user):
-            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = UpdateUserRoleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = User.objects.filter(id=user_id).first()
         if not user:
-            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('User not found.')
 
         role = Role.objects.filter(id=serializer.validated_data['role_id']).first()
         if not role:
-            return Response({'detail': 'Role not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Role not found.')
 
         profile = _profile_or_none(user)
         if profile is None:
@@ -613,27 +684,27 @@ class AdminUserRoleUpdateView(APIView):
 
 
 class AdminUserDepartmentUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'admin'
 
     def put(self, request, user_id):
-        if not has_admin_access(request.user):
-            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = UpdateUserDepartmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = User.objects.filter(id=user_id).first()
         if not user:
-            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('User not found.')
 
         profile = _profile_or_none(user)
         if profile is None:
-            return Response({'detail': 'Staff profile does not exist for this user.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Staff profile does not exist for this user.')
 
         department_id = serializer.validated_data['department_id']
         department = Department.objects.filter(id=department_id).first()
         if not department:
-            return Response({'detail': 'Department not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Department not found.')
 
         profile.department = department
         profile.save(update_fields=['department', 'updated_at'])
@@ -651,18 +722,18 @@ class AdminUserDepartmentUpdateView(APIView):
 
 
 class AdminUserStatusUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsGlobalAccessUser]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'admin'
 
     def patch(self, request, user_id):
-        if not has_admin_access(request.user):
-            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = UpdateUserStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = User.objects.filter(id=user_id).first()
         if not user:
-            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('User not found.')
 
         is_active = serializer.validated_data['is_active']
         user.is_active = is_active

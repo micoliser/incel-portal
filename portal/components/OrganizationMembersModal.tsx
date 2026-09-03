@@ -37,6 +37,7 @@ type OrganizationMembersModalProps = {
   entityName: string;
   parentEntityId: string | null;
   onSuccess: () => void;
+  isAdmin?: boolean;
 };
 
 export function OrganizationMembersModal({
@@ -47,6 +48,7 @@ export function OrganizationMembersModal({
   entityName,
   parentEntityId,
   onSuccess,
+  isAdmin = false,
 }: OrganizationMembersModalProps) {
   const [mode, setMode] = useState<"view" | "add" | "remove">("view");
   const [members, setMembers] = useState<User[]>([]);
@@ -87,7 +89,7 @@ export function OrganizationMembersModal({
       });
       setMembers(resp.data.results || resp.data);
     } catch (err) {
-      toast.error("Failed to load members.");
+      toast.error(extractApiErrorMessage(err, "Failed to load members."));
     } finally {
       setLoading(false);
     }
@@ -121,7 +123,7 @@ export function OrganizationMembersModal({
       setCandidates(data);
       setCandidates(data);
     } catch (err) {
-      toast.error("Failed to load candidates.");
+      toast.error(extractApiErrorMessage(err, "Failed to load candidates."));
     } finally {
       setLoading(false);
       isRequestInFlight.current = false;
@@ -195,16 +197,18 @@ export function OrganizationMembersModal({
 
   const renderViewMode = () => (
     <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={handleOpenAdd}>
-          Add Members
-        </Button>
-        {entityType !== "department" && (
-          <Button variant="outline" size="sm" onClick={handleOpenRemove} disabled={members.length === 0}>
-            Remove Members
+      {isAdmin && (
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={handleOpenAdd}>
+            Add Members
           </Button>
-        )}
-      </div>
+          {entityType !== "department" && (
+            <Button variant="outline" size="sm" onClick={handleOpenRemove} disabled={members.length === 0}>
+              Remove Members
+            </Button>
+          )}
+        </div>
+      )}
       
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" /></div>

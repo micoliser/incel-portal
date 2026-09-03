@@ -68,7 +68,7 @@ class RecentApplicationsAPITest(APITestCase):
 
 class ApplicationEmailAPITest(APITestCase):
 	def setUp(self):
-		self.global_role = Role.objects.create(name='Executive Director', code='ED', has_global_access=True)
+		self.global_role = Role.objects.create(name='Admin', code='ADMIN', has_global_access=True)
 		self.admin_user = User.objects.create_user(
 			username='admin@example.com',
 			email='admin@example.com',

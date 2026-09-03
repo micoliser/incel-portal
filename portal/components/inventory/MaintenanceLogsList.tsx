@@ -24,7 +24,7 @@ export function MaintenanceLogsList({ itemId, item }: { itemId: string, item?: {
     } catch (err) {
       const errorObj = err as { response?: { status?: number; data?: { detail?: string } } };
       if (errorObj?.response?.status === 403) {
-        setError("forbidden");
+        setError(extractApiErrorMessage(err, "forbidden"));
       } else {
         setError(errorObj?.response?.data?.detail || "Failed to load maintenance logs");
       }

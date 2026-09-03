@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import axios from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -21,6 +22,7 @@ import { apiClient } from "@/lib/api-client";
 type PermissionPayload = {
   is_superuser?: boolean;
   role_code?: string | null;
+  has_global_access?: boolean;
 };
 
 type AuditLogEntry = {
@@ -101,7 +103,7 @@ function isAdmin(permission: PermissionPayload | null) {
     return false;
   }
 
-  if (permission.is_superuser) {
+  if (permission.is_superuser || permission.has_global_access) {
     return true;
   }
 
@@ -336,12 +338,9 @@ export default function LogsPage() {
           return;
         }
 
-        const fallback = "Failed to load logs.";
-        const detail = axios.isAxiosError(error)
-          ? (error.response?.data?.detail as string | undefined)
-          : undefined;
-        toast.error(detail || fallback);
-        setErrorMessage(detail || fallback);
+        const message = extractApiErrorMessage(error, "Failed to load logs.");
+        toast.error(message);
+        setErrorMessage(message);
       } finally {
         setIsLoading(false);
       }

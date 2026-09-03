@@ -68,6 +68,7 @@ export default function InventoryDashboard() {
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasWriteAccess, setHasWriteAccess] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -102,12 +103,22 @@ export default function InventoryDashboard() {
 
   const fetchStatsAndCategories = async () => {
     try {
-      const [statsRes, catsRes] = await Promise.all([
+      const [statsRes, catsRes, meRes, permsRes] = await Promise.all([
         apiClient.get("/inventory/items/stats/"),
-        apiClient.get("/inventory/categories/")
+        apiClient.get("/inventory/categories/"),
+        apiClient.get("/me"),
+        apiClient.get("/me/permissions")
       ]);
       setStats(statsRes.data);
       setCategories(catsRes.data);
+      
+      const meData = meRes.data as { department_code?: string | null };
+      const permsData = permsRes.data as { is_superuser?: boolean; role_code?: string | null };
+      
+      const isAdmin = Boolean(permsData.is_superuser) || String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
+      const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
+      
+      setHasWriteAccess(isAdmin || isIT);
     } catch (err) {
       console.error("Failed to load stats or categories", err);
     }
@@ -216,7 +227,7 @@ export default function InventoryDashboard() {
       link.parentNode?.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error("Failed to export inventory items");
+      toast.error(extractApiErrorMessage(err, "Failed to export inventory items"));
     } finally {
       setIsExporting(false);
     }
@@ -418,12 +429,16 @@ export default function InventoryDashboard() {
               <Wrench className="mr-2 h-4 w-4" /> Maintenance Logs
             </Link>
           </Button>
-          <Button variant="outline" onClick={() => setIsCategoryModalOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Category
-          </Button>
-          <Button onClick={() => setIsItemModalOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Item
-          </Button>
+          {hasWriteAccess && (
+            <>
+              <Button variant="outline" onClick={() => setIsCategoryModalOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Category
+              </Button>
+              <Button onClick={() => setIsItemModalOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Item
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

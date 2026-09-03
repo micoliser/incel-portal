@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
@@ -48,8 +49,7 @@ export default function MyAssetsPage() {
         setItems(response.data as InventoryItem[]);
         setError(null);
       } catch (err) {
-        // @ts-expect-error err is of unknown type from axios
-        setError(err?.response?.data?.detail || "Failed to load your assets.");
+                setError(extractApiErrorMessage(err, "Failed to load your assets."));
       } finally {
         setLoading(false);
       }

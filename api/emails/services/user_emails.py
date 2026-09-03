@@ -1,3 +1,4 @@
+from django.conf import settings
 from typing import Dict, Any
 from emails.services.base_email_service import BaseEmailService
 from emails.config import EmailType
@@ -54,7 +55,7 @@ class UserEmailManager:
             'email': user.email,
             'first_name': user.first_name or user.username,
             'temporary_password': temporary_password,
-            'login_url': 'https://workspace.incelgroup.com/login',
+            'login_url': f"{settings.PORTAL_BASE_URL.rstrip('/')}/login",
         }
 
         service = UserCreatedEmailService()

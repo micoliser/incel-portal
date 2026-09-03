@@ -10,6 +10,7 @@ import { summariesAPI, type SummaryFilesResponse } from "@/lib/api/summaries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 function formatDisplayDate(value: string) {
   return format(parseISO(value), "MMM d, yyyy");
@@ -90,13 +91,13 @@ export default function SummaryFilesPage() {
   const summaryId = String(params.id);
   const initialViewType = (searchParams.get("v") || "sent") as
     | "sent"
-    | "recieved";
+    | "received";
   const shareToken = searchParams.get("token") || undefined;
 
   const [files, setFiles] = useState<SummaryFilesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewType, setViewType] = useState<"sent" | "recieved">(
+  const [viewType, setViewType] = useState<"sent" | "received">(
     initialViewType,
   );
 
@@ -113,7 +114,7 @@ export default function SummaryFilesPage() {
         setError(null);
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to load files";
+          extractApiErrorMessage(err, "Failed to load files");
         setError(message);
         toast.error(message);
       } finally {
@@ -124,7 +125,7 @@ export default function SummaryFilesPage() {
     fetchFiles();
   }, [summaryId, viewType, shareToken]);
 
-  const handleViewTypeChange = (newViewType: "sent" | "recieved") => {
+  const handleViewTypeChange = (newViewType: "sent" | "received") => {
     setViewType(newViewType);
     // Update URL with new view type
     const newUrl = shareToken
@@ -196,8 +197,8 @@ export default function SummaryFilesPage() {
             Files Sent
           </Button>
           <Button
-            onClick={() => handleViewTypeChange("recieved")}
-            variant={viewType === "recieved" ? "default" : "outline"}
+            onClick={() => handleViewTypeChange("received")}
+            variant={viewType === "received" ? "default" : "outline"}
           >
             Files Received
           </Button>

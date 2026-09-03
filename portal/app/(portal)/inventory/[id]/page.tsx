@@ -71,6 +71,7 @@ export default function InventoryItemDetail() {
   const id = params?.id as string;
   
   const [item, setItem] = useState<InventoryItem | null>(null);
+  const [hasWriteAccess, setHasWriteAccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -230,12 +231,12 @@ export default function InventoryItemDetail() {
             )}
             
             <div className="pt-4 border-t border-border flex flex-col gap-2">
-              {item.status !== "assigned" && (
+              {hasWriteAccess && item.status !== "assigned" && (
                 <Button onClick={() => setIsAssignOpen(true)} className="w-full">
                   Assign Item
                 </Button>
               )}
-              {item.status === "assigned" && (
+              {hasWriteAccess && item.status === "assigned" && (
                 <Button onClick={() => setIsReturnOpen(true)} variant="outline" className="w-full border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/50 dark:border-amber-900/50 dark:text-amber-500">
                   Return Item
                 </Button>

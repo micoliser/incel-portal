@@ -11,6 +11,7 @@ import {
   Minus,
 } from "lucide-react";
 import type { AxiosError } from "axios";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import {
   Select,
@@ -120,13 +121,15 @@ export default function OrganizationSummaryPage() {
         setLoading(true);
 
         const permsResponse = await apiClient.get("/me/permissions");
+        const hasGlobalAccess = Boolean(permsResponse.data?.has_global_access);
         const admin =
           Boolean(permsResponse.data?.is_superuser) ||
           String(permsResponse.data?.role_code ?? "").toUpperCase() === "ADMIN";
 
-        setIsAdmin(admin);
-        if (!admin) {
-          setError("Admin access required");
+        const authorized = admin || hasGlobalAccess;
+        setIsAdmin(authorized);
+        if (!authorized) {
+          setError("Admin or Global access required");
           return;
         }
 
@@ -159,9 +162,9 @@ export default function OrganizationSummaryPage() {
       } catch (err) {
         const error = err as AxiosError<{ detail?: string }>;
         if (error.response?.status === 403) {
-          setError("Admin access required");
+          setError(extractApiErrorMessage(err, "Admin access required"));
         } else {
-          setError("Failed to load organization summary");
+          setError(extractApiErrorMessage(err, "Failed to load organization summary"));
         }
         setOrgSummary(null);
       } finally {
@@ -185,9 +188,9 @@ export default function OrganizationSummaryPage() {
     } catch (err) {
       const error = err as AxiosError<{ detail?: string }>;
       if (error.response?.status === 403) {
-        setError("Admin access required");
+        setError(extractApiErrorMessage(err, "Admin access required"));
       } else {
-        setError("Failed to load organization summary");
+        setError(extractApiErrorMessage(err, "Failed to load organization summary"));
       }
     } finally {
       setLoading(false);

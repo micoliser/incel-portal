@@ -3,6 +3,7 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -66,7 +67,7 @@ class NotificationMarkReadView(APIView):
             recipient=request.user,
         ).first()
         if not notification:
-            return Response({'detail': 'Notification not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Notification not found.')
 
         if not notification.is_read:
             notification.is_read = True
@@ -97,7 +98,7 @@ class NotificationDeleteView(APIView):
             recipient=request.user,
         ).delete()
         if deleted == 0:
-            return Response({'detail': 'Notification not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Notification not found.')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -178,7 +179,7 @@ class PushSubscriptionDeleteView(APIView):
             user=request.user,
         ).first()
         if not subscription:
-            return Response({'detail': 'Subscription not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Subscription not found.')
 
         subscription.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

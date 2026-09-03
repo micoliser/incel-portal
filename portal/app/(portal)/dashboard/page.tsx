@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import axios from "axios";
 import Image from "next/image";
@@ -145,10 +146,7 @@ export default function DashboardPage() {
 
         setTaskSummary(dashboardSummaryResponse);
       } catch (error) {
-        const message = axios.isAxiosError(error)
-          ? ((error.response?.data?.detail as string | undefined) ??
-            "Failed to load dashboard.")
-          : "Failed to load dashboard.";
+        const message = extractApiErrorMessage(error, "Failed to load dashboard.");
         toast.error(message);
         setLoadError(message);
       } finally {

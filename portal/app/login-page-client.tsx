@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import axios from "axios";
 import { Eye, EyeOff } from "lucide-react";
@@ -26,8 +27,6 @@ import { Label } from "@/components/ui/label";
 import {
   buildLoginPath,
   clearStoredTokens,
-  hasStoredTokens,
-  setStoredTokens,
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import Image from "next/image";
@@ -54,12 +53,15 @@ export default function LoginPageClient({
   }>({});
 
   useEffect(() => {
-    if (hasStoredTokens()) {
-      router.replace(returnToPath ?? "/dashboard");
-      return;
+    async function checkAuth() {
+      try {
+        await apiClient.get("/me");
+        router.replace(returnToPath ?? "/dashboard");
+      } catch (error) {
+        setIsCheckingAuth(false);
+      }
     }
-
-    setIsCheckingAuth(false);
+    void checkAuth();
   }, [returnToPath, router]);
 
   function validateForm(values: { email: string; password: string }) {
@@ -115,18 +117,7 @@ export default function LoginPageClient({
 
       const data = response.data as Record<string, unknown>;
 
-      const tokens = data.tokens as
-        | { access?: string; refresh?: string }
-        | undefined;
-      if (!tokens?.access || !tokens?.refresh) {
-        setErrorMessage(
-          "Login succeeded, but the server did not return tokens.",
-        );
-        return;
-      }
-
       clearStoredTokens();
-      setStoredTokens(tokens.access, tokens.refresh);
       try {
         window.localStorage.setItem(
           "portal_last_activity",
@@ -139,18 +130,20 @@ export default function LoginPageClient({
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const responseData = error.response?.data as
-          | { error?: { message?: string }; detail?: string }
+          | {
+              attempts_remaining?: number;
+            }
           | undefined;
-        const message =
-          responseData?.error?.message ??
-          responseData?.detail ??
-          (error.code === "ERR_NETWORK"
-            ? "Network error. Please check your connection and try again."
-            : "Unable to sign in. Please try again.");
+        let message = extractApiErrorMessage(error, "Unable to sign in. Please try again.");
+
+        if (responseData?.attempts_remaining !== undefined) {
+          message += ` (${responseData.attempts_remaining} attempts remaining before lockout.)`;
+        }
+
         setErrorMessage(message);
       } else {
         setErrorMessage(
-          "Network error. Please check your connection and try again.",
+          extractApiErrorMessage(error, "Network error. Please check your connection and try again.")
         );
       }
     } finally {
