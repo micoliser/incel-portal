@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus } from "lucide-react";
@@ -59,7 +60,7 @@ export default function GoalsPage() {
       const data = await goalsAPI.getGoalsForWeek();
       setGoalsResponse(data);
     } catch (error) {
-      toast.error("Failed to load goals for the current week");
+      toast.error(extractApiErrorMessage(error, "Failed to load goals for the current week"));
       console.error(error);
     } finally {
       setLoading(false);
@@ -96,7 +97,7 @@ export default function GoalsPage() {
       toast.success("Goal created for this week");
       await fetchGoals();
     } catch (error) {
-      toast.error("Failed to create goal");
+      toast.error(extractApiErrorMessage(error, "Failed to create goal"));
       console.error(error);
     } finally {
       setSubmitting(false);

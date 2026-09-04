@@ -11,7 +11,15 @@ import {
   Minus,
 } from "lucide-react";
 import type { AxiosError } from "axios";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageErrorCard } from "@/components/page-error-card";
 import { OrgSummarySkeleton } from "@/components/skeletons/org-summary-skeleton";
 import { Button } from "@/components/ui/button";
@@ -113,13 +121,15 @@ export default function OrganizationSummaryPage() {
         setLoading(true);
 
         const permsResponse = await apiClient.get("/me/permissions");
+        const hasGlobalAccess = Boolean(permsResponse.data?.has_global_access);
         const admin =
           Boolean(permsResponse.data?.is_superuser) ||
           String(permsResponse.data?.role_code ?? "").toUpperCase() === "ADMIN";
 
-        setIsAdmin(admin);
-        if (!admin) {
-          setError("Admin access required");
+        const authorized = admin || hasGlobalAccess;
+        setIsAdmin(authorized);
+        if (!authorized) {
+          setError("Admin or Global access required");
           return;
         }
 
@@ -152,9 +162,9 @@ export default function OrganizationSummaryPage() {
       } catch (err) {
         const error = err as AxiosError<{ detail?: string }>;
         if (error.response?.status === 403) {
-          setError("Admin access required");
+          setError(extractApiErrorMessage(err, "Admin access required"));
         } else {
-          setError("Failed to load organization summary");
+          setError(extractApiErrorMessage(err, "Failed to load organization summary"));
         }
         setOrgSummary(null);
       } finally {
@@ -178,9 +188,9 @@ export default function OrganizationSummaryPage() {
     } catch (err) {
       const error = err as AxiosError<{ detail?: string }>;
       if (error.response?.status === 403) {
-        setError("Admin access required");
+        setError(extractApiErrorMessage(err, "Admin access required"));
       } else {
-        setError("Failed to load organization summary");
+        setError(extractApiErrorMessage(err, "Failed to load organization summary"));
       }
     } finally {
       setLoading(false);
@@ -212,22 +222,26 @@ export default function OrganizationSummaryPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <Select
             value={selectedWeek ?? ""}
-            onChange={(e) => setSelectedWeek(e.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+            onValueChange={(value) => setSelectedWeek(value)}
           >
-            {availableWeeks.length === 0 ? (
-              <option value="">Current week</option>
-            ) : (
-              availableWeeks.map((week) => (
-                <option key={week.week_start_date} value={week.week_start_date}>
-                  {format(parseISO(week.week_start_date), "MMM d, yyyy")} -{" "}
-                  {format(parseISO(week.week_end_date), "MMM d, yyyy")}
-                </option>
-              ))
-            )}
-          </select>
+            <SelectTrigger className="w-[200px] h-9">
+              <SelectValue placeholder="Current week" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableWeeks.length === 0 ? (
+                <SelectItem value="current">Current week</SelectItem>
+              ) : (
+                availableWeeks.map((week) => (
+                  <SelectItem key={week.week_start_date} value={week.week_start_date}>
+                    {format(parseISO(week.week_start_date), "MMM d, yyyy")} -{" "}
+                    {format(parseISO(week.week_end_date), "MMM d, yyyy")}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
 
           <Button
             onClick={() => void refreshSummary()}

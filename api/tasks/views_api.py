@@ -1,10 +1,13 @@
+from django.db import transaction
 from rest_framework.viewsets import ModelViewSet, ViewSet
+from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from django.db import models, IntegrityError
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -260,7 +263,7 @@ class TaskViewSet(ModelViewSet):
                 content_type=serializer.validated_data['content_type'],
             )
         except TaskAttachmentStorageError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(exc))
         return Response(payload)
 
     @action(detail=True, methods=['get'])
@@ -447,7 +450,7 @@ class RecurringScheduleViewSet(ModelViewSet):
     def end(self, request, pk=None):
         schedule = self.get_object()
         if request.user != schedule.assigned_by:
-            return Response({'detail': 'Only the schedule creator can end it.'}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied('Only the schedule creator can end it.')
 
         schedule.is_active = False
         schedule.is_paused = False
@@ -477,10 +480,10 @@ class RecurringScheduleViewSet(ModelViewSet):
     def pause(self, request, pk=None):
         schedule = self.get_object()
         if request.user != schedule.assigned_by:
-            return Response({'detail': 'Only the schedule creator can pause it.'}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied('Only the schedule creator can pause it.')
 
         if not schedule.is_active:
-            return Response({'detail': 'This recurring schedule has ended and cannot be paused.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('This recurring schedule has ended and cannot be paused.')
 
         if schedule.is_paused:
             return Response(self.get_serializer(schedule).data)
@@ -511,10 +514,10 @@ class RecurringScheduleViewSet(ModelViewSet):
     def resume(self, request, pk=None):
         schedule = self.get_object()
         if request.user != schedule.assigned_by:
-            return Response({'detail': 'Only the schedule creator can resume it.'}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied('Only the schedule creator can resume it.')
 
         if not schedule.is_active:
-            return Response({'detail': 'This recurring schedule has ended and cannot be resumed.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('This recurring schedule has ended and cannot be resumed.')
 
         if not schedule.is_paused:
             return Response(self.get_serializer(schedule).data)
@@ -758,7 +761,8 @@ class WeeklySummaryViewSet(ViewSet):
                         summary.save(update_fields=['previous_week_summary', 'comparison_metrics'])
                         comparison = calculated
                     except Exception as e:
-                        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                        logger.exception('Unexpected error calculating summary comparison')
+                        raise ValidationError('An unexpected error occurred.')
 
             if not comparison:
                 return Response({}, status=status.HTTP_200_OK)
@@ -775,7 +779,7 @@ class WeeklySummaryViewSet(ViewSet):
     def historical(self, request):
         """GET /summaries/historical/?week_start_date=YYYY-MM-DD&weeks=4 - Return recent weekly summaries including the requested week"""
         week_start_str = request.query_params.get('week_start_date')
-        weeks = int(request.query_params.get('weeks', 4))
+        weeks = min(max(int(request.query_params.get('weeks', 4)), 1), 52)
         if not week_start_str:
             return Response(
                 {'error': 'week_start_date query parameter is required'},
@@ -795,7 +799,8 @@ class WeeklySummaryViewSet(ViewSet):
             serializer = WeeklySummarySerializer(summaries, many=True)
             return Response(serializer.data)
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            logger.exception('Unexpected error retrieving historical summaries')
+            raise ValidationError('An unexpected error occurred.')
 
     @action(detail=False, methods=['post'])
     def share(self, request):
@@ -848,12 +853,12 @@ class WeeklySummaryViewSet(ViewSet):
         """GET /summaries/share-status/?week_start_date=YYYY-MM-DD - returns public share info if any"""
         week_start_date = request.query_params.get('week_start_date')
         if not week_start_date:
-            return Response({'error': 'week_start_date is required'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('week_start_date is required')
 
         try:
             summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
         except WeeklySummary.DoesNotExist:
-            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Summary not found')
 
         # Return the most recent public share if exists
         public_share = WeeklySummaryShare.objects.filter(summary=summary).order_by('-created_at').first()
@@ -867,12 +872,12 @@ class WeeklySummaryViewSet(ViewSet):
         """POST /summaries/revoke_share/ - Revoke a public share for a summary"""
         week_start_date = request.data.get('week_start_date')
         if not week_start_date:
-            return Response({'error': 'week_start_date is required'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('week_start_date is required')
 
         try:
             summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
         except WeeklySummary.DoesNotExist:
-            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Summary not found')
 
         # Only allow owner who created the share to revoke (shared_by == request.user)
         shares = WeeklySummaryShare.objects.filter(summary=summary)
@@ -889,12 +894,12 @@ class WeeklySummaryViewSet(ViewSet):
         """GET /summaries/user-shares/?week_start_date=YYYY-MM-DD - list user-to-user shares for a summary"""
         week_start_date = request.query_params.get('week_start_date')
         if not week_start_date:
-            return Response({'error': 'week_start_date is required'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('week_start_date is required')
 
         try:
             summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
         except WeeklySummary.DoesNotExist:
-            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Summary not found')
 
         shares = WeeklySummaryUserShare.objects.filter(summary=summary).select_related('shared_with')
         serializer = WeeklySummaryUserShareSerializer(shares, many=True)
@@ -906,12 +911,12 @@ class WeeklySummaryViewSet(ViewSet):
         week_start_date = request.data.get('week_start_date')
         shared_with_id = request.data.get('user_id')
         if not week_start_date or not shared_with_id:
-            return Response({'error': 'week_start_date and user_id required'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('week_start_date and user_id required')
 
         try:
             summary = WeeklySummary.objects.get(user=request.user, week_start_date=week_start_date)
         except WeeklySummary.DoesNotExist:
-            return Response({'error': 'Summary not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Summary not found')
 
         deleted = WeeklySummaryUserShare.objects.filter(summary=summary, shared_with__id=shared_with_id, shared_by=request.user).delete()
         # delete() returns (count, {..})
@@ -971,10 +976,10 @@ class WeeklySummaryViewSet(ViewSet):
 
                 # Require authentication and ensure the requesting user is the intended recipient
                 if not request.user or not request.user.is_authenticated:
-                    return Response({'error': 'Authentication required for this share link'}, status=status.HTTP_403_FORBIDDEN)
+                    raise PermissionDenied('Authentication required for this share link')
 
                 if user_share.shared_with != request.user:
-                    return Response({'error': 'This share link is not valid for your account'}, status=status.HTTP_403_FORBIDDEN)
+                    raise PermissionDenied('This share link is not valid for your account')
 
                 from .serializers import SummaryWithComparisonSerializer, WeeklySummarySerializer
 
@@ -1014,7 +1019,7 @@ class WeeklySummaryViewSet(ViewSet):
         Checks the OrganizationSummaryCache first. Falls back to live
         aggregation if no cached entry exists for the requested week.
         """
-        if not request.user.is_staff:
+        if not has_global_access(request.user):
             return Response(
                 {'error': 'Admin access required'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1048,9 +1053,10 @@ class WeeklySummaryViewSet(ViewSet):
             serializer = OrganizationSummarySerializer(org_summary)
             return Response(serializer.data)
         except Exception as e:
+            logger.exception('Unexpected error calculating organization summary')
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'An unexpected error occurred.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -1176,9 +1182,10 @@ class WeeklySummaryViewSet(ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
+            logger.exception('Unexpected error in manual aggregate summary')
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'An unexpected error occurred.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     @action(detail=False, methods=['post'])
@@ -1233,7 +1240,7 @@ class WeeklySummaryViewSet(ViewSet):
         except Exception as e:
             logger.exception('Export failed while exporting summary')
             return Response(
-                {'error': str(e)},
+                {'error': 'An unexpected error occurred during export.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -1243,18 +1250,15 @@ class SummaryFilesViewSet(ViewSet):
     permission_classes = [IsAuthenticated]
     
     def list(self, request, summary_pk=None):
-        """GET /summaries/<id>/files/?view=sent|recieved
+        """GET /summaries/<id>/files/?view=sent|received
         Returns all files attached during a week, grouped by task.
         - view=sent: files attached by the current user
-        - view=recieved: files attached by others on tasks the user is involved with
+        - view=received: files attached by others on tasks the user is involved with
         """
-        view_type = request.query_params.get('view', 'sent')  # 'sent' or 'recieved'
+        view_type = request.query_params.get('view', 'sent')  # 'sent' or 'received'
         
-        if view_type not in ['sent', 'recieved']:
-            return Response(
-                {'error': 'view parameter must be "sent" or "recieved"'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if view_type not in ['sent', 'received']:
+            raise ValidationError('view parameter must be "sent" or "received"')
         
         try:
             summary = WeeklySummary.objects.get(id=summary_pk)
@@ -1281,9 +1285,9 @@ class SummaryFilesViewSet(ViewSet):
                     ).exists()
 
                     if not (valid_public_share or valid_user_share):
-                        return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+                        raise PermissionDenied('Forbidden')
                 else:
-                    return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+                    raise PermissionDenied('Forbidden')
             
             from datetime import datetime
             from collections import defaultdict
@@ -1317,7 +1321,7 @@ class SummaryFilesViewSet(ViewSet):
                     created_at__gte=week_start,
                     created_at__lt=week_end
                 ).prefetch_related('attachments', 'task').order_by('-created_at')
-            else:  # recieved
+            else:  # received
                 # Files attached by others on tasks involving the summary owner
                 activities_qs = TaskActivity.objects.filter(
                     task__in=tasks_qs,
@@ -1364,15 +1368,7 @@ class SummaryFilesViewSet(ViewSet):
             
             return Response(result)
         except WeeklySummary.DoesNotExist:
-            return Response(
-                {'error': 'Summary not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise NotFound('Summary not found')
 
 
 def _get_staff_profile(user):
@@ -1394,28 +1390,6 @@ def _report_scope_users(user):
         return User.objects.filter(id=user.id).select_related('staff_profile__department')
 
     return queryset.filter(staff_profile__department=department).distinct()
-
-
-def _ensure_daily_reports_for_date(user, report_date):
-    department = _get_user_department(user)
-    if department is None and not has_global_access(user):
-        raise ValueError('Department is required to access daily reports.')
-
-    users = _report_scope_users(user)
-    created_reports = []
-    for member in users:
-        profile = _get_staff_profile(member)
-        if profile is None or profile.department is None:
-            continue
-
-        report, _ = DailyReport.objects.get_or_create(
-            user=member,
-            report_date=report_date,
-            defaults={'department': profile.department},
-        )
-        created_reports.append(report)
-
-    return created_reports
 
 
 def _get_or_create_current_user_report(user, report_date):
@@ -1453,7 +1427,7 @@ class ReportsMonthCalendarView(APIView):
     def get(self, request):
         month_str = request.query_params.get('month')
         if not month_str:
-            return Response({'error': 'month query parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('month query parameter is required')
 
         try:
             from datetime import datetime, date
@@ -1462,7 +1436,7 @@ class ReportsMonthCalendarView(APIView):
             next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
             month_end = next_month - timedelta(days=1)
         except Exception as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(exc))
 
         scope_users = _report_scope_users(request.user)
         reports = DailyReport.objects.filter(
@@ -1510,12 +1484,12 @@ class ReportsDayView(APIView):
     def get(self, request):
         report_date_str = request.query_params.get('report_date')
         if not report_date_str:
-            return Response({'error': 'report_date query parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('report_date query parameter is required')
 
         try:
             report_date = _parse_report_date(report_date_str)
         except Exception as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(exc))
 
         your_report = DailyReport.objects.select_related('user__staff_profile__department').prefetch_related(
             'subreports__comments__author',
@@ -1538,6 +1512,7 @@ class ReportsDayView(APIView):
             'all_reports': DailyReportSummarySerializer(all_reports, many=True).data,
         })
 
+    @transaction.atomic
     def post(self, request):
         serializer = DailyReportCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1546,7 +1521,9 @@ class ReportsDayView(APIView):
         try:
             daily_report = _get_or_create_current_user_report(request.user, report_date)
         except ValueError as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(str(exc))
+
+        daily_report = DailyReport.objects.select_for_update().get(id=daily_report.id)
 
         subreport = DailyReportSubreport.objects.create(
             daily_report=daily_report,
@@ -1572,6 +1549,8 @@ class ReportsDayView(APIView):
             },
         )
 
+        _handle_first_subreport_notification(daily_report, request.user)
+
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 
 
@@ -1589,19 +1568,27 @@ class DailyReportDetailView(APIView):
         try:
             report = self.get_object(report_id)
         except DailyReport.DoesNotExist:
-            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Report not found')
 
         if not has_global_access(request.user) and report.user_id != request.user.id:
-            profile = _get_user_department(request.user)
-            if profile is None or report.department_id != profile.id:
-                return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            department = _get_user_department(request.user)
+            if department is None or report.department_id != department.id:
+                raise PermissionDenied('Forbidden')
 
         return Response(_serialize_daily_report_detail(report))
+
+
+def _handle_first_subreport_notification(daily_report, user):
+    """Trigger the manager notification email if this is the first report of the day for the user."""
+    if daily_report.subreports.count() == 1:
+        from emails.services.daily_report_emails import DailyReportEmailManager
+        DailyReportEmailManager.send_manager_notification(daily_report, user)
 
 
 class DailyReportSubreportCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, report_id):
         serializer = DailyReportSubreportCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1609,10 +1596,13 @@ class DailyReportSubreportCreateView(APIView):
         try:
             report = DailyReport.objects.get(id=report_id)
         except DailyReport.DoesNotExist:
-            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Report not found')
+
+        # Lock the report
+        report = DailyReport.objects.select_for_update().get(id=report.id)
 
         if report.user_id != request.user.id and not has_global_access(request.user):
-            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied('Forbidden')
 
         if report.report_date != timezone.localdate():
             return Response(
@@ -1631,6 +1621,8 @@ class DailyReportSubreportCreateView(APIView):
             body=serializer.validated_data['comment'],
         )
 
+        _handle_first_subreport_notification(report, request.user)
+
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 
 
@@ -1647,12 +1639,12 @@ class DailyReportSubreportDetailView(APIView):
         try:
             subreport = self.get_object(subreport_id)
         except DailyReportSubreport.DoesNotExist:
-            return Response({'error': 'Subreport not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Subreport not found')
 
         if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
-            profile = _get_user_department(request.user)
-            if profile is None or subreport.daily_report.department_id != profile.id:
-                return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            department = _get_user_department(request.user)
+            if department is None or subreport.daily_report.department_id != department.id:
+                raise PermissionDenied('Forbidden')
 
         return Response(DailyReportSubreportDetailSerializer(subreport).data)
 
@@ -1667,10 +1659,10 @@ class DailyReportSubreportCommentView(APIView):
         try:
             subreport = DailyReportSubreport.objects.select_related('daily_report__user').get(id=subreport_id)
         except DailyReportSubreport.DoesNotExist:
-            return Response({'error': 'Subreport not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Subreport not found')
 
         if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
-            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied('Forbidden')
 
         if subreport.daily_report.report_date != timezone.localdate():
             return Response(
@@ -1689,6 +1681,8 @@ class DailyReportSubreportCommentView(APIView):
 
 class DailyReportSendEmailView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'email'
 
     def get_report(self, report_id):
         return DailyReport.objects.select_related(
@@ -1709,14 +1703,21 @@ class DailyReportSendEmailView(APIView):
         try:
             report = self.get_report(report_id)
         except DailyReport.DoesNotExist:
-            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound('Report not found')
 
         if report.user_id != request.user.id:
-            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied('Forbidden')
 
         serializer = DailyReportSendEmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        recipients = serializer.validated_data['recipients']
+        recipients = list(set(serializer.validated_data['recipients']))
+
+        existing_users_count = User.objects.filter(email__in=recipients, is_active=True).count()
+        if existing_users_count != len(recipients):
+            return Response(
+                {'error': 'One or more recipient email addresses are not registered active users.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         sent = DailyReportEmailManager.send_forward(
             report=report,

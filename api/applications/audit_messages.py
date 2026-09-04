@@ -238,6 +238,28 @@ def build_message(action, metadata, target_type='', target_id=''):
     if action == 'TASK_RECURRING_SCHEDULE_RESUMED':
         return f'Recurring schedule for task "{title}" was resumed.'
 
+    if action == 'inventory.item.created':
+        item_name = _clean_text(payload.get('name'), fallback='an inventory item')
+        return f'Admin created inventory item: {item_name}.'
+
+    if action == 'inventory.item.updated':
+        item_name = _clean_text(payload.get('name'), fallback='an inventory item')
+        return f'Admin updated inventory item: {item_name}.'
+
+    if action == 'inventory.item.deleted':
+        item_name = _clean_text(payload.get('name'), fallback='an inventory item')
+        return f'Admin deleted inventory item: {item_name}.'
+
+    if action == 'inventory.item.assigned':
+        item_name = _clean_text(payload.get('name'), fallback='an inventory item')
+        assigned_to = _clean_text(payload.get('assigned_to'), fallback='a user')
+        return f'Admin assigned {item_name} to {assigned_to}.'
+
+    if action == 'inventory.item.returned':
+        item_name = _clean_text(payload.get('name'), fallback='an inventory item')
+        returned_by = _clean_text(payload.get('returned_by_user'), fallback='a user')
+        return f'Admin marked {item_name} as returned by {returned_by}.'
+
     label = action_label(action)
     target = target_label(target_type, target_id)
     return f'{label} on {target}.'

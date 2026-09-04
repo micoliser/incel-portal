@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
 import { TaskDetailSkeleton } from "@/components/skeletons/tasks-skeleton";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
@@ -94,7 +95,7 @@ export default function TaskDetailPage() {
         setError(null);
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to load task";
+          extractApiErrorMessage(err, "Failed to load task");
         toast.error(message);
         setLoadError(message);
       } finally {
@@ -119,7 +120,7 @@ export default function TaskDetailPage() {
       setActivities(newActivities);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update task");
+      setError(extractApiErrorMessage(err, "Failed to update task"));
     } finally {
       setUpdating(false);
     }
@@ -193,7 +194,7 @@ export default function TaskDetailPage() {
       toast.success("Comment posted successfully.");
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to add comment";
+        extractApiErrorMessage(err, "Failed to add comment");
       toast.error(message);
       setCommentError(message);
     } finally {

@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 import {
   clearAllNotifications,
   clearNotification,
@@ -135,9 +136,7 @@ export function NotificationCenter() {
         });
       } catch (error) {
         const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to load notifications";
+          extractApiErrorMessage(error, "Failed to load notifications");
         toast.error(message);
       } finally {
         setLoading(false);
@@ -237,9 +236,7 @@ export function NotificationCenter() {
       }
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to mark notification as read";
+        extractApiErrorMessage(error, "Failed to mark notification as read");
       toast.error(message);
     }
   };
@@ -256,7 +253,7 @@ export function NotificationCenter() {
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to clear notification";
+        extractApiErrorMessage(error, "Failed to clear notification");
       toast.error(message);
     }
   };
@@ -278,9 +275,7 @@ export function NotificationCenter() {
       }
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to mark all notifications as read";
+        extractApiErrorMessage(error, "Failed to mark all notifications as read");
       toast.error(message);
     } finally {
       setIsMarkingAllRead(false);
@@ -300,9 +295,7 @@ export function NotificationCenter() {
       }
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to clear all notifications";
+        extractApiErrorMessage(error, "Failed to clear all notifications");
       toast.error(message);
     } finally {
       setIsClearingAll(false);

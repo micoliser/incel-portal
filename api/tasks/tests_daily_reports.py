@@ -287,6 +287,9 @@ class DailyReportsApiTests(BaseAPITestCase):
             body='Blocked on review.',
         )
 
+        User.objects.create_user(username='colleague', email='colleague@example.com', password='pass', is_active=True)
+        User.objects.create_user(username='manager', email='manager@example.com', password='pass', is_active=True)
+        
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.post(
             reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
@@ -294,14 +297,14 @@ class DailyReportsApiTests(BaseAPITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertIn('2 recipients', response.data['detail'])
 
         from django.core import mail
 
         self.assertEqual(len(mail.outbox), 1)
         message = mail.outbox[0]
-        self.assertEqual(message.to, ['colleague@example.com', 'manager@example.com'])
+        self.assertCountEqual(message.to, ['colleague@example.com', 'manager@example.com'])
         self.assertEqual(message.reply_to, ['staff@example.com'])
         self.assertIn('Morning standup', message.body)
         self.assertIn('Afternoon sync', message.body)
@@ -397,6 +400,7 @@ class DailyReportsApiTests(BaseAPITestCase):
         create_response = self._create_report()
         report_id = create_response.data['daily_report_id']
 
+        User.objects.create_user(username='someone', email='someone@example.com', password='pass', is_active=True)
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.post(
             reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
@@ -405,3 +409,80 @@ class DailyReportsApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_first_report_sends_manager_email(self, mock_send):
+        # Create department and assign manager
+        from organization.models import Department
+        from accounts.models import StaffProfile
+        
+        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
+        
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        # First subreport should trigger email
+        self._create_report(title='First')
+        self.assertEqual(mock_send.call_count, 1)
+        
+        # Second subreport should NOT trigger email
+        self._create_report(title='Second')
+        self.assertEqual(mock_send.call_count, 1)
+        
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_report_sends_manager_email(self, mock_send):
+        # Create department and assign manager
+        from organization.models import Department
+        from accounts.models import StaffProfile
+        
+        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
+        
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        self._create_report(title='First')
+        
+        # Reset mock call count because the first creation triggers an email
+        mock_send.reset_mock()
+        
+        from tasks.tasks import send_eod_daily_reports
+        from django.core.cache import cache
+        from django.utils import timezone
+        cache.delete(f"eod_emails_sent_{timezone.localdate().isoformat()}")
+        
+        result = send_eod_daily_reports()
+        
+        self.assertEqual(result['sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_emails_not_sent_twice(self, mock_send):
+        from tasks.tasks import send_eod_daily_reports
+        from django.core.cache import cache
+        from django.utils import timezone
+        
+        from organization.models import Department
+        dept = Department.objects.create(name='Test Dept 2', code='TD2', line_manager_id=self.admin_user.id)
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        self._create_report(title='EOD First')
+        mock_send.reset_mock()
+        
+        today = timezone.localdate()
+        cache.delete(f"eod_emails_sent_{today.isoformat()}")
+
+        # First run should send emails
+        result1 = send_eod_daily_reports()
+        self.assertEqual(result1['sent'], 1)
+        
+        # Second run should skip
+        result2 = send_eod_daily_reports()
+        self.assertEqual(result2['sent'], 0)
+        self.assertEqual(result2.get('status'), 'already_sent')
+        
+        # The mock should only be called once total
+        mock_send.assert_called_once()

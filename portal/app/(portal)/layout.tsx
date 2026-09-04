@@ -20,9 +20,13 @@ import {
   Target,
   ScrollText,
   Sun,
+  LifeBuoy,
   TrendingUp,
   Users,
+  Network,
   X,
+  Package,
+  Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,8 +45,6 @@ import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
   buildLoginPath,
-  getStoredAccessToken,
-  getStoredRefreshToken,
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
@@ -65,7 +67,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     role?: string | null;
     role_code?: string | null;
     department?: string | null;
-    department_id?: number | null;
+    department_id?: number | string | null;
+    department_code?: string | null;
+    has_global_access?: boolean;
   } | null>(null);
   const [changePasswordForm, setChangePasswordForm] = useState({
     old_password: "",
@@ -92,16 +96,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
 
-    const accessToken = getStoredAccessToken();
-    const refreshToken = getStoredRefreshToken();
     const search =
       typeof window !== "undefined" ? (window.location.search ?? "") : "";
     const currentPath = `${pathname}${search}`;
-
-    if (!accessToken || !refreshToken) {
-      router.replace(buildLoginPath(currentPath));
-      return;
-    }
 
     async function loadUserContext() {
       try {
@@ -118,7 +115,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           role?: string | null;
           role_code?: string | null;
           department?: string | null;
-          department_id?: number | null;
+          department_id?: number | string | null;
+          department_code?: string | null;
+          has_global_access?: boolean;
         };
         const permissionsData = permissionsResponse.data as {
           is_superuser?: boolean;
@@ -126,10 +125,23 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         };
 
         setUserInfo(data);
-        setIsAdmin(
-          Boolean(permissionsData.is_superuser) ||
-            String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN",
-        );
+        const isAdminUser = Boolean(permissionsData.is_superuser) ||
+            String(permissionsData.role_code ?? "").toUpperCase() === "ADMIN";
+        setIsAdmin(isAdminUser);
+
+        // Route guarding
+        const hasGlobalAccess = Boolean(data.has_global_access);
+        const isIT = String(data.department_code ?? "").toUpperCase() === "IT";
+        
+        if (pathname.startsWith("/users") && !isAdminUser && !hasGlobalAccess) {
+          router.replace("/dashboard");
+        } else if ((pathname.startsWith("/departments") || pathname.startsWith("/organization-summary")) && !isAdminUser && !hasGlobalAccess) {
+          router.replace("/dashboard");
+        } else if (pathname.startsWith("/inventory") && !isAdminUser && !hasGlobalAccess && !isIT) {
+          router.replace("/dashboard");
+        } else if (pathname.startsWith("/logs") && !isAdminUser && !hasGlobalAccess) {
+          router.replace("/dashboard");
+        }
       } catch (error) {
         if (axios.isAxiosError(error) && error.response) {
           clearStoredTokens();
@@ -167,25 +179,45 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               title: "Applications",
               subtitle: "Browse and manage internal application access.",
             }
-          : pathname === "/users" || pathname.startsWith("/users")
-            ? {
-                title: "Users",
-                subtitle: "Manage workspace users.",
-              }
+            : pathname === "/users" || pathname.startsWith("/users")
+              ? {
+                  title: "Users",
+                  subtitle: "Manage workspace users.",
+                }
+              : pathname === "/departments" || pathname.startsWith("/departments")
+                ? {
+                    title: "Departments",
+                    subtitle: "Manage organizational structure and hierarchies.",
+                  }
             : pathname === "/logs"
               ? {
                   title: "Logs",
                   subtitle: "Review audit events and activity history.",
                 }
-              : pathname.startsWith("/tasks")
+              : pathname.startsWith("/my-assets")
                 ? {
-                    title: "Tasks",
-                    subtitle: "Manage and track your tasks.",
+                    title: "My Assets",
+                    subtitle: "View the hardware and equipment assigned to you.",
                   }
-                : {
-                    title: "Dashboard",
-                    subtitle: "Your portal workspace is ready.",
-                  };
+                : pathname.startsWith("/inventory")
+                  ? {
+                      title: "Inventory Management",
+                      subtitle: "Manage company assets, categories, and assignments.",
+                    }
+                  : pathname.startsWith("/support")
+                ? {
+                    title: "Support",
+                    subtitle: "Submit and track support requests",
+                  }
+                : pathname.startsWith("/tasks")
+                  ? {
+                      title: "Tasks",
+                      subtitle: "Manage and track your tasks.",
+                    }
+                  : {
+                      title: "Dashboard",
+                      subtitle: "Your portal workspace is ready.",
+                    };
 
   const fullName =
     [userInfo?.first_name, userInfo?.last_name].filter(Boolean).join(" ") ||
@@ -209,13 +241,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(
     async (reason?: "inactivity" | "manual") => {
-      const accessToken = getStoredAccessToken();
-      const refreshToken = getStoredRefreshToken();
-
       try {
-        if (accessToken && refreshToken) {
-          await apiClient.post("/auth/logout", { refresh: refreshToken });
-        }
+        await apiClient.post("/auth/logout", {});
+      } catch (e) {
+        // ignore errors on logout
       } finally {
         clearStoredTokens();
         if (reason === "inactivity") {
@@ -436,7 +465,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       setChangePasswordApiError(
         extractApiErrorMessage(error, "Failed to change password."),
       );
-      toast.error("Failed to change password.");
+      toast.error(extractApiErrorMessage(error, "Failed to change password."));
     } finally {
       setIsChangingPassword(false);
     }
@@ -663,6 +692,35 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
+            href="/support"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname.startsWith("/support")
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname.startsWith("/support") ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <LifeBuoy
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname.startsWith("/support")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>Support</span>
+          </Link>
+
+          <Link
             href="/summaries"
             onClick={handleCloseSidebar}
             className={cn(
@@ -691,7 +749,36 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <span>Summaries</span>
           </Link>
 
-          {isAdmin ? (
+          <Link
+            href="/my-assets"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname.startsWith("/my-assets")
+                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname.startsWith("/my-assets") ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <Package
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname.startsWith("/my-assets")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>My Assets</span>
+          </Link>
+
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/users"
               onClick={handleCloseSidebar}
@@ -720,7 +807,67 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access ? (
+            <Link
+              href="/departments"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname === "/departments"
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname === "/departments" ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <Network
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname === "/departments" ? "scale-110" : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Departments</span>
+            </Link>
+          ) : null}
+
+          {isAdmin || userInfo?.has_global_access || userInfo?.department === 'IT' ? (
+            <Link
+              href="/inventory"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                pathname.startsWith("/inventory")
+                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                  pathname.startsWith("/inventory") ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <Archive
+                className={cn(
+                  "size-4 transition-transform duration-300",
+                  pathname.startsWith("/inventory") ? "scale-110" : "group-hover:scale-105",
+                )}
+                aria-hidden="true"
+              />
+              <span>Inventory</span>
+            </Link>
+          ) : null}
+
+
+
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/organization-summary"
               onClick={handleCloseSidebar}
@@ -753,7 +900,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             </Link>
           ) : null}
 
-          {isAdmin ? (
+          {isAdmin || userInfo?.has_global_access ? (
             <Link
               href="/logs"
               onClick={handleCloseSidebar}

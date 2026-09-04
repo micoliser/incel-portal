@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -118,9 +119,9 @@ function SummariesContent() {
             error.response?.status === 403 ||
             error.response?.status === 404
           ) {
-            setError("Invalid share link");
+            setError(extractApiErrorMessage(err, "Invalid share link"));
           } else {
-            setError("Failed to load the shared summary");
+            setError(extractApiErrorMessage(err, "Failed to load the shared summary"));
           }
           setSummary(null);
         } finally {
@@ -221,7 +222,7 @@ function SummariesContent() {
           setGoalsForWeek([]);
         }
       } catch (err) {
-        setError("Failed to load summary for the selected week");
+        setError(extractApiErrorMessage(err, "Failed to load summary for the selected week"));
         console.error(err);
         setSummary(null);
       } finally {
@@ -247,7 +248,7 @@ function SummariesContent() {
       toast.success("Share link created! Copy it to share.");
       setShareConfirmOpen(false);
     } catch (err) {
-      toast.error("Failed to create share link");
+      toast.error(extractApiErrorMessage(err, "Failed to create share link"));
       console.error(err);
     } finally {
       setCreatingShare(false);
@@ -501,7 +502,7 @@ function SummariesContent() {
                             `Export failed: ${error.response.data.detail}`,
                           );
                         } else {
-                          toast.error("Failed to export summary to PDF");
+                          toast.error(extractApiErrorMessage(err, "Failed to export summary to PDF"));
                         }
                       } finally {
                         setExporting(false);
@@ -692,8 +693,8 @@ function SummariesContent() {
                             <Link
                               href={
                                 isSharedView && shareToken
-                                  ? `/summaries/${summary.id}/files?v=recieved&token=${shareToken}`
-                                  : `/summaries/${summary.id}/files?v=recieved`
+                                  ? `/summaries/${summary.id}/files?v=received&token=${shareToken}`
+                                  : `/summaries/${summary.id}/files?v=received`
                               }
                             >
                               <Eye className="h-4 w-4 text-blue-500 dark:text-blue-400 cursor-pointer hover:text-blue-700 dark:hover:text-blue-300" />

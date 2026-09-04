@@ -178,7 +178,8 @@ class AccountsApiTests(BaseAPITestCase):
         response = self.client.get(reverse('users-list'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        emails = [item['email'] for item in response.data]
+        results = response.data.get('results', response.data)
+        emails = [item['email'] for item in results]
         self.assertIn('admin@example.com', emails)
         self.assertIn('staff@example.com', emails)
         self.assertNotIn('inactive@example.com', emails)
@@ -203,8 +204,9 @@ class AccountsApiTests(BaseAPITestCase):
         response = self.client.get(reverse('users-list'), {'department_id': self.dep_hr.id})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(all(item['department_id'] == self.dep_hr.id for item in response.data))
-        emails = [item['email'] for item in response.data]
+        results = response.data.get('results', response.data)
+        self.assertTrue(all(item['department_id'] == self.dep_hr.id for item in results))
+        emails = [item['email'] for item in results]
         self.assertIn('hr.user@example.com', emails)
         self.assertNotIn('staff@example.com', emails)
 
@@ -228,11 +230,13 @@ class AccountsApiTests(BaseAPITestCase):
 
         by_name = self.client.get(reverse('users-list'), {'search': 'John'})
         self.assertEqual(by_name.status_code, status.HTTP_200_OK)
-        self.assertIn('john.doe@example.com', [item['email'] for item in by_name.data])
+        results_by_name = by_name.data.get('results', by_name.data)
+        self.assertIn('john.doe@example.com', [item['email'] for item in results_by_name])
 
         by_email = self.client.get(reverse('users-list'), {'search': 'john.doe@example.com'})
         self.assertEqual(by_email.status_code, status.HTTP_200_OK)
-        self.assertIn('john.doe@example.com', [item['email'] for item in by_email.data])
+        results_by_email = by_email.data.get('results', by_email.data)
+        self.assertIn('john.doe@example.com', [item['email'] for item in results_by_email])
 
     def test_staff_cannot_create_user_via_admin_users_route(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))

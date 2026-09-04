@@ -96,3 +96,61 @@ class DailyReportEmailManager:
                 recipients,
             )
         return sent
+
+    @staticmethod
+    def get_manager_for_user(user):
+        """Helper to find the direct manager: team lead -> supervisor -> line manager."""
+        if not hasattr(user, 'staff_profile'):
+            return None
+            
+        profile = user.staff_profile
+        if not profile.department_id:
+            return None
+            
+        from organization.models import Department, Unit, Team
+        
+        # Check team lead
+        if profile.team_id:
+            team = Team.objects.filter(id=profile.team_id).first()
+            if team and team.team_lead_id and team.team_lead_id != user.id:
+                return team.team_lead
+                
+        # Check supervisor
+        if profile.unit_id:
+            unit = Unit.objects.filter(id=profile.unit_id).first()
+            if unit and unit.supervisor_id and unit.supervisor_id != user.id:
+                return unit.supervisor
+                
+        # Check line manager
+        dept = Department.objects.filter(id=profile.department_id).first()
+        if dept and dept.line_manager_id and dept.line_manager_id != user.id:
+            return dept.line_manager
+            
+        return None
+
+    @staticmethod
+    def send_manager_notification(report, sender, is_eod=False) -> bool:
+        """Sends an email to the direct manager. If is_eod is True, it's the 5:05 PM report."""
+        manager = DailyReportEmailManager.get_manager_for_user(sender)
+        if not manager or not manager.email:
+            return False
+            
+        context = build_daily_report_email_context(report, sender)
+        
+        # Override the subject based on the requirement
+        if is_eod:
+            subject = f"Daily report for {sender.first_name} {sender.last_name}"
+        else:
+            subject = f"{sender.first_name} {sender.last_name} created a daily report"
+            
+        service = DailyReportForwardEmailService()
+        
+        context['subject'] = subject
+        
+        sent = service.send_email(
+            subject=subject,
+            recipients=[manager.email],
+            template_name=service.template_name,
+            context=context,
+        )
+        return sent

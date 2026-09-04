@@ -1,4 +1,5 @@
 "use client";
+import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -123,7 +124,7 @@ export function ShareWithUserModal({
       onClose();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to share summary");
+      toast.error(extractApiErrorMessage(err, "Failed to share summary"));
     } finally {
       setSharing(false);
     }

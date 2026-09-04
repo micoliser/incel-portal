@@ -45,7 +45,7 @@ class BaseAPITestCase(TestCase):
             username='admin',
             email='admin@test.com',
             password='testpass123',
-            is_staff=True
+            is_superuser=True
         )
         
         # Create tasks for testing
@@ -750,7 +750,7 @@ class Phase2FilesTests(BaseAPITestCase):
             size=123
         )
 
-        # Add an attachment from another user so "recieved" (for summary owner)
+        # Add an attachment from another user so "received" (for summary owner)
         # has data when accessed via token by a shared recipient.
         activity_other = TaskActivity.objects.create(
             task=task,
@@ -790,7 +790,7 @@ class Phase2FilesTests(BaseAPITestCase):
             share_token=token
         )
 
-        token_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=recieved&token={token}')
+        token_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=received&token={token}')
         self.assertEqual(token_resp.status_code, status.HTTP_200_OK)
         self.assertTrue(len(token_resp.data.get('tasks', [])) >= 1)
 

@@ -10,10 +10,23 @@ class Notification(models.Model):
     TYPE_TASK_STATUS_CHANGED = 'task_status_changed'
     TYPE_TASK_COMMENT = 'task_comment'
 
+    TYPE_SUPPORT_SUBMITTED = 'support_request_submitted'
+    TYPE_SUPPORT_ASSIGNED = 'support_request_assigned'
+    TYPE_SUPPORT_STATUS_UPDATED = 'support_status_updated'
+    TYPE_SUPPORT_COMMENT = 'support_comment_added'
+    TYPE_SUPPORT_RESOLVED = 'support_request_resolved'
+    TYPE_SUPPORT_CLOSED = 'support_request_closed'
+
     TYPE_CHOICES = [
         (TYPE_TASK_ASSIGNED, 'Task Assigned'),
         (TYPE_TASK_STATUS_CHANGED, 'Task Status Changed'),
         (TYPE_TASK_COMMENT, 'Task Comment'),
+        (TYPE_SUPPORT_SUBMITTED, 'Support Request Submitted'),
+        (TYPE_SUPPORT_ASSIGNED, 'Support Request Assigned'),
+        (TYPE_SUPPORT_STATUS_UPDATED, 'Support Status Updated'),
+        (TYPE_SUPPORT_COMMENT, 'Support Comment Added'),
+        (TYPE_SUPPORT_RESOLVED, 'Support Request Resolved'),
+        (TYPE_SUPPORT_CLOSED, 'Support Request Closed'),
     ]
 
     recipient = models.ForeignKey(

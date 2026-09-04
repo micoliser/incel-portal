@@ -24,9 +24,13 @@ The platform provides role-aware internal workspace capabilities:
 - application access and admin controls
 - task assignment, tracking, comments, and timeline
 - recurring task schedules with edit, pause, resume, and end lifecycles
+- performance goal tracking and weekly/organization metrics
+- daily reporting with subreports and commenting
+- internal IT support ticketing system
 - in-app notifications and optional browser push alerts
 - audit log visibility for governance
 - organization metadata (roles/departments)
+- track physical assets and inventory
 
 ## 3. Repository Structure
 
@@ -37,7 +41,8 @@ incel-portal/
 │   ├── accounts/               # auth, user profile and admin user endpoints
 │   ├── applications/           # application catalog + admin operations + audit
 │   ├── organization/           # departments and roles endpoints
-│   ├── tasks/                  # task domain (task + activity timeline)
+│   ├── tasks/                  # task domain + goals + reports + summaries
+│   ├── support/                # IT support ticketing
 │   ├── common/                 # shared exception handling and helpers
 │   ├── scripts/                # data seeding and utilities
 │   └── requirements.txt
@@ -105,15 +110,34 @@ incel-portal/
 - recurring schedule CRUD and lifecycle actions
 - recurring occurrence generation worker
 - pause/resume semantics that stop and restart generation without backfilling missed runs
+- user goals (set targets and track completion periods)
+- weekly summaries with week-over-week comparison and sharing capabilities
+- daily reports containing detailed subreports and threaded comments
+- organization-wide summary metric caching
 
-5. notifications
+5. support
+
+- IT support ticketing CRUD
+- lifecycle management (Open -> Assigned -> In Progress -> Resolved -> Closed)
+- comments and file attachments on tickets
+- auto-closing of resolved tickets after 7 days
+
+6. notifications
 
 - in-app notification storage and read state
 - unread-count and paginated notification APIs
 - user push subscription registration/deletion
 - optional web push dispatch through VAPID + pywebpush
 
-6. common
+6. inventory
+
+- list inventory items and categories
+- search and filter items (status, category)
+- assign items to users
+- process returned items
+- track personal assets for logged-in user
+
+7. common
 
 - standardized exception response envelope
 
@@ -160,6 +184,9 @@ Key model concepts:
 - TaskActivity: task, user, activity_type, old_value, new_value, comment, created_at
 - RecurringSchedule: title, description, assigned_by, assigned_to, priority, frequency, interval, weekdays, times, timezone, deadline_offset_minutes, start_at, end_at, next_run_at, is_active, is_paused, paused_at, paused_by, ended_at, ended_by
 - RecurrenceOccurrence: schedule, scheduled_for, created_task
+- UserGoal: Tracks metrics against target values over custom periods
+- WeeklySummary / WeeklySummaryShare: Weekly metrics, comparisons, and secure sharing tokens
+- DailyReport / DailyReportSubreport: Day-to-day work reporting with threaded comments
 
 Activity types currently in use:
 
@@ -258,10 +285,19 @@ Protected (under app/(portal)):
 
 - /dashboard
 - /applications
+- /inventory
+- /inventory/[id]
+- /my-assets
 - /tasks
 - /tasks/[id]
 - /tasks/recurring/[id]
 - /logs
+- /goals
+- /reports
+- /summaries
+- /organization-summary
+- /support
+- /users
 
 Shared header component:
 
@@ -397,7 +433,15 @@ Base URL:
 - GET /admin/audit-logs
 - GET /admin/audit-logs/{log_id}
 
-### 6.6 Tasks
+### 6.6 Inventory
+
+- GET /inventory/categories
+- GET /inventory/items
+- POST /inventory/items/{id}/assign
+- POST /inventory/items/{id}/return_item
+- GET /me/inventory
+
+### 6.7 Tasks
 
 - GET /tasks
 - POST /tasks
@@ -421,7 +465,35 @@ Comment constraints:
 - required, non-empty after trim
 - max 200 characters
 
-### 6.7 Notifications
+### 6.7 Goals, Summaries, Reports
+
+- GET /goals
+- GET /summaries
+- GET /summaries/organization-summary/
+- GET /summaries/comparison-metrics/
+- GET /summaries/historical/
+- POST /summaries/share-with-user/
+- GET /summaries/share-status/
+- POST /summaries/revoke-share/
+- GET /summaries/user-shares/
+- POST /summaries/revoke-user-share/
+- GET /summaries/{summary_pk}/files/
+- GET /reports/month/
+- GET /reports/day/
+- GET /reports/daily/{report_id}/
+- POST /reports/daily/{report_id}/send-email/
+- POST /reports/daily/{report_id}/subreports/
+- GET /reports/subreports/{subreport_id}/
+- POST /reports/subreports/{subreport_id}/comments/
+
+### 6.8 Support
+
+- GET /support/requests/
+- POST /support/requests/
+- GET /support/requests/{id}/
+- PATCH /support/requests/{id}/
+
+### 6.9 Notifications
 
 - GET /notifications
 - GET /notifications/unread-count

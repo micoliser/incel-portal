@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 import sys
 from pathlib import Path
+from datetime import timedelta
 
 from dotenv import load_dotenv
 from celery.schedules import crontab
@@ -52,17 +53,21 @@ INSTALLED_APPS = [
     'tasks',
     'notifications',
     'emails',
+    'support',
+    'inventory',
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'common.middleware.AdminIPAllowlistMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'common.middleware.LastActivityMiddleware',
+    'common.middleware.CSPMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -158,9 +163,12 @@ AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME', '')
 AWS_S3_CUSTOM_DOMAIN = os.getenv('AWS_S3_CUSTOM_DOMAIN', '')
 AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL', '')
 AWS_APPLICATION_LOGO_S3_PREFIX = os.getenv('AWS_APPLICATION_LOGO_S3_PREFIX', 'application-logos')
+AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX = os.getenv('AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX', 'maintenance-attachments')
+AWS_INVENTORY_PHOTO_S3_PREFIX = os.getenv('AWS_INVENTORY_PHOTO_S3_PREFIX', 'inventory/photos')
 SUMMARY_PDF_EXPORT_S3_PREFIX = os.getenv('SUMMARY_PDF_EXPORT_S3_PREFIX', 'pdf-exports')
 AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN', '900'))
-AWS_S3_OBJECT_ACL = os.getenv('AWS_S3_OBJECT_ACL', 'public-read')
+AWS_MAINTENANCE_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_MAINTENANCE_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
+AWS_S3_OBJECT_ACL = os.getenv('AWS_S3_OBJECT_ACL', 'private')
 
 WEB_PUSH_VAPID_PUBLIC_KEY = os.getenv('WEB_PUSH_VAPID_PUBLIC_KEY', '')
 WEB_PUSH_VAPID_PRIVATE_KEY = os.getenv('WEB_PUSH_VAPID_PRIVATE_KEY', '')
@@ -168,13 +176,33 @@ WEB_PUSH_VAPID_SUBJECT = os.getenv('WEB_PUSH_VAPID_SUBJECT', 'mailto:admin@local
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        'common.authentication.CookieJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
     'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '100/minute',
+        'login': '5/minute',
+        'refresh': '20/minute',
+        'admin': '30/minute',
+        'email': '5/hour',
+        'support': '10/minute',
+        'uploads': '10/minute',
+    },
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=12),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
@@ -185,6 +213,10 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BEAT_SCHEDULE = {
+    'send-eod-daily-reports': {
+        'task': 'tasks.send_eod_daily_reports',
+        'schedule': crontab(hour=17, minute=5, day_of_week='1-5'),  # 5:05 PM Mon-Fri
+    },
     'generate-recurring-task-occurrences': {
         'task': 'tasks.generate_recurring_task_occurrences',
         'schedule': 60.0,
@@ -201,13 +233,22 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'tasks.send_weekly_summary_emails',
         'schedule': crontab(hour=8, minute=0, day_of_week=1),  # Every Monday at 08:00
     },
+    'auto-close-support-requests': {
+        'task': 'support.auto_close_resolved_requests',
+        'schedule': crontab(hour=1, minute=0),  # Daily at 01:00
+    },
 }
+
+
+SUPPORT_AUTO_CLOSE_DAYS = int(os.getenv('SUPPORT_AUTO_CLOSE_DAYS', '7'))
 
 
 def _env_list(name: str, default: str = ''):
     raw = os.getenv(name, default)
     return [item.strip() for item in raw.split(',') if item.strip()]
 
+
+ADMIN_ALLOWED_IPS = _env_list('ADMIN_ALLOWED_IPS', '127.0.0.1')
 
 TASK_ATTACHMENT_S3_PREFIX = os.getenv('TASK_ATTACHMENT_S3_PREFIX', 'task-attachments')
 TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
@@ -229,10 +270,23 @@ CSRF_TRUSTED_ORIGINS = _env_list(
     'CSRF_TRUSTED_ORIGINS',
     'https://workspaceapi.incelgroup.com,https://workspace.incelgroup.com',
 )
+
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS.extend(['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001'])
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
-CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+
+if not DEBUG and 'test' not in sys.argv:
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = True
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
 
 # ===== EMAIL CONFIGURATION =====
 # Email backend configuration
