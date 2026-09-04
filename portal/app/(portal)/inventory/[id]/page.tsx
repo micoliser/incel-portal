@@ -85,8 +85,20 @@ export default function InventoryItemDetail() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const itemRes = await apiClient.get(`/inventory/items/${id}/`);
+      const [itemRes, meRes, permsRes] = await Promise.all([
+        apiClient.get(`/inventory/items/${id}/`),
+        apiClient.get("/me"),
+        apiClient.get("/me/permissions")
+      ]);
       setItem(itemRes.data);
+
+      const meData = meRes.data as { department_code?: string | null };
+      const permsData = permsRes.data as { is_superuser?: boolean; role_code?: string | null };
+      
+      const isAdmin = Boolean(permsData.is_superuser) || String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
+      const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
+      
+      setHasWriteAccess(isAdmin || isIT);
       setError(null);
     } catch (err) {
       setError(extractApiErrorMessage(err, "Failed to load item details."));
@@ -156,7 +168,7 @@ export default function InventoryItemDetail() {
 
       {/* Header */}
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             {item.photo_url && (
               <Dialog>

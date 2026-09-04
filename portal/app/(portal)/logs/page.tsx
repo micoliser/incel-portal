@@ -750,7 +750,7 @@ export default function LogsPage() {
           </form>
 
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="min-w-full divide-y divide-border text-sm">
+            <table className="min-w-[800px] divide-y divide-border text-sm">
               <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-semibold">Timestamp</th>

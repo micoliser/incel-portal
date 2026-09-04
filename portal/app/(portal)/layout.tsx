@@ -545,7 +545,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Button>
         </div>
 
-        <nav className="mt-6 flex flex-1 flex-col gap-2">
+        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto pb-4">
           <Link
             href="/dashboard"
             onClick={handleCloseSidebar}
@@ -968,7 +968,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
                 {pageHeader.title}
               </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground hidden sm:block">
                 {pathname === "/dashboard"
                   ? `Welcome${userInfo?.first_name ? `, ${userInfo.first_name}` : ""}`
                   : pageHeader.subtitle}
@@ -983,10 +983,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               type="button"
               variant="outline"
               onClick={() => setIsChangePasswordOpen(true)}
-              className="border-border bg-card text-foreground hover:bg-muted"
+              className="border-border bg-card text-foreground hover:bg-muted w-9 sm:w-auto px-0 sm:px-4"
             >
-              <KeyRound className="mr-2 size-4" aria-hidden="true" />
-              Change password
+              <KeyRound className="size-4 sm:mr-2" aria-hidden="true" />
+              <span className="hidden sm:inline">Change password</span>
             </Button>
 
             <Button
@@ -1016,7 +1016,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <div className="flex size-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
               {initials}
             </div>
-            <div className="leading-tight">
+            <div className="leading-tight hidden sm:block">
               <p className="text-sm font-semibold text-foreground">
                 {fullName}
               </p>
@@ -1031,8 +1031,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         className={cn(
           "h-screen overflow-y-auto lg:ml-72",
           pathname === "/summaries" || pathname.startsWith("/reports")
-            ? "pt-54 px-0 pb-0 sm:pt-40 sm:px-0 sm:pb-0 lg:pt-28"
-            : "pt-56 px-5 pb-6 sm:px-6 sm:pb-8 lg:pt-36",
+            ? "pt-40 px-0 pb-0 sm:pt-40 sm:px-0 sm:pb-0 lg:pt-28"
+            : "pt-44 px-4 pb-6 sm:px-6 sm:pb-8 lg:pt-36",
         )}
       >
         {children}

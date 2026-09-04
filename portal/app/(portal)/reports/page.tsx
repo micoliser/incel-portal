@@ -149,7 +149,9 @@ export default function ReportsPage() {
           </CardHeader>
 
           <CardContent className="p-4 sm:p-6">
-            <div className="grid grid-cols-7 gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="overflow-x-auto pb-4">
+              <div className="min-w-[700px]">
+                <div className="grid grid-cols-7 gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
                 (label) => (
                   <div key={label} className="px-3 py-2">
@@ -237,6 +239,8 @@ export default function ReportsPage() {
                   </button>
                 );
               })}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -104,7 +104,7 @@ export default function MyAssetsPage() {
                       <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                         Assignment Details
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                         <div className="text-muted-foreground">Assigned:</div>
                         <div className="font-medium text-right">
                           {format(new Date(currentAssignment.assigned_at), "MMM d, yyyy")}
