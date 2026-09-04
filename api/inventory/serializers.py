@@ -33,7 +33,7 @@ class InventoryItemCreateUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryItem
-        fields = ['code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'notes']
+        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'notes']
 
 class InventoryItemAssignSerializer(serializers.Serializer):
     assigned_to = serializers.IntegerField()

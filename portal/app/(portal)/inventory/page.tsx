@@ -26,6 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { UserCombobox } from "@/components/ui/user-combobox";
+import { Textarea } from "@/components/ui/textarea";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
 
@@ -98,6 +100,10 @@ export default function InventoryDashboard() {
     status: "available",
     photo_url: "",
     purchase_date: "",
+    assigned_to: "",
+    condition_notes: "",
+    new_category_name: "",
+    new_category_description: "",
   });
   const [itemPhoto, setItemPhoto] = useState<File | null>(null);
 
@@ -254,9 +260,21 @@ export default function InventoryDashboard() {
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemForm.name || !itemForm.category) return toast.error("Name and Category are required");
+    if (itemForm.category === "create_new" && !itemForm.new_category_name) {
+      return toast.error("New category name is required");
+    }
 
     try {
       setIsSubmitting(true);
+      
+      let finalCategoryId = itemForm.category;
+      if (itemForm.category === "create_new") {
+        const catRes = await apiClient.post("/inventory/categories/", {
+          name: itemForm.new_category_name,
+          description: itemForm.new_category_description
+        });
+        finalCategoryId = catRes.data.id;
+      }
       
       let finalPhotoUrl = "";
       if (itemPhoto) {
@@ -278,16 +296,26 @@ export default function InventoryDashboard() {
       }
       
       const payload: Record<string, string> = {
-        ...itemForm,
+        name: itemForm.name,
+        category: finalCategoryId,
+        serial_number: itemForm.serial_number,
+        status: itemForm.status,
+        ...(itemForm.purchase_date ? { purchase_date: itemForm.purchase_date } : {}),
         ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {})
       };
-      if (!payload.purchase_date) {
-        delete payload.purchase_date;
+      
+      const response = await apiClient.post("/inventory/items/", payload);
+      
+      if (itemForm.assigned_to) {
+        await apiClient.post(`/inventory/items/${response.data.id}/assign/`, {
+          assigned_to: itemForm.assigned_to,
+          condition_notes: itemForm.condition_notes
+        });
       }
-      await apiClient.post("/inventory/items/", payload);
+
       toast.success("Item created");
       setIsItemModalOpen(false);
-      setItemForm({ name: "", category: "", serial_number: "", status: "available", photo_url: "", purchase_date: "" });
+      setItemForm({ name: "", category: "", serial_number: "", status: "available", photo_url: "", purchase_date: "", assigned_to: "", condition_notes: "", new_category_name: "", new_category_description: "" });
       setItemPhoto(null);
       fetchStatsAndCategories();
       // Reload items
@@ -610,12 +638,37 @@ export default function InventoryDashboard() {
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="create_new" className="font-bold text-primary">
+                    + Create New Category
+                  </SelectItem>
                   {categories.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            {itemForm.category === "create_new" && (
+              <div className="space-y-4 rounded-md border p-4 bg-muted/50">
+                <div className="space-y-2">
+                  <Label htmlFor="new_cat_name">New Category Name</Label>
+                  <Input
+                    id="new_cat_name"
+                    value={itemForm.new_category_name}
+                    onChange={(e) => setItemForm({ ...itemForm, new_category_name: e.target.value })}
+                    placeholder="e.g. Laptops"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new_cat_desc">Category Description (Optional)</Label>
+                  <Textarea
+                    id="new_cat_desc"
+                    value={itemForm.new_category_description}
+                    onChange={(e) => setItemForm({ ...itemForm, new_category_description: e.target.value })}
+                    placeholder="Brief description..."
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="item_sn">Serial Number</Label>
               <Input
@@ -663,6 +716,25 @@ export default function InventoryDashboard() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="item_assign">Assign to (Optional)</Label>
+              <UserCombobox
+                value={itemForm.assigned_to}
+                onChange={(val) => setItemForm({ ...itemForm, assigned_to: val })}
+                apiEndpoint="/admin/users"
+              />
+            </div>
+            {itemForm.assigned_to && (
+              <div className="space-y-2">
+                <Label htmlFor="item_notes">Condition Notes (Optional)</Label>
+                <Textarea
+                  id="item_notes"
+                  value={itemForm.condition_notes}
+                  onChange={(e) => setItemForm({ ...itemForm, condition_notes: e.target.value })}
+                  placeholder="Notes on the asset's condition..."
+                />
+              </div>
+            )}
             <div className="flex justify-end pt-4">
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
