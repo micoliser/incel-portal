@@ -286,8 +286,8 @@ export default function DepartmentsPage() {
           departments.map(dep => (
             <Card key={dep.id} className="overflow-hidden">
               <CardHeader className="bg-muted/30 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center flex-wrap gap-2">
                     <Button variant="ghost" size="icon" onClick={() => toggleDep(dep.id)}>
                       {expandedDeps.has(dep.id) ? (
                         <ChevronDown className="size-4" />
@@ -302,7 +302,7 @@ export default function DepartmentsPage() {
                       {dep.units.length} {dep.units.length === 1 ? 'Unit' : 'Units'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center flex-wrap gap-2">
                     <div className="flex items-center bg-secondary px-2 py-1 rounded-full text-xs">
                       {dep.line_manager_info ? (
                         <>
@@ -343,8 +343,8 @@ export default function DepartmentsPage() {
                     <div className="divide-y">
                       {dep.units.map(unit => (
                         <div key={unit.id} className="bg-background">
-                          <div className="flex items-center justify-between p-3 pl-10 hover:bg-muted/10 transition-colors">
-                            <div className="flex items-center gap-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 pl-10 hover:bg-muted/10 transition-colors">
+                            <div className="flex items-center flex-wrap gap-2">
                               <Button variant="ghost" size="icon" onClick={() => toggleUnit(unit.id)}>
                                 {expandedUnits.has(unit.id) ? (
                                   <ChevronDown className="size-4" />
@@ -359,7 +359,7 @@ export default function DepartmentsPage() {
                                 {unit.teams.length} {unit.teams.length === 1 ? 'Team' : 'Teams'}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center flex-wrap gap-2">
                               <div className="flex items-center bg-secondary px-2 py-1 rounded-full text-xs">
                                 {unit.supervisor_info ? (
                                   <>
@@ -398,13 +398,13 @@ export default function DepartmentsPage() {
                               ) : (
                                 <div className="space-y-1 pt-1">
                                   {unit.teams.map(team => (
-                                    <div key={team.id} className="flex items-center justify-between py-2 pr-4 pl-20 hover:bg-muted/20 transition-colors">
-                                      <div className="flex items-center gap-2">
+                                    <div key={team.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2 pr-4 pl-20 hover:bg-muted/20 transition-colors">
+                                      <div className="flex items-center flex-wrap gap-2">
                                         <Users className="size-4 text-orange-500" />
                                         <span className="text-sm">{team.name}</span>
                                         <span className="text-xs text-muted-foreground ml-2">({team.code})</span>
                                       </div>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center flex-wrap gap-2">
                                         <div className="flex items-center bg-secondary px-2 py-1 rounded-full text-xs">
                                           {team.team_lead_info ? (
                                             <>

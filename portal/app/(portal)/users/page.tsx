@@ -562,7 +562,7 @@ export default function UsersPage() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <table className="w-full table-auto">
+            <table className="w-full min-w-[800px] table-auto">
               <thead>
                 <tr className="text-left text-sm text-muted-foreground">
                   <th className="px-4 py-3">First name</th>

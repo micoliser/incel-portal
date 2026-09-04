@@ -794,7 +794,7 @@ function SummariesContent() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
                       <h3 className="font-semibold text-sm mb-3">
                         By Priority

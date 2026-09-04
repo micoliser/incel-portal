@@ -168,7 +168,7 @@ export default function InventoryItemDetail() {
 
       {/* Header */}
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             {item.photo_url && (
               <Dialog>

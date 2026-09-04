@@ -447,7 +447,7 @@ export default function InventoryDashboard() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={handleExport} disabled={isExporting}>
             {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
             Export
@@ -475,7 +475,7 @@ export default function InventoryDashboard() {
       ) : (
         <Card className="overflow-hidden border border-border">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[800px] text-left text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Code</th>
