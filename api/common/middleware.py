@@ -51,9 +51,8 @@ class AdminIPAllowlistMiddleware:
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
             
             if x_forwarded_for:
-                # The rightmost IP is appended by the proxy connecting to Django,
-                # making it much harder to spoof than the leftmost IP.
-                client_ip = x_forwarded_for.split(',')[-1].strip()
+                # The leftmost IP is the original client IP. Proxies append to the right.
+                client_ip = x_forwarded_for.split(',')[0].strip()
 
             allowed_ips = getattr(settings, 'ADMIN_ALLOWED_IPS', ['127.0.0.1'])
             
