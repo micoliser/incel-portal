@@ -269,12 +269,12 @@ Manage company physical assets and assignments.
 
 - Go to the Inventory section
 - View all company assets across different categories
-- Filter assets by status (e.g. available, assigned, maintenance) or category
-- Search for items by name or serial number
+- Filter assets by status (e.g. available, assigned, maintenance), category, or managing department
+- Search for items by name, serial number, or assignee name
 
 **Managing Inventory (Admins):**
 
-- **Create Items**: Add new inventory items, attach a serial number, select a category and purchase date.
+- **Create/Edit Items**: Add or edit inventory items with smart edit detection (aborts if no changes), attach a serial number, category, purchase date, and upload photos.
 - **Assign Items**: Open an item's details and click "Assign" to link the physical asset to a specific user.
 - **Process Returns**: When a user returns an item, click "Process Return" to mark it as available again. Condition notes can be added upon return.
 

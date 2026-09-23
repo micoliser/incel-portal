@@ -95,7 +95,7 @@ incel-portal/
 
 - read application catalog
 - open/can-access checks
-- admin create/update/delete
+- admin create/update/soft-delete
 - signed upload URL generation for logos
 - per-application department mapping and user overrides
 - admin audit log listing/detail
@@ -132,10 +132,11 @@ incel-portal/
 6. inventory
 
 - list inventory items and categories
-- search and filter items (status, category)
+- search and filter items (status, category, managing department, assignee name)
 - assign items to users
 - process returned items
 - track personal assets for logged-in user
+- signed upload URL generation and s3 logic for inventory item photos
 
 7. common
 
@@ -329,6 +330,7 @@ Common page shape across portal pages:
 - error card for blocking load failures
 - toasts for non-blocking operation feedback
 - section cards for summary/action/details
+- smart edit forms detect unmodified fields to prevent unnecessary API requests ("No changes detected")
 
 This pattern should be maintained for consistency and user trust.
 

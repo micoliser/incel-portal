@@ -88,15 +88,16 @@ incel-portal/
 - Open application details
 - Check whether a user can access a specific application
 - Open application links through the portal
-- Admins can create, edit, update, and delete applications
+- Admins can create, edit, update, and soft-delete applications
 - Admins can upload logos through signed upload URLs
 - Admins can manage access scope, department restrictions, and per-user overrides
+- Smart edit forms detect when no changes are made and avoid unnecessary requests
 
 ### Inventory
 
 - Browse company inventory and physical assets
-- Search and filter inventory by status and category
-- Admins can create and edit inventory items and categories
+- Search and filter inventory by status, category, managing department, and assignee
+- Admins can create and edit inventory items (with S3-backed photo uploads) and categories
 - Admins can assign inventory items to specific users and process returns
 - Users can view their assigned assets via the dedicated My Assets page
 - Complete audit trail of assignments and returns
