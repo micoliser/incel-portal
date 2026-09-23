@@ -25,6 +25,7 @@ import {
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { UserCombobox } from "@/components/ui/user-combobox";
 import { ItemCombobox } from "@/components/ui/item-combobox";
+import { processAndValidateFile } from "@/lib/file-utils";
 
 type AddMaintenanceLogModalProps = {
   isOpen: boolean;
@@ -107,16 +108,17 @@ export function AddMaintenanceLogModal({
       setIsUploading(true);
       const uploadedAttachments = await Promise.all(
         files.map(async (file) => {
+          const processedFile = await processAndValidateFile(file);
           const { upload_url, object_key } = await getAttachmentUploadUrl({
-            file_name: file.name,
-            content_type: file.type || "application/octet-stream",
+            file_name: processedFile.name,
+            content_type: processedFile.type || "application/octet-stream",
           });
 
           const res = await fetch(upload_url, {
             method: "PUT",
-            body: file,
+            body: processedFile,
             headers: {
-              "Content-Type": file.type || "application/octet-stream",
+              "Content-Type": processedFile.type || "application/octet-stream",
             },
           });
 
@@ -126,9 +128,9 @@ export function AddMaintenanceLogModal({
 
           return {
             object_key,
-            file_name: file.name,
-            content_type: file.type || "application/octet-stream",
-            size: file.size,
+            file_name: processedFile.name,
+            content_type: processedFile.type || "application/octet-stream",
+            size: processedFile.size,
           };
         })
       );

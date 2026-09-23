@@ -27,6 +27,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { createRequest, getUploadUrl, confirmUpload } from "@/lib/api/support";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { processAndValidateFile } from "@/lib/file-utils";
 
 export function CreateSupportRequestModal() {
   const router = useRouter();
@@ -60,26 +61,27 @@ export function CreateSupportRequestModal() {
 
       // Upload files if any
       for (const file of files) {
+        const processedFile = await processAndValidateFile(file);
         try {
           const { upload_url } = await getUploadUrl(request.id, {
-            file_name: file.name,
-            content_type: file.type || "application/octet-stream",
-            size: file.size,
+            file_name: processedFile.name,
+            content_type: processedFile.type || "application/octet-stream",
+            size: processedFile.size,
           });
 
           await fetch(upload_url, {
             method: "PUT",
-            body: file,
+            body: processedFile,
             headers: {
-              "Content-Type": file.type || "application/octet-stream",
+              "Content-Type": processedFile.type || "application/octet-stream",
             },
           });
 
           await confirmUpload(request.id, {
             object_key: upload_url.split("?")[0].split("/").pop() || "",
-            file_name: file.name,
-            content_type: file.type || "application/octet-stream",
-            size: file.size,
+            file_name: processedFile.name,
+            content_type: processedFile.type || "application/octet-stream",
+            size: processedFile.size,
           });
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (uploadError) {

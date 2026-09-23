@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/support";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { getUploadUrl, confirmUpload } from "@/lib/api/support";
+import { processAndValidateFile } from "@/lib/file-utils";
 
 const STATUS_COLORS: Record<string, string> = {
   open: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
@@ -159,16 +160,17 @@ export default function SupportDetailPage({
     if (!file || !request) return;
 
     try {
+      const processedFile = await processAndValidateFile(file);
       const { upload_url } = await getUploadUrl(request.id, {
-        file_name: file.name,
-        content_type: file.type || "application/octet-stream",
-        size: file.size,
+        file_name: processedFile.name,
+        content_type: processedFile.type || "application/octet-stream",
+        size: processedFile.size,
       });
 
       await fetch(upload_url, {
         method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: processedFile,
+        headers: { "Content-Type": processedFile.type || "application/octet-stream" },
       });
 
       const url = new URL(upload_url);
@@ -176,9 +178,9 @@ export default function SupportDetailPage({
 
       await confirmUpload(request.id, {
         object_key: objectKey,
-        file_name: file.name,
-        content_type: file.type || "application/octet-stream",
-        size: file.size,
+        file_name: processedFile.name,
+        content_type: processedFile.type || "application/octet-stream",
+        size: processedFile.size,
       });
 
       toast.success("File attached.");
