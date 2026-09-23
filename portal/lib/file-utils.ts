@@ -4,7 +4,7 @@ const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 /**
- * If the file is an image, it compresses it to a maximum of 500KB.
+ * If the file is an image, it compresses it to a maximum of 200KB.
  * Otherwise, it returns the original file.
  * Throws an error if the final file (after any compression) exceeds 5MB.
  */
