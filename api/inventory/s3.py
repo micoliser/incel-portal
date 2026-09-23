@@ -14,6 +14,15 @@ def _normalize(value: str) -> str:
     return value.strip().rstrip('/')
 
 
+def _host_from_setting(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return ''
+    if '://' not in normalized:
+        normalized = f'https://{normalized}'
+    return urlparse(normalized).netloc.lower()
+
+
 def _s3_client():
     region_name = getattr(settings, 'AWS_S3_REGION_NAME', '').strip() or None
     endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', '').strip() or None
@@ -116,3 +125,59 @@ def generate_inventory_photo_upload_url(*, file_name: str, content_type: str):
         'bucket_name': bucket_name,
         'expires_in': expires_in,
     }
+
+
+def extract_inventory_photo_key_from_public_url(public_url: str) -> str | None:
+    bucket_name = getattr(settings, 'AWS_S3_BUCKET_NAME', '').strip()
+    region_name = getattr(settings, 'AWS_S3_REGION_NAME', '').strip()
+    custom_domain = getattr(settings, 'AWS_S3_CUSTOM_DOMAIN', '').strip()
+    endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', '').strip()
+    prefix = getattr(settings, 'AWS_INVENTORY_PHOTO_S3_PREFIX', 'inventory/photos').strip() or 'inventory/photos'
+
+    parsed = urlparse(public_url)
+    host = parsed.netloc.lower()
+    path = parsed.path.lstrip('/')
+
+    if not host or not path:
+        return None
+
+    endpoint_host = _host_from_setting(endpoint_url)
+    custom_host = _host_from_setting(custom_domain)
+    default_hosts = {f'{bucket_name}.s3.amazonaws.com'}
+    if region_name:
+        default_hosts.add(f'{bucket_name}.s3.{region_name}.amazonaws.com')
+
+    if endpoint_host and host == endpoint_host:
+        bucket_prefix = f'{bucket_name}/'
+        if not path.startswith(bucket_prefix):
+            return None
+        path = path[len(bucket_prefix):]
+    elif custom_host and host == custom_host:
+        pass
+    elif host not in default_hosts:
+        return None
+
+    if not path.startswith(f'{prefix}/'):
+        return None
+
+    return path
+
+
+def delete_inventory_photo_by_public_url(public_url: str) -> bool:
+    if not public_url:
+        return False
+
+    bucket_name = getattr(settings, 'AWS_S3_BUCKET_NAME', '').strip()
+    if not bucket_name:
+        raise MaintenanceAttachmentUploadError('AWS_S3_BUCKET_NAME is not configured.')
+
+    key = extract_inventory_photo_key_from_public_url(public_url)
+    if not key:
+        return False
+
+    try:
+        _s3_client().delete_object(Bucket=bucket_name, Key=key)
+        return True
+    except (BotoCoreError, ClientError) as exc:
+        raise MaintenanceAttachmentUploadError('Failed to delete previous photo from storage.') from exc
+

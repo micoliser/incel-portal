@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog, MaintenanceLogAttachment
 from .s3 import build_maintenance_attachment_public_url
 from accounts.serializers import BasicUserSerializer
+from organization.serializers import DepartmentSerializer
 
 class InventoryCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,22 +11,26 @@ class InventoryCategorySerializer(serializers.ModelSerializer):
 
 class InventoryAssignmentSerializer(serializers.ModelSerializer):
     assigned_to = BasicUserSerializer(read_only=True)
+    assigned_to_department = DepartmentSerializer(read_only=True)
     assigned_by = BasicUserSerializer(read_only=True)
 
     class Meta:
         model = InventoryAssignment
-        fields = ['id', 'item', 'assigned_to', 'assigned_by', 'assigned_at', 'returned_at', 'condition_notes']
+        fields = ['id', 'item', 'assigned_to', 'assigned_to_department', 'assigned_by', 'assigned_at', 'returned_at', 'condition_notes']
 
 class InventoryItemSerializer(serializers.ModelSerializer):
     category = InventoryCategorySerializer(read_only=True)
     current_assignee = BasicUserSerializer(read_only=True)
+    current_assignee_department = DepartmentSerializer(read_only=True)
+    managing_department = DepartmentSerializer(read_only=True)
     assignments = InventoryAssignmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = InventoryItem
         fields = [
             'id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 
-            'photo_url', 'status', 'current_assignee', 'notes', 'assignments', 'created_at', 'updated_at'
+            'photo_url', 'status', 'current_assignee', 'current_assignee_department', 
+            'managing_department', 'notes', 'assignments', 'created_at', 'updated_at'
         ]
 
 class InventoryItemCreateUpdateSerializer(serializers.ModelSerializer):
@@ -33,11 +38,21 @@ class InventoryItemCreateUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryItem
-        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'notes']
+        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'managing_department', 'notes']
 
 class InventoryItemAssignSerializer(serializers.Serializer):
-    assigned_to = serializers.IntegerField()
+    assigned_to = serializers.IntegerField(required=False, allow_null=True)
+    assigned_to_department = serializers.UUIDField(required=False, allow_null=True)
     condition_notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, data):
+        assigned_to = data.get('assigned_to')
+        assigned_to_department = data.get('assigned_to_department')
+        if not assigned_to and not assigned_to_department:
+            raise serializers.ValidationError("Must provide either assigned_to or assigned_to_department.")
+        if assigned_to and assigned_to_department:
+            raise serializers.ValidationError("Cannot assign to both a user and a department.")
+        return data
 
 class InventoryItemReturnSerializer(serializers.Serializer):
     condition_notes = serializers.CharField(required=False, allow_blank=True)
