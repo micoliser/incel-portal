@@ -21,6 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { UserCombobox } from "@/components/ui/user-combobox";
+import { AssigneeCombobox, AssigneeOption } from "@/components/inventory/assignee-combobox";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { InventoryDetailSkeleton } from "@/components/skeletons/inventory-detail-skeleton";
 import { MaintenanceLogsList } from "@/components/inventory/MaintenanceLogsList";
@@ -47,12 +48,16 @@ type InventoryItem = {
   name: string;
   category: { id: string; name: string };
   serial_number: string;
-  purchase_date: string | null;
   status: string;
-  notes: string;
   photo_url?: string;
-  current_assignee: UserOption | null;
+  purchase_date?: string | null;
+  current_assignee: { id: string | number; first_name?: string; last_name?: string; email?: string } | null;
+  current_assignee_department?: { id: string; name: string } | null;
+  managing_department?: { id: string; name: string } | null;
+  notes: string;
   assignments: InventoryAssignment[];
+  created_at: string;
+  updated_at: string;
 };
 
 const statusColors: Record<string, string> = {
@@ -79,7 +84,8 @@ export default function InventoryItemDetail() {
   const [isReturnOpen, setIsReturnOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [assignForm, setAssignForm] = useState({ assigned_to: "", condition_notes: "" });
+  const [assignForm, setAssignForm] = useState({ assigned_to: "", assigned_to_type: null as "user" | "department" | null, condition_notes: "" });
+  const [selectedAssignee, setSelectedAssignee] = useState<AssigneeOption | null>(null);
   const [returnForm, setReturnForm] = useState({ condition_notes: "" });
 
   const fetchData = useCallback(async () => {
@@ -113,14 +119,19 @@ export default function InventoryItemDetail() {
 
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignForm.assigned_to) return toast.error("Please select a user");
+    if (!assignForm.assigned_to) return toast.error("Please select an assignee");
 
     try {
       setIsSubmitting(true);
-      await apiClient.post(`/inventory/items/${id}/assign/`, assignForm);
+      const assignPayload = assignForm.assigned_to_type === "user" 
+        ? { assigned_to: assignForm.assigned_to, condition_notes: assignForm.condition_notes }
+        : { assigned_to_department: assignForm.assigned_to, condition_notes: assignForm.condition_notes };
+        
+      await apiClient.post(`/inventory/items/${id}/assign/`, assignPayload);
       toast.success("Item assigned successfully");
       setIsAssignOpen(false);
-      setAssignForm({ assigned_to: "", condition_notes: "" });
+      setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
+      setSelectedAssignee(null);
       fetchData();
     } catch (error) {
       toast.error(extractApiErrorMessage(error, "Failed to assign item"));

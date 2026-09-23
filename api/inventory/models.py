@@ -4,6 +4,7 @@ import string
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from common.models import TimeStampedModel
 
 
@@ -43,6 +44,20 @@ class InventoryItem(TimeStampedModel):
         blank=True, 
         related_name='assigned_inventory_items'
     )
+    current_assignee_department = models.ForeignKey(
+        'organization.Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_inventory_items'
+    )
+    managing_department = models.ForeignKey(
+        'organization.Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='managed_inventory_items'
+    )
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -50,8 +65,14 @@ class InventoryItem(TimeStampedModel):
         indexes = [
             models.Index(fields=['status']),
             models.Index(fields=['current_assignee']),
+            models.Index(fields=['current_assignee_department']),
             models.Index(fields=['category', 'status']),
+            models.Index(fields=['managing_department']),
         ]
+
+    def clean(self):
+        if self.current_assignee and self.current_assignee_department:
+            raise ValidationError("An item cannot be assigned to both a user and a department simultaneously.")
 
     def __str__(self):
         return f"{self.name} ({self.code})" if self.code else self.name
@@ -69,7 +90,8 @@ class InventoryItem(TimeStampedModel):
 class InventoryAssignment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item = models.ForeignKey(InventoryItem, on_delete=models.CASCADE, related_name='assignments')
-    assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='inventory_assignment_history')
+    assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='inventory_assignment_history', null=True, blank=True)
+    assigned_to_department = models.ForeignKey('organization.Department', on_delete=models.CASCADE, related_name='inventory_assignment_history', null=True, blank=True)
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='inventory_assignments_made')
     assigned_at = models.DateTimeField(default=timezone.now)
     returned_at = models.DateTimeField(null=True, blank=True)
@@ -80,10 +102,18 @@ class InventoryAssignment(models.Model):
         indexes = [
             models.Index(fields=['item', '-assigned_at']),
             models.Index(fields=['assigned_to', '-assigned_at']),
+            models.Index(fields=['assigned_to_department', '-assigned_at']),
         ]
 
+    def clean(self):
+        if self.assigned_to and self.assigned_to_department:
+            raise ValidationError("An assignment cannot be to both a user and a department.")
+        if not self.assigned_to and not self.assigned_to_department:
+            raise ValidationError("An assignment must be to either a user or a department.")
+
     def __str__(self):
-        return f"{self.item} assigned to {self.assigned_to.username}"
+        assignee = self.assigned_to.username if self.assigned_to else (self.assigned_to_department.name if self.assigned_to_department else "Unknown")
+        return f"{self.item} assigned to {assignee}"
 
 
 class InventoryMaintenanceLog(TimeStampedModel):

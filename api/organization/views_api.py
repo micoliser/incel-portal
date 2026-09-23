@@ -1,4 +1,4 @@
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, viewsets, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
@@ -22,9 +22,15 @@ from organization.serializers import (
 class DepartmentListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, _request):
-        departments = Department.objects.filter(is_active=True).order_by('name')
-        return Response(DepartmentSerializer(departments, many=True).data)
+    def get(self, request):
+        queryset = Department.objects.filter(is_active=True).order_by('name')
+        
+        # Support manual search parameter 'q'
+        q = request.query_params.get('q', '')
+        if q:
+            queryset = queryset.filter(name__icontains=q)
+            
+        return Response(DepartmentSerializer(queryset, many=True).data)
 
 
 class RoleListView(APIView):
@@ -49,6 +55,8 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all().order_by('name')
     serializer_class = DepartmentSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'code']
 
     @action(detail=True, methods=['post'])
     @transaction.atomic

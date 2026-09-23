@@ -3,7 +3,18 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Archive, Loader2, Plus, Search, Filter, Monitor, CheckCircle, Clock, Wrench, FileSpreadsheet } from "lucide-react";
+import {
+  Archive,
+  Loader2,
+  Plus,
+  Search,
+  Filter,
+  Monitor,
+  CheckCircle,
+  Clock,
+  Wrench,
+  FileSpreadsheet,
+} from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { Card } from "@/components/ui/card";
@@ -27,9 +38,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UserCombobox } from "@/components/ui/user-combobox";
+import {
+  AssigneeCombobox,
+  AssigneeOption,
+} from "@/components/inventory/assignee-combobox";
+import { Pencil } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { extractApiErrorMessage } from "@/lib/api-errors";
-
 
 type InventoryCategory = {
   id: string;
@@ -46,7 +61,15 @@ type InventoryItem = {
   status: string;
   photo_url?: string;
   purchase_date?: string | null;
-  current_assignee: { id: string | number; first_name?: string; last_name?: string; email?: string; full_name?: string } | null;
+  current_assignee: {
+    id: string | number;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    full_name?: string;
+  } | null;
+  current_assignee_department?: { id: string; name: string } | null;
+  managing_department?: { id: string; name: string } | null;
 };
 
 type InventoryStats = {
@@ -57,21 +80,28 @@ type InventoryStats = {
 };
 
 const statusColors: Record<string, string> = {
-  available: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400",
+  available:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400",
   assigned: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-400",
-  maintenance: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400",
+  maintenance:
+    "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400",
   retired: "bg-gray-100 text-gray-800 dark:bg-gray-500/20 dark:text-gray-400",
 };
 
 export default function InventoryDashboard() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
-  const [stats, setStats] = useState<InventoryStats>({ total: 0, available: 0, assigned: 0, maintenance: 0 });
+  const [stats, setStats] = useState<InventoryStats>({
+    total: 0,
+    available: 0,
+    assigned: 0,
+    maintenance: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasWriteAccess, setHasWriteAccess] = useState(false);
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -82,6 +112,8 @@ export default function InventoryDashboard() {
   // Modals
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -90,9 +122,13 @@ export default function InventoryDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [managingDeptFilter, setManagingDeptFilter] = useState("all");
 
   // Forms
-  const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
+  const [categoryForm, setCategoryForm] = useState({
+    name: "",
+    description: "",
+  });
   const [itemForm, setItemForm] = useState({
     name: "",
     category: "",
@@ -100,11 +136,15 @@ export default function InventoryDashboard() {
     status: "available",
     photo_url: "",
     purchase_date: "",
-    assigned_to: "",
+    assigned_to: "" as string | null,
+    assigned_to_type: null as "user" | "department" | null,
+    managing_department: "" as string | null,
     condition_notes: "",
     new_category_name: "",
     new_category_description: "",
   });
+  const [selectedAssignee, setSelectedAssignee] =
+    useState<AssigneeOption | null>(null);
   const [itemPhoto, setItemPhoto] = useState<File | null>(null);
 
   const fetchStatsAndCategories = async () => {
@@ -113,17 +153,22 @@ export default function InventoryDashboard() {
         apiClient.get("/inventory/items/stats/"),
         apiClient.get("/inventory/categories/"),
         apiClient.get("/me"),
-        apiClient.get("/me/permissions")
+        apiClient.get("/me/permissions"),
       ]);
       setStats(statsRes.data);
       setCategories(catsRes.data);
-      
+
       const meData = meRes.data as { department_code?: string | null };
-      const permsData = permsRes.data as { is_superuser?: boolean; role_code?: string | null };
-      
-      const isAdmin = Boolean(permsData.is_superuser) || String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
+      const permsData = permsRes.data as {
+        is_superuser?: boolean;
+        role_code?: string | null;
+      };
+
+      const isAdmin =
+        Boolean(permsData.is_superuser) ||
+        String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
       const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
-      
+
       setHasWriteAccess(isAdmin || isIT);
     } catch (err) {
       console.error("Failed to load stats or categories", err);
@@ -137,7 +182,7 @@ export default function InventoryDashboard() {
   useEffect(() => {
     async function loadItems() {
       if (isRequestInFlightRef.current) return;
-      
+
       try {
         isRequestInFlightRef.current = true;
         if (currentPage === 1) {
@@ -150,24 +195,30 @@ export default function InventoryDashboard() {
         if (searchQuery) params.q = searchQuery;
         if (statusFilter !== "all") params.status = statusFilter;
         if (categoryFilter !== "all") params.category = categoryFilter;
+        if (managingDeptFilter !== "all") params.managing_department = managingDeptFilter;
 
         const response = await apiClient.get("/inventory/items/", { params });
         const payload = response.data;
-        
+
         let results: InventoryItem[] = [];
         if (Array.isArray(payload)) {
           results = payload;
         } else if (payload && typeof payload === "object") {
           const typedPayload = payload as { results?: InventoryItem[] };
-          results = Array.isArray(typedPayload.results) ? typedPayload.results : [];
+          results = Array.isArray(typedPayload.results)
+            ? typedPayload.results
+            : [];
         }
 
-        setItems((current) => (currentPage === 1 ? results : [...current, ...results]));
-        
-        const hasNext = !Array.isArray(payload) && payload && typeof payload === "object"
-          ? Boolean((payload as { next_page?: unknown }).next_page)
-          : false;
-        
+        setItems((current) =>
+          currentPage === 1 ? results : [...current, ...results],
+        );
+
+        const hasNext =
+          !Array.isArray(payload) && payload && typeof payload === "object"
+            ? Boolean((payload as { next_page?: unknown }).next_page)
+            : false;
+
         setHasNextPage(hasNext);
         setError(null);
       } catch (err) {
@@ -180,13 +231,13 @@ export default function InventoryDashboard() {
     }
 
     void loadItems();
-  }, [searchQuery, statusFilter, categoryFilter, currentPage, refreshCounter]);
+  }, [searchQuery, statusFilter, categoryFilter, managingDeptFilter, currentPage, refreshCounter]);
 
   useEffect(() => {
     setItems([]);
     setCurrentPage(1);
     setHasNextPage(false);
-  }, [searchQuery, statusFilter, categoryFilter]);
+  }, [searchQuery, statusFilter, categoryFilter, managingDeptFilter]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -206,7 +257,7 @@ export default function InventoryDashboard() {
         if (!entry?.isIntersecting || isRequestInFlightRef.current) return;
         setCurrentPage((p) => p + 1);
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     );
     observer.observe(element);
     return () => observer.disconnect();
@@ -218,11 +269,12 @@ export default function InventoryDashboard() {
       const params: Record<string, string> = {};
       if (statusFilter !== "all") params.status = statusFilter;
       if (categoryFilter !== "all") params.category = categoryFilter;
+      if (managingDeptFilter !== "all") params.managing_department = managingDeptFilter;
       if (searchQuery) params.q = searchQuery;
-      
-      const response = await apiClient.get("/inventory/items/export/", { 
+
+      const response = await apiClient.get("/inventory/items/export/", {
         params,
-        responseType: "blob" 
+        responseType: "blob",
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
@@ -233,7 +285,9 @@ export default function InventoryDashboard() {
       link.parentNode?.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Failed to export inventory items"));
+      toast.error(
+        extractApiErrorMessage(err, "Failed to export inventory items"),
+      );
     } finally {
       setIsExporting(false);
     }
@@ -257,34 +311,150 @@ export default function InventoryDashboard() {
     }
   };
 
+  const openEditModal = (item: InventoryItem) => {
+    setEditingItem(item);
+    setItemForm({
+      name: item.name,
+      category: item.category.id,
+      serial_number: item.serial_number || "",
+      status: item.status,
+      photo_url: item.photo_url || "",
+      purchase_date: item.purchase_date || "",
+      assigned_to: null,
+      assigned_to_type: null,
+      managing_department: item.managing_department
+        ? String(item.managing_department.id)
+        : null,
+      condition_notes: "",
+      new_category_name: "",
+      new_category_description: "",
+    });
+    setSelectedAssignee(null); // Edit doesn't pre-fill assignment here, they are managed via Assign modal or we can leave it empty
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    if (!itemForm.name || !itemForm.category)
+      return toast.error("Name and Category are required");
+
+    const hasEditChanges =
+      itemForm.name.trim() !== (editingItem.name || "") ||
+      itemForm.category !== (editingItem.category.id || "") ||
+      itemForm.serial_number.trim() !== (editingItem.serial_number || "") ||
+      itemForm.status !== (editingItem.status || "") ||
+      (itemForm.purchase_date || "") !== (editingItem.purchase_date || "") ||
+      (itemForm.managing_department || "") !==
+        (editingItem.managing_department
+          ? String(editingItem.managing_department.id)
+          : "") ||
+      Boolean(itemPhoto) ||
+      Boolean(itemForm.assigned_to && itemForm.assigned_to_type);
+
+    if (!hasEditChanges) {
+      toast.info("No changes detected.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      let finalPhotoUrl = itemForm.photo_url;
+      if (itemPhoto) {
+        const { getInventoryPhotoUploadUrl } =
+          await import("@/lib/api/inventory");
+        const uploadData = await getInventoryPhotoUploadUrl({
+          file_name: itemPhoto.name,
+          content_type: itemPhoto.type,
+        });
+
+        await fetch(uploadData.upload_url, {
+          method: "PUT",
+          body: itemPhoto,
+          headers: { "Content-Type": itemPhoto.type },
+        });
+        finalPhotoUrl = uploadData.public_url;
+      }
+
+      const payload: Record<string, string> = {
+        name: itemForm.name,
+        category: itemForm.category,
+        serial_number: itemForm.serial_number,
+        status: itemForm.status,
+        ...(itemForm.purchase_date
+          ? { purchase_date: itemForm.purchase_date }
+          : {}),
+        ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {}),
+        ...(itemForm.managing_department
+          ? { managing_department: itemForm.managing_department }
+          : {}),
+      };
+
+      await apiClient.patch(`/inventory/items/${editingItem.id}/`, payload);
+
+      if (itemForm.assigned_to && itemForm.assigned_to_type) {
+        const assignPayload =
+          itemForm.assigned_to_type === "user"
+            ? {
+                assigned_to: itemForm.assigned_to,
+                condition_notes: itemForm.condition_notes,
+              }
+            : {
+                assigned_to_department: itemForm.assigned_to,
+                condition_notes: itemForm.condition_notes,
+              };
+
+        await apiClient.post(
+          `/inventory/items/${editingItem.id}/assign/`,
+          assignPayload,
+        );
+      }
+
+      toast.success("Item updated");
+      setIsEditModalOpen(false);
+      setItemPhoto(null);
+      setCurrentPage(1);
+      setItems([]);
+      fetchStatsAndCategories();
+      setRefreshCounter((prev) => prev + 1);
+    } catch (error) {
+      toast.error(extractApiErrorMessage(error, "Failed to update item"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemForm.name || !itemForm.category) return toast.error("Name and Category are required");
+    if (!itemForm.name || !itemForm.category)
+      return toast.error("Name and Category are required");
     if (itemForm.category === "create_new" && !itemForm.new_category_name) {
       return toast.error("New category name is required");
     }
 
     try {
       setIsSubmitting(true);
-      
+
       let finalCategoryId = itemForm.category;
       if (itemForm.category === "create_new") {
         const catRes = await apiClient.post("/inventory/categories/", {
           name: itemForm.new_category_name,
-          description: itemForm.new_category_description
+          description: itemForm.new_category_description,
         });
         finalCategoryId = catRes.data.id;
       }
-      
+
       let finalPhotoUrl = "";
       if (itemPhoto) {
         // Upload photo
-        const { getInventoryPhotoUploadUrl } = await import("@/lib/api/inventory");
+        const { getInventoryPhotoUploadUrl } =
+          await import("@/lib/api/inventory");
         const uploadData = await getInventoryPhotoUploadUrl({
           file_name: itemPhoto.name,
-          content_type: itemPhoto.type
+          content_type: itemPhoto.type,
         });
-        
+
         await fetch(uploadData.upload_url, {
           method: "PUT",
           body: itemPhoto,
@@ -294,28 +464,57 @@ export default function InventoryDashboard() {
         });
         finalPhotoUrl = uploadData.public_url;
       }
-      
+
       const payload: Record<string, string> = {
         name: itemForm.name,
         category: finalCategoryId,
         serial_number: itemForm.serial_number,
         status: itemForm.status,
-        ...(itemForm.purchase_date ? { purchase_date: itemForm.purchase_date } : {}),
-        ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {})
+        ...(itemForm.purchase_date
+          ? { purchase_date: itemForm.purchase_date }
+          : {}),
+        ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {}),
+        ...(itemForm.managing_department
+          ? { managing_department: itemForm.managing_department }
+          : {}),
       };
-      
+
       const response = await apiClient.post("/inventory/items/", payload);
-      
-      if (itemForm.assigned_to) {
-        await apiClient.post(`/inventory/items/${response.data.id}/assign/`, {
-          assigned_to: itemForm.assigned_to,
-          condition_notes: itemForm.condition_notes
-        });
+
+      if (itemForm.assigned_to && itemForm.assigned_to_type) {
+        const assignPayload =
+          itemForm.assigned_to_type === "user"
+            ? {
+                assigned_to: itemForm.assigned_to,
+                condition_notes: itemForm.condition_notes,
+              }
+            : {
+                assigned_to_department: itemForm.assigned_to,
+                condition_notes: itemForm.condition_notes,
+              };
+
+        await apiClient.post(
+          `/inventory/items/${response.data.id}/assign/`,
+          assignPayload,
+        );
       }
 
       toast.success("Item created");
       setIsItemModalOpen(false);
-      setItemForm({ name: "", category: "", serial_number: "", status: "available", photo_url: "", purchase_date: "", assigned_to: "", condition_notes: "", new_category_name: "", new_category_description: "" });
+      setItemForm({
+        name: "",
+        category: "",
+        serial_number: "",
+        status: "available",
+        photo_url: "",
+        purchase_date: "",
+        assigned_to: null,
+        assigned_to_type: null,
+        managing_department: null,
+        condition_notes: "",
+        new_category_name: "",
+        new_category_description: "",
+      });
       setItemPhoto(null);
       fetchStatsAndCategories();
       // Reload items
@@ -333,8 +532,9 @@ export default function InventoryDashboard() {
     let count = 0;
     if (categoryFilter !== "all") count++;
     if (statusFilter !== "all") count++;
+    if (managingDeptFilter !== "all") count++;
     return count;
-  }, [categoryFilter, statusFilter]);
+  }, [categoryFilter, statusFilter, managingDeptFilter]);
 
   return (
     <div className="space-y-8">
@@ -346,7 +546,9 @@ export default function InventoryDashboard() {
               <Archive className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Total Assets</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Total Assets
+              </p>
               <h3 className="text-2xl font-bold">{stats.total}</h3>
             </div>
           </div>
@@ -357,7 +559,9 @@ export default function InventoryDashboard() {
               <CheckCircle className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Available</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Available
+              </p>
               <h3 className="text-2xl font-bold">{stats.available}</h3>
             </div>
           </div>
@@ -368,7 +572,9 @@ export default function InventoryDashboard() {
               <Monitor className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Assigned</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Assigned
+              </p>
               <h3 className="text-2xl font-bold">{stats.assigned}</h3>
             </div>
           </div>
@@ -379,7 +585,9 @@ export default function InventoryDashboard() {
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Maintenance</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Maintenance
+              </p>
               <h3 className="text-2xl font-bold">{stats.maintenance}</h3>
             </div>
           </div>
@@ -393,7 +601,7 @@ export default function InventoryDashboard() {
             id="inventory-search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search by asset code, name or serial number..."
+            placeholder="Search by asset code, name, serial number, or assignee..."
             className="h-11 rounded-full pl-10 pr-5 text-base"
           />
         </div>
@@ -446,10 +654,29 @@ export default function InventoryDashboard() {
               <SelectItem value="retired">Retired</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={managingDeptFilter} onValueChange={setManagingDeptFilter}>
+            <SelectTrigger className="w-[180px]">
+              <Filter className="mr-2 h-4 w-4" />
+              <SelectValue placeholder="Managing Dept" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="IT">IT</SelectItem>
+              <SelectItem value="Admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
-            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+            )}
             Export
           </Button>
           <Button variant="outline" asChild>
@@ -459,7 +686,10 @@ export default function InventoryDashboard() {
           </Button>
           {hasWriteAccess && (
             <>
-              <Button variant="outline" onClick={() => setIsCategoryModalOpen(true)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsCategoryModalOpen(true)}
+              >
                 <Plus className="mr-2 h-4 w-4" /> Category
               </Button>
               <Button onClick={() => setIsItemModalOpen(true)}>
@@ -471,7 +701,11 @@ export default function InventoryDashboard() {
       </div>
 
       {error ? (
-        <PageErrorCard title="Failed to load inventory" message={error} onRetry={() => setCurrentPage(1)} />
+        <PageErrorCard
+          title="Failed to load inventory"
+          message={error}
+          onRetry={() => setCurrentPage(1)}
+        />
       ) : (
         <Card className="overflow-hidden border border-border">
           <div className="overflow-x-auto">
@@ -481,29 +715,37 @@ export default function InventoryDashboard() {
                   <th className="px-4 py-3 font-medium">Code</th>
                   <th className="px-4 py-3 font-medium">Item Name</th>
                   <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Managing Dept.</th>
                   <th className="px-4 py-3 font-medium">Serial Number</th>
                   <th className="px-4 py-3 font-medium">Purchase Date</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Assignee</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {loading && items.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center">
+                    <td colSpan={9} className="px-4 py-8 text-center">
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                    <td
+                      colSpan={9}
+                      className="px-4 py-8 text-center text-muted-foreground"
+                    >
                       No items found matching your filters.
                     </td>
                   </tr>
                 ) : (
                   <>
                     {items.map((item) => (
-                      <tr key={item.id} className="hover:bg-muted/50 transition-colors">
+                      <tr
+                        key={item.id}
+                        className="hover:bg-muted/50 transition-colors"
+                      >
                         <td className="px-4 py-3 font-mono text-sm font-semibold text-muted-foreground">
                           {item.code}
                         </td>
@@ -523,7 +765,9 @@ export default function InventoryDashboard() {
                                   </div>
                                 </DialogTrigger>
                                 <DialogContent className="sm:max-w-2xl p-0 border-none bg-transparent shadow-none">
-                                  <DialogTitle className="sr-only">Photo of {item.name}</DialogTitle>
+                                  <DialogTitle className="sr-only">
+                                    Photo of {item.name}
+                                  </DialogTitle>
                                   <div className="relative w-full h-[80vh]">
                                     <Image
                                       src={item.photo_url}
@@ -536,12 +780,18 @@ export default function InventoryDashboard() {
                                 </DialogContent>
                               </Dialog>
                             )}
-                            <Link href={`/inventory/${item.id}`} className="font-medium text-primary hover:underline">
+                            <Link
+                              href={`/inventory/${item.id}`}
+                              className="font-medium text-primary hover:underline"
+                            >
                               {item.name}
                             </Link>
                           </div>
                         </td>
                         <td className="px-4 py-3">{item.category.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {item.managing_department?.name || "—"}
+                        </td>
                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                           {item.serial_number || "—"}
                         </td>
@@ -549,20 +799,35 @@ export default function InventoryDashboard() {
                           {item.purchase_date || "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusColors[item.status]}`}>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusColors[item.status]}`}
+                          >
                             {item.status.toUpperCase()}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          {item.current_assignee 
+                          {item.current_assignee
                             ? `${item.current_assignee.first_name} ${item.current_assignee.last_name}`
-                            : "—"}
+                            : item.current_assignee_department
+                              ? item.current_assignee_department.name
+                              : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {hasWriteAccess && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditModal(item)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     ))}
                     {hasNextPage && (
                       <tr ref={loadMoreRef}>
-                        <td colSpan={7} className="py-6 text-center">
+                        <td colSpan={9} className="py-6 text-center">
                           <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                         </td>
                       </tr>
@@ -580,7 +845,10 @@ export default function InventoryDashboard() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Category</DialogTitle>
-            <DialogDescription>Add a new category for your inventory items (e.g., Laptops, Monitors).</DialogDescription>
+            <DialogDescription>
+              Add a new category for your inventory items (e.g., Laptops,
+              Monitors).
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateCategory} className="space-y-4 pt-4">
             <div className="space-y-2">
@@ -588,7 +856,9 @@ export default function InventoryDashboard() {
               <Input
                 id="cat_name"
                 value={categoryForm.name}
-                onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                onChange={(e) =>
+                  setCategoryForm({ ...categoryForm, name: e.target.value })
+                }
                 placeholder="e.g. Laptops"
               />
             </div>
@@ -597,13 +867,20 @@ export default function InventoryDashboard() {
               <Input
                 id="cat_desc"
                 value={categoryForm.description}
-                onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                onChange={(e) =>
+                  setCategoryForm({
+                    ...categoryForm,
+                    description: e.target.value,
+                  })
+                }
                 placeholder="Optional description"
               />
             </div>
             <div className="flex justify-end pt-4">
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {isSubmitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
                 Create Category
               </Button>
             </div>
@@ -616,7 +893,9 @@ export default function InventoryDashboard() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Item</DialogTitle>
-            <DialogDescription>Add a new hardware asset or equipment to the inventory.</DialogDescription>
+            <DialogDescription>
+              Add a new hardware asset or equipment to the inventory.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateItem} className="space-y-4 pt-4">
             <div className="space-y-2">
@@ -624,7 +903,9 @@ export default function InventoryDashboard() {
               <Input
                 id="item_name"
                 value={itemForm.name}
-                onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, name: e.target.value })
+                }
                 placeholder="e.g. MacBook Pro M3"
               />
             </div>
@@ -632,17 +913,24 @@ export default function InventoryDashboard() {
               <Label htmlFor="item_cat">Category</Label>
               <Select
                 value={itemForm.category}
-                onValueChange={(value) => setItemForm({ ...itemForm, category: value })}
+                onValueChange={(value) =>
+                  setItemForm({ ...itemForm, category: value })
+                }
               >
                 <SelectTrigger id="item_cat" className="w-full">
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="create_new" className="font-bold text-primary">
+                  <SelectItem
+                    value="create_new"
+                    className="font-bold text-primary"
+                  >
                     + Create New Category
                   </SelectItem>
                   {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -654,37 +942,71 @@ export default function InventoryDashboard() {
                   <Input
                     id="new_cat_name"
                     value={itemForm.new_category_name}
-                    onChange={(e) => setItemForm({ ...itemForm, new_category_name: e.target.value })}
+                    onChange={(e) =>
+                      setItemForm({
+                        ...itemForm,
+                        new_category_name: e.target.value,
+                      })
+                    }
                     placeholder="e.g. Laptops"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="new_cat_desc">Category Description (Optional)</Label>
+                  <Label htmlFor="new_cat_desc">
+                    Category Description (Optional)
+                  </Label>
                   <Textarea
                     id="new_cat_desc"
                     value={itemForm.new_category_description}
-                    onChange={(e) => setItemForm({ ...itemForm, new_category_description: e.target.value })}
+                    onChange={(e) =>
+                      setItemForm({
+                        ...itemForm,
+                        new_category_description: e.target.value,
+                      })
+                    }
                     placeholder="Brief description..."
                   />
                 </div>
               </div>
             )}
+
             <div className="space-y-2">
-              <Label htmlFor="item_sn">Serial Number</Label>
+              <Label htmlFor="item_managing_dept">
+                Managing Department (Optional)
+              </Label>
+              <AssigneeCombobox
+                value={itemForm.managing_department}
+                types={["department"]}
+                allowedDepartmentNames={["IT", "Admin", "Human Resources"]}
+                onChange={(val, type) => {
+                  if (type === "department" || !val) {
+                    setItemForm({ ...itemForm, managing_department: val });
+                  }
+                }}
+                placeholder="Search departments..."
+              />
+            </div>
+            <div className="space-y-2">
               <Input
                 id="item_sn"
                 value={itemForm.serial_number}
-                onChange={(e) => setItemForm({ ...itemForm, serial_number: e.target.value })}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, serial_number: e.target.value })
+                }
                 placeholder="Optional serial number"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="item_purchase_date">Purchase Date (Optional)</Label>
+              <Label htmlFor="item_purchase_date">
+                Purchase Date (Optional)
+              </Label>
               <Input
                 id="item_purchase_date"
                 type="date"
                 value={itemForm.purchase_date}
-                onChange={(e) => setItemForm({ ...itemForm, purchase_date: e.target.value })}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, purchase_date: e.target.value })
+                }
               />
             </div>
             <div className="space-y-2">
@@ -704,7 +1026,9 @@ export default function InventoryDashboard() {
               <Label htmlFor="item_status">Status</Label>
               <Select
                 value={itemForm.status}
-                onValueChange={(value) => setItemForm({ ...itemForm, status: value })}
+                onValueChange={(value) =>
+                  setItemForm({ ...itemForm, status: value })
+                }
               >
                 <SelectTrigger id="item_status" className="w-full">
                   <SelectValue placeholder="Select a status" />
@@ -718,10 +1042,17 @@ export default function InventoryDashboard() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="item_assign">Assign to (Optional)</Label>
-              <UserCombobox
+              <AssigneeCombobox
                 value={itemForm.assigned_to}
-                onChange={(val) => setItemForm({ ...itemForm, assigned_to: val })}
-                apiEndpoint="/admin/users"
+                defaultAssignee={selectedAssignee}
+                onChange={(val, type, assignee) => {
+                  setItemForm({
+                    ...itemForm,
+                    assigned_to: val,
+                    assigned_to_type: type,
+                  });
+                  setSelectedAssignee(assignee || null);
+                }}
               />
             </div>
             {itemForm.assigned_to && (
@@ -730,15 +1061,190 @@ export default function InventoryDashboard() {
                 <Textarea
                   id="item_notes"
                   value={itemForm.condition_notes}
-                  onChange={(e) => setItemForm({ ...itemForm, condition_notes: e.target.value })}
+                  onChange={(e) =>
+                    setItemForm({
+                      ...itemForm,
+                      condition_notes: e.target.value,
+                    })
+                  }
                   placeholder="Notes on the asset's condition..."
                 />
               </div>
             )}
             <div className="flex justify-end pt-4">
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {isSubmitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
                 Create Item
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Item Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Inventory Item</DialogTitle>
+            <DialogDescription>
+              Update the details of this item.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditItem} className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_item_name">Name</Label>
+                <Input
+                  id="edit_item_name"
+                  value={itemForm.name}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, name: e.target.value })
+                  }
+                  placeholder="e.g. MacBook Pro M2"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_item_category">Category</Label>
+                <Select
+                  value={itemForm.category}
+                  onValueChange={(value) =>
+                    setItemForm({ ...itemForm, category: value })
+                  }
+                  required
+                >
+                  <SelectTrigger id="edit_item_category">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_item_managing_dept">
+                Managing Department (Optional)
+              </Label>
+              <AssigneeCombobox
+                value={itemForm.managing_department}
+                types={["department"]}
+                allowedDepartmentNames={["IT", "Admin", "Human Resources"]}
+                onChange={(val, type) => {
+                  if (type === "department" || !val) {
+                    setItemForm({ ...itemForm, managing_department: val });
+                  }
+                }}
+                placeholder="Search departments..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_item_sn">Serial Number</Label>
+              <Input
+                id="edit_item_sn"
+                value={itemForm.serial_number}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, serial_number: e.target.value })
+                }
+                placeholder="Optional serial number"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_item_purchase_date">
+                Purchase Date (Optional)
+              </Label>
+              <Input
+                id="edit_item_purchase_date"
+                type="date"
+                value={itemForm.purchase_date}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, purchase_date: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_item_photo">Photo (Optional)</Label>
+              <Input
+                id="edit_item_photo"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setItemPhoto(file);
+                  else setItemPhoto(null);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_item_status">Status</Label>
+              <Select
+                value={itemForm.status}
+                onValueChange={(value) =>
+                  setItemForm({ ...itemForm, status: value })
+                }
+              >
+                <SelectTrigger id="edit_item_status" className="w-full">
+                  <SelectValue placeholder="Select a status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">Available</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                  <SelectItem value="retired">Retired</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_item_assign">Assign to (Optional)</Label>
+              <AssigneeCombobox
+                value={itemForm.assigned_to}
+                defaultAssignee={selectedAssignee}
+                onChange={(val, type, assignee) => {
+                  setItemForm({
+                    ...itemForm,
+                    assigned_to: val,
+                    assigned_to_type: type,
+                  });
+                  setSelectedAssignee(assignee || null);
+                }}
+              />
+            </div>
+            {itemForm.assigned_to && (
+              <div className="space-y-2">
+                <Label htmlFor="edit_item_notes">
+                  Condition Notes (Optional)
+                </Label>
+                <Textarea
+                  id="edit_item_notes"
+                  value={itemForm.condition_notes}
+                  onChange={(e) =>
+                    setItemForm({
+                      ...itemForm,
+                      condition_notes: e.target.value,
+                    })
+                  }
+                  placeholder="Note the current condition of the item"
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Save Changes
               </Button>
             </div>
           </form>

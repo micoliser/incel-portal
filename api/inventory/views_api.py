@@ -14,6 +14,7 @@ from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 
 from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog
+from organization.models import Department
 from .serializers import (
     InventoryCategorySerializer,
     InventoryItemSerializer,
@@ -60,7 +61,12 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         search = (self.request.query_params.get('q') or '').strip()
         if search:
             queryset = queryset.filter(
-                Q(name__icontains=search) | Q(serial_number__icontains=search) | Q(code__icontains=search)
+                Q(name__icontains=search) | 
+                Q(serial_number__icontains=search) | 
+                Q(code__icontains=search) |
+                Q(current_assignee__first_name__icontains=search) |
+                Q(current_assignee__last_name__icontains=search) |
+                Q(current_assignee_department__name__icontains=search)
             )
 
         category_id = self.request.query_params.get('category')
@@ -70,6 +76,10 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter and status_filter != 'all':
             queryset = queryset.filter(status=status_filter)
+
+        managing_dept = self.request.query_params.get('managing_department')
+        if managing_dept and managing_dept != 'all':
+            queryset = queryset.filter(managing_department__name__iexact=managing_dept)
 
         return queryset.order_by('-purchase_date', 'name')
     
@@ -125,7 +135,19 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        item = serializer.instance
+        previous_photo_url = item.photo_url if item else ''
+        
         item = serializer.save()
+        
+        if previous_photo_url and item.photo_url != previous_photo_url:
+            try:
+                from inventory.s3 import delete_inventory_photo_by_public_url, MaintenanceAttachmentUploadError
+                delete_inventory_photo_by_public_url(previous_photo_url)
+            except Exception:
+                # We don't want to fail the whole update just because S3 delete failed
+                pass
+                
         log_audit(
             action='inventory.item.updated',
             request=self.request,
@@ -137,7 +159,16 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         item_id = str(instance.id)
         name = instance.name
+        photo_url = instance.photo_url
         instance.delete()
+        
+        if photo_url:
+            try:
+                from inventory.s3 import delete_inventory_photo_by_public_url
+                delete_inventory_photo_by_public_url(photo_url)
+            except Exception:
+                pass
+                
         log_audit(
             action='inventory.item.deleted',
             request=self.request,
@@ -152,10 +183,17 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         serializer = InventoryItemAssignSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        user_id = serializer.validated_data['assigned_to']
-        user = get_object_or_404(User, pk=user_id)
+        user_id = serializer.validated_data.get('assigned_to')
+        department_id = serializer.validated_data.get('assigned_to_department')
         
-        if item.status == 'assigned' and item.current_assignee:
+        user = None
+        department = None
+        if user_id:
+            user = get_object_or_404(User, pk=user_id)
+        if department_id:
+            department = get_object_or_404(Department, pk=department_id)
+        
+        if item.status == 'assigned' and (item.current_assignee or item.current_assignee_department):
             # Mark previous assignment as returned if reassigned directly
             last_assignment = item.assignments.filter(returned_at__isnull=True).first()
             if last_assignment:
@@ -165,6 +203,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
 
         # Update Item
         item.current_assignee = user
+        item.current_assignee_department = department
         item.status = 'assigned'
         item.save()
 
@@ -172,26 +211,43 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         assignment = InventoryAssignment.objects.create(
             item=item,
             assigned_to=user,
+            assigned_to_department=department,
             assigned_by=request.user,
             condition_notes=serializer.validated_data.get('condition_notes', '')
         )
+
+        metadata = {'name': item.name}
+        if user:
+            metadata['assigned_to'] = user.username
+        if department:
+            metadata['assigned_to_department'] = department.name
 
         log_audit(
             action='inventory.item.assigned',
             request=request,
             target_type='inventory_item',
             target_id=str(item.id),
-            metadata={'assigned_to': user.username, 'name': item.name}
+            metadata=metadata
         )
 
-        create_notification(
-            recipient=user,
-            actor=request.user,
-            notification_type='inventory_assigned',
-            title='New Inventory Assigned',
-            body=f'You have been assigned: {item.name}',
-            link_url=f'/my-assets'
-        )
+        if user:
+            create_notification(
+                recipient=user,
+                actor=request.user,
+                notification_type='inventory_assigned',
+                title='New Inventory Assigned',
+                body=f'You have been assigned: {item.name}',
+                link_url=f'/my-assets'
+            )
+        elif department and department.line_manager:
+            create_notification(
+                recipient=department.line_manager,
+                actor=request.user,
+                notification_type='inventory_assigned',
+                title='New Department Inventory Assigned',
+                body=f'Your department ({department.name}) has been assigned: {item.name}',
+                link_url=f'/my-assets'
+            )
 
         return Response(InventoryItemSerializer(item).data)
 
@@ -210,9 +266,10 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
             last_assignment.condition_notes = serializer.validated_data.get('condition_notes', '')
             last_assignment.save()
 
-        previous_assignee_name = item.current_assignee.username if item.current_assignee else 'Unknown'
+        previous_assignee_name = item.current_assignee.username if item.current_assignee else (item.current_assignee_department.name if item.current_assignee_department else 'Unknown')
 
         item.current_assignee = None
+        item.current_assignee_department = None
         item.status = 'available'
         item.save()
 
