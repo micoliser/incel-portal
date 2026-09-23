@@ -10,7 +10,7 @@ def set_managing_dept_it(apps, schema_editor):
     # Get or create the IT department
     it_dept, _ = Department.objects.get_or_create(
         name='IT',
-        defaults={'description': 'Information Technology'}
+        defaults={'code': 'IT'}
     )
 
     # Bulk update all inventory items to have IT as the managing department
