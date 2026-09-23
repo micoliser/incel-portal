@@ -22,7 +22,7 @@ class SupportRoutingTests(TestCase):
     """Test category → department routing logic."""
 
     def setUp(self):
-        self.dep_it = Department.objects.create(name='IT', code='IT')
+        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
         self.dep_hr = Department.objects.create(name='HR', code='HR')
 
     def test_it_support_routes_to_it(self):
@@ -43,7 +43,7 @@ class SupportModelTests(TestCase):
     """Test SupportRequest model basics."""
 
     def setUp(self):
-        self.dep_it = Department.objects.create(name='IT', code='IT')
+        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
         self.role = Role.objects.create(name='Staff', code='STAFF')
         self.user = User.objects.create_user(username='user1', password='pass')
         StaffProfile.objects.create(user=self.user, role=self.role, department=self.dep_it)
@@ -189,7 +189,7 @@ class SupportAutoCloseTests(TestCase):
     """Test auto-close service."""
 
     def setUp(self):
-        self.dep_it = Department.objects.create(name='IT', code='IT')
+        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
         self.role = Role.objects.create(name='Staff', code='STAFF')
         self.user = User.objects.create_user(username='user1', password='pass')
         StaffProfile.objects.create(user=self.user, role=self.role, department=self.dep_it)
@@ -247,7 +247,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def setUp(self):
         super().setUp()
-        self.dep_it = Department.objects.create(name='IT', code='IT')
+        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
         # dep_hr already created by BaseAPITestCase as self.dep_hr
         self.role_lm = Role.objects.create(
             name='Line Manager', code='LINE_MANAGER', has_global_access=False
