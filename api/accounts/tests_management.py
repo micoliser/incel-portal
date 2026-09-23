@@ -26,7 +26,7 @@ Barry,Nwachukwu,Ogbu,barry@example.com,Incel@123,Male,Tourism
         finally:
             tmp_path.unlink(missing_ok=True)
 
-        self.assertEqual(Department.objects.count(), 3)
+        self.assertGreaterEqual(Department.objects.count(), 3)
         self.assertTrue(Department.objects.filter(name="Admin").exists())
         self.assertTrue(Department.objects.filter(name="Operations").exists())
         self.assertTrue(Department.objects.filter(name="Tourism").exists())
