@@ -36,6 +36,7 @@ import {
 import { ApplicationsSkeleton } from "@/components/skeletons/applications-skeleton";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { processAndValidateFile } from "@/lib/file-utils";
 
 type ApplicationRecord = {
   id: string;
@@ -644,12 +645,13 @@ export default function ApplicationsPage() {
   }
 
   async function uploadLogoAndGetPublicUrl(slug: string, file: File) {
+    const processedFile = await processAndValidateFile(file);
     const signedResponse = await apiClient.post(
       "/admin/applications/logo-upload-url",
       {
         slug,
-        file_name: file.name,
-        content_type: file.type,
+        file_name: processedFile.name,
+        content_type: processedFile.type,
       },
     );
 
@@ -660,12 +662,12 @@ export default function ApplicationsPage() {
       throw new Error("Signed URL response is incomplete.");
     }
 
-    await axios.put(uploadUrl, file, {
+    await axios.put(uploadUrl, processedFile, {
       headers: {
-        "Content-Type": file.type,
+        "Content-Type": processedFile.type,
       },
       onUploadProgress: (progressEvent) => {
-        const total = progressEvent.total ?? file.size;
+        const total = progressEvent.total ?? processedFile.size;
         if (!total) {
           return;
         }

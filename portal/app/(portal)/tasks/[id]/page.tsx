@@ -29,6 +29,7 @@ import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
 import { TaskDetailSkeleton } from "@/components/skeletons/tasks-skeleton";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { processAndValidateFile } from "@/lib/file-utils";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
@@ -159,18 +160,19 @@ export default function TaskDetailPage() {
         setIsUploadingAttachment(true);
         attachmentsPayload = [];
         for (const file of selectedAttachments) {
+          const processedFile = await processAndValidateFile(file);
           const uploadResponse = await getTaskAttachmentUploadUrl(taskId, {
-            file_name: file.name,
-            content_type: file.type || "application/octet-stream",
-            size: file.size,
+            file_name: processedFile.name,
+            content_type: processedFile.type || "application/octet-stream",
+            size: processedFile.size,
           });
 
           const uploadResult = await fetch(uploadResponse.upload_url, {
             method: "PUT",
             headers: {
-              "Content-Type": file.type || "application/octet-stream",
+              "Content-Type": processedFile.type || "application/octet-stream",
             },
-            body: file,
+            body: processedFile,
           });
 
           if (!uploadResult.ok) {
@@ -179,9 +181,9 @@ export default function TaskDetailPage() {
 
           attachmentsPayload.push({
             object_key: uploadResponse.object_key,
-            file_name: file.name,
-            content_type: file.type || "application/octet-stream",
-            size: file.size,
+            file_name: processedFile.name,
+            content_type: processedFile.type || "application/octet-stream",
+            size: processedFile.size,
           });
         }
       }

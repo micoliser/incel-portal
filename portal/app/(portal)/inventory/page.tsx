@@ -45,6 +45,7 @@ import {
 import { Pencil } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { processAndValidateFile } from "@/lib/file-utils";
 
 type InventoryCategory = {
   id: string;
@@ -362,17 +363,26 @@ export default function InventoryDashboard() {
 
       let finalPhotoUrl = itemForm.photo_url;
       if (itemPhoto) {
+        let processedFile = itemPhoto;
+        try {
+          processedFile = await processAndValidateFile(itemPhoto);
+        } catch (fileError) {
+          toast.error(fileError instanceof Error ? fileError.message : "File processing failed");
+          setIsSubmitting(false);
+          return;
+        }
+
         const { getInventoryPhotoUploadUrl } =
           await import("@/lib/api/inventory");
         const uploadData = await getInventoryPhotoUploadUrl({
-          file_name: itemPhoto.name,
-          content_type: itemPhoto.type,
+          file_name: processedFile.name,
+          content_type: processedFile.type,
         });
 
         await fetch(uploadData.upload_url, {
           method: "PUT",
-          body: itemPhoto,
-          headers: { "Content-Type": itemPhoto.type },
+          body: processedFile,
+          headers: { "Content-Type": processedFile.type },
         });
         finalPhotoUrl = uploadData.public_url;
       }
@@ -447,19 +457,28 @@ export default function InventoryDashboard() {
 
       let finalPhotoUrl = "";
       if (itemPhoto) {
+        let processedFile = itemPhoto;
+        try {
+          processedFile = await processAndValidateFile(itemPhoto);
+        } catch (fileError) {
+          toast.error(fileError instanceof Error ? fileError.message : "File processing failed");
+          setIsSubmitting(false);
+          return;
+        }
+
         // Upload photo
         const { getInventoryPhotoUploadUrl } =
           await import("@/lib/api/inventory");
         const uploadData = await getInventoryPhotoUploadUrl({
-          file_name: itemPhoto.name,
-          content_type: itemPhoto.type,
+          file_name: processedFile.name,
+          content_type: processedFile.type,
         });
 
         await fetch(uploadData.upload_url, {
           method: "PUT",
-          body: itemPhoto,
+          body: processedFile,
           headers: {
-            "Content-Type": itemPhoto.type,
+            "Content-Type": processedFile.type,
           },
         });
         finalPhotoUrl = uploadData.public_url;
@@ -1017,8 +1036,17 @@ export default function InventoryDashboard() {
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) setItemPhoto(file);
-                  else setItemPhoto(null);
+                  if (file) {
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast.error("File exceeds the 5MB size limit.");
+                      e.target.value = "";
+                      setItemPhoto(null);
+                      return;
+                    }
+                    setItemPhoto(file);
+                  } else {
+                    setItemPhoto(null);
+                  }
                 }}
               />
             </div>
@@ -1176,8 +1204,17 @@ export default function InventoryDashboard() {
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) setItemPhoto(file);
-                  else setItemPhoto(null);
+                  if (file) {
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast.error("File exceeds the 5MB size limit.");
+                      e.target.value = "";
+                      setItemPhoto(null);
+                      return;
+                    }
+                    setItemPhoto(file);
+                  } else {
+                    setItemPhoto(null);
+                  }
                 }}
               />
             </div>
