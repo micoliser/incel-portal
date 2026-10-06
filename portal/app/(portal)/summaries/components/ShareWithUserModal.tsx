@@ -55,7 +55,11 @@ export function ShareWithUserModal({
 
   // Load existing user-shares for this week when modal opens
   useEffect(() => {
-    if (!open || !weekStartDate) return;
+    if (!open || !weekStartDate) {
+      setQuery("");
+      setResults([]);
+      return;
+    }
     (async () => {
       try {
         const shares = await summariesAPI.getUserShares(weekStartDate);
