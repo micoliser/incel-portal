@@ -17,6 +17,7 @@ export type MaintenanceLog = {
     code: string;
     name: string;
     serial_number: string;
+    quantity: number;
     status: string;
     category?: { id: string; name: string };
   };

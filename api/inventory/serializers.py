@@ -29,7 +29,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         model = InventoryItem
         fields = [
             'id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 
-            'photo_url', 'status', 'current_assignee', 'current_assignee_department', 
+            'photo_url', 'status', 'quantity', 'current_assignee', 'current_assignee_department', 
             'managing_department', 'notes', 'assignments', 'created_at', 'updated_at'
         ]
 
@@ -38,7 +38,7 @@ class InventoryItemCreateUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryItem
-        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'managing_department', 'notes']
+        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'quantity', 'managing_department', 'notes']
 
 class InventoryItemAssignSerializer(serializers.Serializer):
     assigned_to = serializers.IntegerField(required=False, allow_null=True)
@@ -63,7 +63,7 @@ class BasicInventoryItemSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryItem
-        fields = ['id', 'code', 'name', 'category', 'serial_number', 'photo_url', 'status']
+        fields = ['id', 'code', 'name', 'category', 'serial_number', 'quantity', 'photo_url', 'status']
 
 
 class MaintenanceLogAttachmentSerializer(serializers.ModelSerializer):

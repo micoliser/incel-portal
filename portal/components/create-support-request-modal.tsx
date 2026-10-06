@@ -118,7 +118,16 @@ export function CreateSupportRequestModal() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen);
+      if (!nextOpen) {
+        setTitle("");
+        setCategory("IT_SUPPORT");
+        setPriority("medium");
+        setDescription("");
+        setFiles([]);
+      }
+    }}>
       <DialogTrigger asChild>
         <Button>New Request</Button>
       </DialogTrigger>

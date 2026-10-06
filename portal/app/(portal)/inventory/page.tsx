@@ -59,6 +59,7 @@ type InventoryItem = {
   name: string;
   category: InventoryCategory;
   serial_number: string;
+  quantity: number;
   status: string;
   photo_url?: string;
   purchase_date?: string | null;
@@ -134,6 +135,7 @@ export default function InventoryDashboard() {
     name: "",
     category: "",
     serial_number: "",
+    quantity: 1,
     status: "available",
     photo_url: "",
     purchase_date: "",
@@ -318,6 +320,7 @@ export default function InventoryDashboard() {
       name: item.name,
       category: item.category.id,
       serial_number: item.serial_number || "",
+      quantity: item.quantity || 1,
       status: item.status,
       photo_url: item.photo_url || "",
       purchase_date: item.purchase_date || "",
@@ -344,6 +347,7 @@ export default function InventoryDashboard() {
       itemForm.name.trim() !== (editingItem.name || "") ||
       itemForm.category !== (editingItem.category.id || "") ||
       itemForm.serial_number.trim() !== (editingItem.serial_number || "") ||
+      itemForm.quantity !== (editingItem.quantity || 1) ||
       itemForm.status !== (editingItem.status || "") ||
       (itemForm.purchase_date || "") !== (editingItem.purchase_date || "") ||
       (itemForm.managing_department || "") !==
@@ -387,10 +391,11 @@ export default function InventoryDashboard() {
         finalPhotoUrl = uploadData.public_url;
       }
 
-      const payload: Record<string, string> = {
+      const payload: Record<string, string | number> = {
         name: itemForm.name,
         category: itemForm.category,
         serial_number: itemForm.serial_number,
+        quantity: itemForm.quantity,
         status: itemForm.status,
         ...(itemForm.purchase_date
           ? { purchase_date: itemForm.purchase_date }
@@ -484,10 +489,11 @@ export default function InventoryDashboard() {
         finalPhotoUrl = uploadData.public_url;
       }
 
-      const payload: Record<string, string> = {
+      const payload: Record<string, string | number> = {
         name: itemForm.name,
         category: finalCategoryId,
         serial_number: itemForm.serial_number,
+        quantity: itemForm.quantity,
         status: itemForm.status,
         ...(itemForm.purchase_date
           ? { purchase_date: itemForm.purchase_date }
@@ -524,6 +530,7 @@ export default function InventoryDashboard() {
         name: "",
         category: "",
         serial_number: "",
+        quantity: 1,
         status: "available",
         photo_url: "",
         purchase_date: "",
@@ -736,6 +743,7 @@ export default function InventoryDashboard() {
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium">Managing Dept.</th>
                   <th className="px-4 py-3 font-medium">Serial Number</th>
+                  <th className="px-4 py-3 font-medium">Qty</th>
                   <th className="px-4 py-3 font-medium">Purchase Date</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Assignee</th>
@@ -745,14 +753,14 @@ export default function InventoryDashboard() {
               <tbody className="divide-y divide-border">
                 {loading && items.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center">
+                    <td colSpan={10} className="px-4 py-8 text-center">
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       No items found matching your filters.
@@ -814,6 +822,9 @@ export default function InventoryDashboard() {
                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                           {item.serial_number || "—"}
                         </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {item.quantity}
+                        </td>
                         <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                           {item.purchase_date || "—"}
                         </td>
@@ -860,7 +871,12 @@ export default function InventoryDashboard() {
       )}
 
       {/* Category Modal */}
-      <Dialog open={isCategoryModalOpen} onOpenChange={setIsCategoryModalOpen}>
+      <Dialog open={isCategoryModalOpen} onOpenChange={(open) => {
+        setIsCategoryModalOpen(open);
+        if (!open) {
+          setCategoryForm({ name: "", description: "" });
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Category</DialogTitle>
@@ -908,7 +924,27 @@ export default function InventoryDashboard() {
       </Dialog>
 
       {/* Item Modal */}
-      <Dialog open={isItemModalOpen} onOpenChange={setIsItemModalOpen}>
+      <Dialog open={isItemModalOpen} onOpenChange={(open) => {
+        setIsItemModalOpen(open);
+        if (!open) {
+          setItemForm({
+            name: "",
+            category: "",
+            serial_number: "",
+            quantity: 1,
+            status: "available",
+            photo_url: "",
+            purchase_date: "",
+            assigned_to: null,
+            assigned_to_type: null,
+            managing_department: null,
+            condition_notes: "",
+            new_category_name: "",
+            new_category_description: "",
+          });
+          setItemPhoto(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Item</DialogTitle>
@@ -1005,15 +1041,30 @@ export default function InventoryDashboard() {
                 placeholder="Search departments..."
               />
             </div>
-            <div className="space-y-2">
-              <Input
-                id="item_sn"
-                value={itemForm.serial_number}
-                onChange={(e) =>
-                  setItemForm({ ...itemForm, serial_number: e.target.value })
-                }
-                placeholder="Optional serial number"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item_sn">Serial Number</Label>
+                <Input
+                  id="item_sn"
+                  value={itemForm.serial_number}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, serial_number: e.target.value })
+                  }
+                  placeholder="Optional serial number"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="item_quantity">Quantity</Label>
+                <Input
+                  id="item_quantity"
+                  type="number"
+                  min="1"
+                  value={itemForm.quantity}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, quantity: parseInt(e.target.value) || 1 })
+                  }
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="item_purchase_date">
@@ -1112,7 +1163,28 @@ export default function InventoryDashboard() {
       </Dialog>
 
       {/* Edit Item Modal */}
-      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+      <Dialog open={isEditModalOpen} onOpenChange={(open) => {
+        setIsEditModalOpen(open);
+        if (!open) {
+          setItemForm({
+            name: "",
+            category: "",
+            serial_number: "",
+            quantity: 1,
+            status: "available",
+            photo_url: "",
+            purchase_date: "",
+            assigned_to: null,
+            assigned_to_type: null,
+            managing_department: null,
+            condition_notes: "",
+            new_category_name: "",
+            new_category_description: "",
+          });
+          setItemPhoto(null);
+          setEditingItem(null);
+        }
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Inventory Item</DialogTitle>
@@ -1172,16 +1244,30 @@ export default function InventoryDashboard() {
                 placeholder="Search departments..."
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_item_sn">Serial Number</Label>
-              <Input
-                id="edit_item_sn"
-                value={itemForm.serial_number}
-                onChange={(e) =>
-                  setItemForm({ ...itemForm, serial_number: e.target.value })
-                }
-                placeholder="Optional serial number"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_item_sn">Serial Number</Label>
+                <Input
+                  id="edit_item_sn"
+                  value={itemForm.serial_number}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, serial_number: e.target.value })
+                  }
+                  placeholder="Optional serial number"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_item_quantity">Quantity</Label>
+                <Input
+                  id="edit_item_quantity"
+                  type="number"
+                  min="1"
+                  value={itemForm.quantity}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, quantity: parseInt(e.target.value) || 1 })
+                  }
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit_item_purchase_date">

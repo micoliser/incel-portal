@@ -68,7 +68,7 @@ export function AssigneeCombobox({
           
           const fetchPromises: Promise<unknown>[] = [];
           if (types.includes("user")) {
-            fetchPromises.push(apiClient.get("/admin/users", { params: { q: search, page_size: 10 } }));
+            fetchPromises.push(apiClient.get("/users", { params: { q: search, page_size: 10 } }));
           } else {
             fetchPromises.push(Promise.resolve({ data: [] }));
           }

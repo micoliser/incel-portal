@@ -445,7 +445,14 @@ export default function DepartmentsPage() {
       </div>
 
       {/* Create Department Modal */}
-      <Dialog open={isCreateDeptOpen} onOpenChange={setIsCreateDeptOpen}>
+      <Dialog open={isCreateDeptOpen} onOpenChange={(open) => {
+        setIsCreateDeptOpen(open);
+        if (!open) {
+          setForm({ name: "", code: "" });
+          setFormErrors({});
+          setApiError("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Department</DialogTitle>
@@ -480,7 +487,14 @@ export default function DepartmentsPage() {
       </Dialog>
 
       {/* Create Unit Modal */}
-      <Dialog open={isCreateUnitOpen} onOpenChange={setIsCreateUnitOpen}>
+      <Dialog open={isCreateUnitOpen} onOpenChange={(open) => {
+        setIsCreateUnitOpen(open);
+        if (!open) {
+          setForm({ name: "", code: "" });
+          setFormErrors({});
+          setApiError("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Unit</DialogTitle>
@@ -515,7 +529,14 @@ export default function DepartmentsPage() {
       </Dialog>
 
       {/* Create Team Modal */}
-      <Dialog open={isCreateTeamOpen} onOpenChange={setIsCreateTeamOpen}>
+      <Dialog open={isCreateTeamOpen} onOpenChange={(open) => {
+        setIsCreateTeamOpen(open);
+        if (!open) {
+          setForm({ name: "", code: "" });
+          setFormErrors({});
+          setApiError("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Team</DialogTitle>

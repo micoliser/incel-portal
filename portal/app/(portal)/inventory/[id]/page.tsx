@@ -48,6 +48,7 @@ type InventoryItem = {
   name: string;
   category: { id: string; name: string };
   serial_number: string;
+  quantity: number;
   status: string;
   photo_url?: string;
   purchase_date?: string | null;
@@ -235,6 +236,10 @@ export default function InventoryItemDetail() {
               <div className="font-mono mt-1">{item.serial_number || "—"}</div>
             </div>
             <div>
+              <div className="text-sm font-medium text-muted-foreground">Quantity</div>
+              <div className="font-medium mt-1">{item.quantity}</div>
+            </div>
+            <div>
               <div className="text-sm font-medium text-muted-foreground">Purchase Date</div>
               <div className="font-mono mt-1">{item.purchase_date || "—"}</div>
             </div>
@@ -315,7 +320,13 @@ export default function InventoryItemDetail() {
       <MaintenanceLogsList itemId={id} item={item} />
 
       {/* Assign Modal */}
-      <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
+      <Dialog open={isAssignOpen} onOpenChange={(open) => {
+        setIsAssignOpen(open);
+        if (!open) {
+          setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
+          setSelectedAssignee(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign Item</DialogTitle>
@@ -350,7 +361,12 @@ export default function InventoryItemDetail() {
       </Dialog>
 
       {/* Return Modal */}
-      <Dialog open={isReturnOpen} onOpenChange={setIsReturnOpen}>
+      <Dialog open={isReturnOpen} onOpenChange={(open) => {
+        setIsReturnOpen(open);
+        if (!open) {
+          setReturnForm({ condition_notes: "" });
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Return Item</DialogTitle>

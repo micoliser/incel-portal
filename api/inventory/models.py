@@ -36,6 +36,7 @@ class InventoryItem(TimeStampedModel):
     purchase_date = models.DateField(null=True, blank=True)
     photo_url = models.CharField(max_length=500, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
+    quantity = models.PositiveIntegerField(default=1)
     
     current_assignee = models.ForeignKey(
         User, 

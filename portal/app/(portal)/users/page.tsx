@@ -693,7 +693,14 @@ export default function UsersPage() {
 
       {hasNextPage && <div ref={loadMoreRef} className="h-8" />}
 
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => {
+        setIsCreateOpen(open);
+        if (!open) {
+          setForm(initialFormState);
+          setFormErrors({});
+          setCreateApiError("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create user</DialogTitle>
@@ -957,7 +964,15 @@ export default function UsersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+      <Dialog open={isEditOpen} onOpenChange={(open) => {
+        setIsEditOpen(open);
+        if (!open) {
+          setForm(initialFormState);
+          setFormErrors({});
+          setEditApiError("");
+          setEditingUser(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit user</DialogTitle>
