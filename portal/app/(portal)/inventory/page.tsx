@@ -14,6 +14,7 @@ import {
   Clock,
   Wrench,
   FileSpreadsheet,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
@@ -61,6 +62,7 @@ type InventoryItem = {
   serial_number: string;
   quantity: number;
   status: string;
+  status_reason?: string;
   photo_url?: string;
   purchase_date?: string | null;
   current_assignee: {
@@ -79,6 +81,8 @@ type InventoryStats = {
   available: number;
   assigned: number;
   maintenance: number;
+  retired: number;
+  unaccounted: number;
 };
 
 const statusColors: Record<string, string> = {
@@ -88,6 +92,7 @@ const statusColors: Record<string, string> = {
   maintenance:
     "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400",
   retired: "bg-gray-100 text-gray-800 dark:bg-gray-500/20 dark:text-gray-400",
+  unaccounted: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-400",
 };
 
 export default function InventoryDashboard() {
@@ -98,6 +103,8 @@ export default function InventoryDashboard() {
     available: 0,
     assigned: 0,
     maintenance: 0,
+    retired: 0,
+    unaccounted: 0,
   });
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -137,6 +144,7 @@ export default function InventoryDashboard() {
     serial_number: "",
     quantity: 1,
     status: "available",
+            status_reason: "",
     photo_url: "",
     purchase_date: "",
     assigned_to: "" as string | null,
@@ -322,6 +330,7 @@ export default function InventoryDashboard() {
       serial_number: item.serial_number || "",
       quantity: item.quantity || 1,
       status: item.status,
+      status_reason: item.status_reason || "",
       photo_url: item.photo_url || "",
       purchase_date: item.purchase_date || "",
       assigned_to: null,
@@ -397,6 +406,7 @@ export default function InventoryDashboard() {
         serial_number: itemForm.serial_number,
         quantity: itemForm.quantity,
         status: itemForm.status,
+        status_reason: itemForm.status_reason,
         ...(itemForm.purchase_date
           ? { purchase_date: itemForm.purchase_date }
           : {}),
@@ -495,6 +505,7 @@ export default function InventoryDashboard() {
         serial_number: itemForm.serial_number,
         quantity: itemForm.quantity,
         status: itemForm.status,
+        status_reason: itemForm.status_reason,
         ...(itemForm.purchase_date
           ? { purchase_date: itemForm.purchase_date }
           : {}),
@@ -532,6 +543,7 @@ export default function InventoryDashboard() {
         serial_number: "",
         quantity: 1,
         status: "available",
+            status_reason: "",
         photo_url: "",
         purchase_date: "",
         assigned_to: null,
@@ -565,7 +577,7 @@ export default function InventoryDashboard() {
   return (
     <div className="space-y-8">
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card className="p-4 border border-border">
           <div className="flex items-center gap-4">
             <div className="rounded-full bg-primary/10 p-3 text-primary">
@@ -615,6 +627,32 @@ export default function InventoryDashboard() {
                 Maintenance
               </p>
               <h3 className="text-2xl font-bold">{stats.maintenance}</h3>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4 border border-border">
+          <div className="flex items-center gap-4">
+            <div className="rounded-full bg-gray-100 p-3 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400">
+              <Archive className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">
+                Retired
+              </p>
+              <h3 className="text-2xl font-bold">{stats.retired}</h3>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4 border border-border">
+          <div className="flex items-center gap-4">
+            <div className="rounded-full bg-red-100 p-3 text-red-600 dark:bg-red-500/20 dark:text-red-400">
+              <AlertCircle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">
+                Unaccounted
+              </p>
+              <h3 className="text-2xl font-bold">{stats.unaccounted}</h3>
             </div>
           </div>
         </Card>
@@ -678,6 +716,7 @@ export default function InventoryDashboard() {
               <SelectItem value="assigned">Assigned</SelectItem>
               <SelectItem value="maintenance">Maintenance</SelectItem>
               <SelectItem value="retired">Retired</SelectItem>
+              <SelectItem value="unaccounted">Unaccounted</SelectItem>
             </SelectContent>
           </Select>
           <Select value={managingDeptFilter} onValueChange={setManagingDeptFilter}>
@@ -933,6 +972,7 @@ export default function InventoryDashboard() {
             serial_number: "",
             quantity: 1,
             status: "available",
+            status_reason: "",
             photo_url: "",
             purchase_date: "",
             assigned_to: null,
@@ -1116,9 +1156,24 @@ export default function InventoryDashboard() {
                   <SelectItem value="available">Available</SelectItem>
                   <SelectItem value="maintenance">Maintenance</SelectItem>
                   <SelectItem value="retired">Retired</SelectItem>
+                  <SelectItem value="unaccounted">Unaccounted</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {(itemForm.status === "retired" || itemForm.status === "unaccounted") && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="item_status_reason">
+                  Reason {itemForm.status === "unaccounted" ? <span className="text-red-500">*</span> : "(Optional)"}
+                </Label>
+                <Textarea
+                  id="item_status_reason"
+                  value={itemForm.status_reason}
+                  onChange={(e) => setItemForm({ ...itemForm, status_reason: e.target.value })}
+                  placeholder="Enter reason for this status..."
+                  required={itemForm.status === "unaccounted"}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="item_assign">Assign to (Optional)</Label>
               <AssigneeCombobox
@@ -1172,6 +1227,7 @@ export default function InventoryDashboard() {
             serial_number: "",
             quantity: 1,
             status: "available",
+            status_reason: "",
             photo_url: "",
             purchase_date: "",
             assigned_to: null,
@@ -1319,9 +1375,24 @@ export default function InventoryDashboard() {
                   <SelectItem value="available">Available</SelectItem>
                   <SelectItem value="maintenance">Maintenance</SelectItem>
                   <SelectItem value="retired">Retired</SelectItem>
+                  <SelectItem value="unaccounted">Unaccounted</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {(itemForm.status === "retired" || itemForm.status === "unaccounted") && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="edit_item_status_reason">
+                  Reason {itemForm.status === "unaccounted" ? <span className="text-red-500">*</span> : "(Optional)"}
+                </Label>
+                <Textarea
+                  id="edit_item_status_reason"
+                  value={itemForm.status_reason}
+                  onChange={(e) => setItemForm({ ...itemForm, status_reason: e.target.value })}
+                  placeholder="Enter reason for this status..."
+                  required={itemForm.status === "unaccounted"}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="edit_item_assign">Assign to (Optional)</Label>
               <AssigneeCombobox
