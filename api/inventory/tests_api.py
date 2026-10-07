@@ -248,3 +248,59 @@ class InventoryAPITests(APITestCase):
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('attachments', response.data['error']['details'])
+
+    def test_item_create_with_quantity(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/v1/inventory/items/', {
+            'name': 'Test Item Qty',
+            'category': self.category.id,
+            'quantity': 5,
+            'status': 'available'
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['quantity'], 5)
+
+    def test_item_create_unaccounted_missing_reason(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/v1/inventory/items/', {
+            'name': 'Lost Item',
+            'category': self.category.id,
+            'status': 'unaccounted'
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status_reason', response.data['error']['details'])
+
+    def test_item_create_unaccounted_with_reason(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/v1/inventory/items/', {
+            'name': 'Lost Item 2',
+            'category': self.category.id,
+            'status': 'unaccounted',
+            'status_reason': 'Stolen during conference'
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'unaccounted')
+        self.assertEqual(response.data['status_reason'], 'Stolen during conference')
+
+    def test_assign_item_unaccounted_fails(self):
+        self.item.status = 'unaccounted'
+        self.item.status_reason = 'Lost'
+        self.item.save()
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(f'/api/v1/inventory/items/{self.item.id}/assign/', {
+            'assigned_to': str(self.user.id),
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Cannot assign an item with status \'unaccounted\'', response.data['detail'])
+
+    def test_assign_item_retired_fails(self):
+        self.item.status = 'retired'
+        self.item.save()
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(f'/api/v1/inventory/items/{self.item.id}/assign/', {
+            'assigned_to': str(self.user.id),
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Cannot assign an item with status \'retired\'', response.data['detail'])

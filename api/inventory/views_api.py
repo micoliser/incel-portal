@@ -90,6 +90,8 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
             'available': InventoryItem.objects.filter(status='available').count(),
             'assigned': InventoryItem.objects.filter(status='assigned').count(),
             'maintenance': InventoryItem.objects.filter(status='maintenance').count(),
+            'retired': InventoryItem.objects.filter(status='retired').count(),
+            'unaccounted': InventoryItem.objects.filter(status='unaccounted').count(),
         })
 
     def get_serializer_class(self):
@@ -192,6 +194,12 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
             user = get_object_or_404(User, pk=user_id)
         if department_id:
             department = get_object_or_404(Department, pk=department_id)
+            
+        if item.status not in ['available', 'assigned']:
+            return Response(
+                {"detail": f"Cannot assign an item with status '{item.status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         if item.status == 'assigned' and (item.current_assignee or item.current_assignee_department):
             # Mark previous assignment as returned if reassigned directly

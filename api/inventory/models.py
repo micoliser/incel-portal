@@ -26,6 +26,7 @@ class InventoryItem(TimeStampedModel):
         ('assigned', 'Assigned'),
         ('maintenance', 'Maintenance'),
         ('retired', 'Retired'),
+        ('unaccounted', 'Unaccounted'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -36,6 +37,7 @@ class InventoryItem(TimeStampedModel):
     purchase_date = models.DateField(null=True, blank=True)
     photo_url = models.CharField(max_length=500, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
+    status_reason = models.TextField(blank=True)
     quantity = models.PositiveIntegerField(default=1)
     
     current_assignee = models.ForeignKey(

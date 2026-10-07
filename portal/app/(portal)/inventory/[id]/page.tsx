@@ -50,6 +50,7 @@ type InventoryItem = {
   serial_number: string;
   quantity: number;
   status: string;
+  status_reason?: string;
   photo_url?: string;
   purchase_date?: string | null;
   current_assignee: { id: string | number; first_name?: string; last_name?: string; email?: string } | null;
@@ -66,6 +67,7 @@ const statusColors: Record<string, string> = {
   assigned: "bg-blue-100 text-blue-800",
   maintenance: "bg-amber-100 text-amber-800",
   retired: "bg-gray-100 text-gray-800",
+  unaccounted: "bg-red-100 text-red-800",
 };
 
 const backButtonClassName =
@@ -216,11 +218,18 @@ export default function InventoryItemDetail() {
               <p className="text-gray-600 mt-2">Asset Details</p>
             </div>
           </div>
-          <span
-            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${statusColors[item.status]}`}
-          >
-            {item.status.toUpperCase()}
-          </span>
+          <div className="flex flex-col items-center sm:items-end gap-2">
+            <span
+              className={`w-fit whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${statusColors[item.status]}`}
+            >
+              {item.status.toUpperCase()}
+            </span>
+            {(item.status === 'retired' || item.status === 'unaccounted') && item.status_reason && (
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-[250px] text-center sm:text-right">
+                <span className="font-semibold">Reason:</span> {item.status_reason}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -259,7 +268,7 @@ export default function InventoryItemDetail() {
             )}
             
             <div className="pt-4 border-t border-border flex flex-col gap-2">
-              {hasWriteAccess && item.status !== "assigned" && (
+              {hasWriteAccess && item.status === "available" && (
                 <Button onClick={() => setIsAssignOpen(true)} className="w-full">
                   Assign Item
                 </Button>

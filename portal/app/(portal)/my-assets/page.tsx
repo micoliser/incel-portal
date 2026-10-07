@@ -32,6 +32,7 @@ type InventoryItem = {
   serial_number: string;
   purchase_date: string | null;
   status: string;
+  status_reason?: string;
   notes: string;
   assignments: InventoryAssignment[];
 };

@@ -29,7 +29,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         model = InventoryItem
         fields = [
             'id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 
-            'photo_url', 'status', 'quantity', 'current_assignee', 'current_assignee_department', 
+            'photo_url', 'status', 'status_reason', 'quantity', 'current_assignee', 'current_assignee_department', 
             'managing_department', 'notes', 'assignments', 'created_at', 'updated_at'
         ]
 
@@ -38,7 +38,14 @@ class InventoryItemCreateUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryItem
-        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'quantity', 'managing_department', 'notes']
+        fields = ['id', 'code', 'name', 'category', 'serial_number', 'purchase_date', 'photo_url', 'status', 'status_reason', 'quantity', 'managing_department', 'notes']
+
+    def validate(self, data):
+        status = data.get('status')
+        status_reason = data.get('status_reason')
+        if status == 'unaccounted' and not status_reason:
+            raise serializers.ValidationError({"status_reason": "Reason is required when status is unaccounted."})
+        return data
 
 class InventoryItemAssignSerializer(serializers.Serializer):
     assigned_to = serializers.IntegerField(required=False, allow_null=True)
@@ -63,7 +70,7 @@ class BasicInventoryItemSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = InventoryItem
-        fields = ['id', 'code', 'name', 'category', 'serial_number', 'quantity', 'photo_url', 'status']
+        fields = ['id', 'code', 'name', 'category', 'serial_number', 'quantity', 'photo_url', 'status', 'status_reason']
 
 
 class MaintenanceLogAttachmentSerializer(serializers.ModelSerializer):
