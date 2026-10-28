@@ -38,7 +38,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCombobox } from "@/components/ui/user-combobox";
 import {
   AssigneeCombobox,
   AssigneeOption,

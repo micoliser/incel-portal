@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { Check, Loader2, ShieldAlert, X, Search } from "lucide-react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Check, Loader2, ShieldAlert, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -63,25 +63,7 @@ export function OrganizationMembersModal({
   const [isConfirming, setIsConfirming] = useState(false);
   const [overwriteUsers, setOverwriteUsers] = useState<User[]>([]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setMode("view");
-      setIsConfirming(false);
-      setSearch("");
-      fetchMembers();
-    }
-  }, [isOpen, entityId]);
-
-  useEffect(() => {
-    if (!isOpen || mode === "view" || mode === "remove") return;
-    
-    const timeoutId = setTimeout(() => {
-      fetchCandidates(search);
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [search, mode]);
-
-  const fetchMembers = async () => {
+  const fetchMembers = useCallback(async () => {
     try {
       setLoading(true);
       const resp = await apiClient.get("/admin/users", {
@@ -93,9 +75,9 @@ export function OrganizationMembersModal({
     } finally {
       setLoading(false);
     }
-  };
+  }, [entityType, entityId]);
 
-  const fetchCandidates = async (searchQuery: string = "") => {
+  const fetchCandidates = useCallback(async (searchQuery: string = "") => {
     if (isRequestInFlight.current) return;
     try {
       isRequestInFlight.current = true;
@@ -121,14 +103,31 @@ export function OrganizationMembersModal({
       data = data.filter((u: User) => (u as Record<string, unknown>)[`${entityType}_id`] !== entityId);
       
       setCandidates(data);
-      setCandidates(data);
     } catch (err) {
       toast.error(extractApiErrorMessage(err, "Failed to load candidates."));
     } finally {
       setLoading(false);
       isRequestInFlight.current = false;
     }
-  };
+  }, [entityType, parentEntityId, entityId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode("view");
+      setIsConfirming(false);
+      setSearch("");
+      fetchMembers();
+    }
+  }, [isOpen, fetchMembers]);
+
+  useEffect(() => {
+    if (!isOpen || mode === "view" || mode === "remove") return;
+    
+    const timeoutId = setTimeout(() => {
+      fetchCandidates(search);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [isOpen, search, mode, fetchCandidates]);
 
   const handleOpenAdd = () => {
     setSelectedUserIds(new Set());

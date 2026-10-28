@@ -243,7 +243,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     async (reason?: "inactivity" | "manual") => {
       try {
         await apiClient.post("/auth/logout", {});
-      } catch (e) {
+      } catch {
         // ignore errors on logout
       } finally {
         clearStoredTokens();

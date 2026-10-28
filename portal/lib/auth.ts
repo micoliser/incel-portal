@@ -1,4 +1,5 @@
-export function setStoredTokens(accessToken: string, refreshToken: string) {
+export function setStoredTokens(...args: unknown[]) {
+  void args;
   // Tokens are now stored in HttpOnly cookies by the backend.
 }
 

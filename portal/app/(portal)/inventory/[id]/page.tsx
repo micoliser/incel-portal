@@ -21,7 +21,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { UserCombobox } from "@/components/ui/user-combobox";
-import { AssigneeCombobox, AssigneeOption } from "@/components/inventory/assignee-combobox";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { InventoryDetailSkeleton } from "@/components/skeletons/inventory-detail-skeleton";
 import { MaintenanceLogsList } from "@/components/inventory/MaintenanceLogsList";
@@ -88,7 +87,6 @@ export default function InventoryItemDetail() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [assignForm, setAssignForm] = useState({ assigned_to: "", assigned_to_type: null as "user" | "department" | null, condition_notes: "" });
-  const [selectedAssignee, setSelectedAssignee] = useState<AssigneeOption | null>(null);
   const [returnForm, setReturnForm] = useState({ condition_notes: "" });
 
   const fetchData = useCallback(async () => {
@@ -134,7 +132,6 @@ export default function InventoryItemDetail() {
       toast.success("Item assigned successfully");
       setIsAssignOpen(false);
       setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
-      setSelectedAssignee(null);
       fetchData();
     } catch (error) {
       toast.error(extractApiErrorMessage(error, "Failed to assign item"));
@@ -333,7 +330,6 @@ export default function InventoryItemDetail() {
         setIsAssignOpen(open);
         if (!open) {
           setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
-          setSelectedAssignee(null);
         }
       }}>
         <DialogContent>

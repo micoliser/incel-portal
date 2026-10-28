@@ -262,7 +262,11 @@ export function CreateTaskModal({
         setUserCache((prev) => {
           const next = { ...prev };
           for (const u of initialDraft.assigned_to_users || []) {
-            next[u.id] = u as any;
+            next[u.id] = {
+              department_id: null,
+              is_active: true,
+              ...u,
+            };
           }
           return next;
         });
