@@ -57,7 +57,7 @@ export default function LoginPageClient({
       try {
         await apiClient.get("/me");
         router.replace(returnToPath ?? "/dashboard");
-      } catch (error) {
+      } catch {
         setIsCheckingAuth(false);
       }
     }
@@ -110,12 +110,10 @@ export default function LoginPageClient({
     setIsSubmitting(true);
 
     try {
-      const response = await apiClient.post("/auth/login", {
+      await apiClient.post("/auth/login", {
         email: email.trim(),
         password,
       });
-
-      const data = response.data as Record<string, unknown>;
 
       clearStoredTokens();
       try {

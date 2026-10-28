@@ -1,7 +1,6 @@
 "use client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
-import axios from "axios";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
