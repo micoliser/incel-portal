@@ -578,7 +578,7 @@ class TasksApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('comment', response.data['error']['details'])
 
-    def test_comment_must_not_exceed_200_characters(self):
+    def test_comment_must_not_exceed_500_characters(self):
         task = Task.objects.create(
             title='Bounded comment task',
             description='Comment length validation',
@@ -589,12 +589,20 @@ class TasksApiTests(BaseAPITestCase):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.post(
             reverse('task-comments', kwargs={'pk': task.id}),
-            {'comment': 'a' * 201},
+            {'comment': 'a' * 501},
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('comment', response.data['error']['details'])
+
+        # 500 characters should succeed
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': task.id}),
+            {'comment': 'a' * 500},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_comments_can_be_added_after_completion_and_show_in_timeline(self):
         task = Task.objects.create(

@@ -401,3 +401,23 @@ class OrganizationSummaryCache(models.Model):
     
     def __str__(self):
         return f"Org Summary - Week of {self.week_start_date}"
+
+
+class TaskDraft(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_drafts')
+    mode = models.CharField(max_length=20, default='one_time')
+    title = models.CharField(max_length=255, blank=True, default='')
+    description = models.TextField(blank=True, default='')
+    priority = models.CharField(max_length=20, default='medium')
+    deadline = models.DateTimeField(null=True, blank=True)
+    assigned_to_ids = models.JSONField(default=list, blank=True)
+    recurrence_config = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Draft: {self.title or 'Untitled'} ({self.user.username})"

@@ -79,13 +79,27 @@
     <div class="container">
       <div class="header">
         <h1>
-          {% if recipient_type == 'assigner' %}Task Created{% else %}You've Been
-          Assigned a Task{% endif %}
+          {% if recipient_type == 'manager_assignee' %}Task Assigned to Team Member{% elif recipient_type == 'manager_assigner' %}Task Delegated by Team Member{% elif recipient_type == 'manager_both' %}Team Task Assigned{% elif recipient_type == 'assigner' %}Task Created{% else %}You've Been Assigned a Task{% endif %}
         </h1>
       </div>
 
       <div class="content">
-        {% if recipient_type == 'assigner' %}
+        {% if recipient_type == 'manager_assignee' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          <strong>{{ assigner_name }}</strong> has assigned a new task to your team member <strong>{{ assignee_name }}</strong>.
+        </p>
+        {% elif recipient_type == 'manager_assigner' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          Your team member <strong>{{ assigner_name }}</strong> has assigned a new task to <strong>{{ assignee_name }}</strong>.
+        </p>
+        {% elif recipient_type == 'manager_both' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          <strong>{{ assigner_name }}</strong> has assigned a new task to <strong>{{ assignee_name }}</strong> within your team.
+        </p>
+        {% elif recipient_type == 'assigner' %}
         <p>Hi {{ recipient_name }},</p>
         <p>
           You have created a new task and assigned it to
@@ -112,7 +126,9 @@
           {% endif %}
         </div>
 
-        {% if recipient_type == 'assigner' %}
+        {% if recipient_type == 'manager_assignee' or recipient_type == 'manager_assigner' or recipient_type == 'manager_both' %}
+        <p>You can view and monitor the progress of this task in the portal.</p>
+        {% elif recipient_type == 'assigner' %}
         <p>Please check back soon for updates on this task's progress.</p>
         {% else %}
         <p>

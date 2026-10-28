@@ -4,6 +4,7 @@ from .views_api import (
     GoalsViewSet,
     RecurringScheduleViewSet,
     TaskViewSet,
+    TaskDraftViewSet,
     WeeklySummaryViewSet,
     SummaryFilesViewSet,
     ReportsMonthCalendarView,
@@ -16,6 +17,8 @@ from .views_api import (
 )
 
 router = DefaultRouter()
+router.register(r'tasks/drafts', TaskDraftViewSet, basename='task-draft-alias')
+router.register(r'task-drafts', TaskDraftViewSet, basename='task-draft')
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'recurring-schedules', RecurringScheduleViewSet, basename='recurring-schedule')
 router.register(r'goals', GoalsViewSet, basename='goal')

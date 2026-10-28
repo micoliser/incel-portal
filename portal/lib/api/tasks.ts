@@ -116,7 +116,8 @@ export interface GetUsersParams {
 export interface CreateTaskPayload {
   title: string;
   description?: string;
-  assigned_to_id: number;
+  assigned_to_id?: number;
+  assigned_to_ids?: number[];
   priority: "low" | "medium" | "high";
   deadline?: string;
 }
@@ -124,7 +125,8 @@ export interface CreateTaskPayload {
 export interface CreateRecurringSchedulePayload {
   title: string;
   description?: string;
-  assigned_to_id: number;
+  assigned_to_id?: number;
+  assigned_to_ids?: number[];
   priority: "low" | "medium" | "high";
   frequency: "daily" | "weekly";
   interval: number;
@@ -134,6 +136,35 @@ export interface CreateRecurringSchedulePayload {
   deadline_offset_minutes: number;
   start_at: string;
   end_at?: string | null;
+}
+
+export interface TaskDraft {
+  id: string;
+  mode: "one_time" | "recurring";
+  title: string;
+  description: string;
+  priority: "low" | "medium" | "high";
+  deadline: string | null;
+  assigned_to_ids: number[];
+  assigned_to_users?: Array<{
+    id: number;
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  }>;
+  recurrence_config: {
+    frequency?: "daily" | "weekly";
+    interval?: number;
+    weekdays?: number[];
+    times?: string[];
+    timezone?: string;
+    start_at?: string;
+    end_at?: string | null;
+    deadline_offset_minutes?: number;
+  };
+  created_at: string;
+  updated_at: string;
 }
 
 export interface GetTasksParams {
@@ -363,3 +394,28 @@ export async function getUsers(params?: GetUsersParams): Promise<UserOption[]> {
   });
   return response.data.results || response.data;
 }
+
+export async function getTaskDrafts(): Promise<TaskDraft[]> {
+  const response = await apiClient.get("/task-drafts/");
+  return extractListResults<TaskDraft>(response.data);
+}
+
+export async function createTaskDraft(
+  data: Partial<TaskDraft>,
+): Promise<TaskDraft> {
+  const response = await apiClient.post("/task-drafts/", data);
+  return response.data;
+}
+
+export async function updateTaskDraft(
+  id: string,
+  data: Partial<TaskDraft>,
+): Promise<TaskDraft> {
+  const response = await apiClient.patch(`/task-drafts/${id}/`, data);
+  return response.data;
+}
+
+export async function deleteTaskDraft(id: string): Promise<void> {
+  await apiClient.delete(`/task-drafts/${id}/`);
+}
+

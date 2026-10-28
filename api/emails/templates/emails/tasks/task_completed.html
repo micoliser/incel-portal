@@ -80,7 +80,23 @@
       </div>
 
       <div class="content">
-        {% if recipient_type == 'assigner' %}
+        {% if recipient_type == 'manager_assignee' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          Your team member <strong>{{ assignee_name }}</strong> has completed the task:
+          <strong>{{ task_name }}</strong>.
+        </p>
+        {% elif recipient_type == 'manager_assigner' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          The task <strong>{{ task_name }}</strong> delegated by your team member <strong>{{ assigner_name }}</strong> has been completed by <strong>{{ assignee_name }}</strong>.
+        </p>
+        {% elif recipient_type == 'manager_both' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          <strong>{{ assignee_name }}</strong> has completed the task <strong>{{ task_name }}</strong> assigned by <strong>{{ assigner_name }}</strong> within your team.
+        </p>
+        {% elif recipient_type == 'assigner' %}
         <p>Hi {{ recipient_name }},</p>
         <p>
           Great news! {{ assignee_name }} has completed the task you assigned:
@@ -98,12 +114,13 @@
           <p><span class="label">Task:</span> {{ task_name }}</p>
           {% if description %}
           <p><span class="label">Description:</span> {{ description }}</p>
-          {% endif %} {% if recipient_type == 'assigner' %}
-          <p><span class="label">Completed by:</span> {{ completed_by }}</p>
           {% endif %}
+          <p><span class="label">Completed by:</span> {{ completed_by|default:assignee_name }}</p>
         </div>
 
-        {% if recipient_type == 'assigner' %}
+        {% if recipient_type == 'manager_assignee' or recipient_type == 'manager_assigner' or recipient_type == 'manager_both' %}
+        <p>You can review the completed task details in the portal.</p>
+        {% elif recipient_type == 'assigner' %}
         <p>Review the task details to see the work that was completed.</p>
         {% else %}
         <p>

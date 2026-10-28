@@ -167,8 +167,13 @@
       <!-- Main Content -->
       <div class="content">
         <!-- Welcome -->
+        {% if is_manager_copy %}
+        <p>Hi {{ manager_name }},</p>
+        <p>Here is the weekly productivity summary for your team member <strong>{{ user_name }}</strong>.</p>
+        {% else %}
         <p>Hi {{ user_name }},</p>
         <p>Here's your weekly productivity summary. Great work this week!</p>
+        {% endif %}
 
         <!-- Main Metrics -->
         <div class="metrics-grid">

@@ -83,14 +83,28 @@
     <div class="container">
       <div class="header">
         <h1>
-          {% if recipient_type == 'assigner' %}Recurring Task Created{% else
-          %}Recurring Task Assigned{% endif %}
+          {% if recipient_type == 'manager_assignee' %}Recurring Task Assigned to Team Member{% elif recipient_type == 'manager_assigner' %}Recurring Task Delegated by Team Member{% elif recipient_type == 'manager_both' %}Team Recurring Task Created{% elif recipient_type == 'assigner' %}Recurring Task Created{% else %}Recurring Task Assigned{% endif %}
         </h1>
         <div class="recurring-badge">📅 Recurring Task</div>
       </div>
 
       <div class="content">
-        {% if recipient_type == 'assigner' %}
+        {% if recipient_type == 'manager_assignee' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          <strong>{{ assigner_name }}</strong> has assigned a new recurring task to your team member <strong>{{ assignee_name }}</strong>.
+        </p>
+        {% elif recipient_type == 'manager_assigner' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          Your team member <strong>{{ assigner_name }}</strong> has created a new recurring task assigned to <strong>{{ assignee_name }}</strong>.
+        </p>
+        {% elif recipient_type == 'manager_both' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          <strong>{{ assigner_name }}</strong> has assigned a recurring task to <strong>{{ assignee_name }}</strong> within your team.
+        </p>
+        {% elif recipient_type == 'assigner' %}
         <p>Hi {{ recipient_name }},</p>
         <p>
           You have created a new recurring task and assigned it to
@@ -117,12 +131,14 @@
           <p><strong>ℹ️ About Recurring Tasks</strong></p>
           <p>
             This task will repeat on the specified schedule. New instances will
-            be created automatically, and you'll receive notifications for each
+            be created automatically, and notifications will be sent for each
             occurrence.
           </p>
         </div>
 
-        {% if recipient_type == 'assigner' %}
+        {% if recipient_type == 'manager_assignee' or recipient_type == 'manager_assigner' or recipient_type == 'manager_both' %}
+        <p>You can manage and monitor this recurring schedule from your dashboard.</p>
+        {% elif recipient_type == 'assigner' %}
         <p>
           You can manage this recurring task and monitor its progress from your
           task dashboard.

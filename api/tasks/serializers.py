@@ -18,6 +18,7 @@ from .models import (
     Task,
     TaskActivity,
     TaskAttachment,
+    TaskDraft,
     WeeklySummary,
     WeeklySummaryUserShare,
     SummaryExport,
@@ -88,8 +89,8 @@ class TaskCommentCreateSerializer(serializers.Serializer):
         comment = value.strip()
         if not comment:
             raise serializers.ValidationError('Comment cannot be empty.')
-        if len(comment) > 200:
-            raise serializers.ValidationError('Comment cannot exceed 200 characters.')
+        if len(comment) > 500:
+            raise serializers.ValidationError('Comment cannot exceed 500 characters.')
         return comment
 
     def validate(self, attrs):
@@ -218,6 +219,13 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         queryset=User.objects.all(),
         write_only=True,
         source='assigned_to',
+        required=False,
+    )
+    assigned_to_ids = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        write_only=True,
+        many=True,
+        required=False,
     )
     paused_by = UserSimpleSerializer(read_only=True)
     ended_by = UserSimpleSerializer(read_only=True)
@@ -242,6 +250,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             'assigned_by',
             'assigned_to',
             'assigned_to_id',
+            'assigned_to_ids',
             'priority',
             'frequency',
             'interval',
@@ -327,30 +336,38 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         current_user = getattr(request, 'user', None)
         assigned_to = attrs.get('assigned_to')
+        assigned_to_ids = attrs.get('assigned_to_ids')
+        errors = {}
 
-        if current_user and assigned_to == current_user:
-            raise serializers.ValidationError(
-                {'assigned_to_id': 'You cannot assign a recurring task to yourself.'}
-            )
+        if not self.instance:
+            if not assigned_to and not assigned_to_ids:
+                errors['assigned_to_id'] = 'Please select at least one assignee.'
+            if assigned_to_ids and not assigned_to:
+                attrs['assigned_to'] = assigned_to_ids[0]
+
+        if current_user:
+            if assigned_to and assigned_to == current_user:
+                errors['assigned_to_id'] = 'You cannot assign a recurring task to yourself.'
+            if assigned_to_ids and current_user in assigned_to_ids:
+                errors['assigned_to_ids'] = 'You cannot assign a recurring task to yourself.'
 
         if attrs.get('frequency') == 'weekly' and not attrs.get('weekdays'):
-            raise serializers.ValidationError(
-                {'weekdays': 'Weekly recurring tasks require at least one weekday.'}
-            )
+            errors['weekdays'] = 'Weekly recurring tasks require at least one weekday.'
 
         if attrs.get('interval', 1) < 1:
-            raise serializers.ValidationError({'interval': 'Interval must be at least 1.'})
+            errors['interval'] = 'Interval must be at least 1.'
 
         start_at = attrs.get('start_at')
         end_at = attrs.get('end_at')
         if start_at and end_at and end_at < start_at:
-            raise serializers.ValidationError({'end_at': 'End date must be after the start date.'})
+            errors['end_at'] = 'End date must be after the start date.'
 
         if self.instance and start_at and start_at != self.instance.start_at:
             if self.instance.start_at <= timezone.now():
-                raise serializers.ValidationError(
-                    {'start_at': 'Start date cannot be changed after the schedule has started.'}
-                )
+                errors['start_at'] = 'Start date cannot be changed after the schedule has started.'
+
+        if errors:
+            raise serializers.ValidationError(errors)
 
         return attrs
 
@@ -367,7 +384,10 @@ class TaskSerializer(serializers.ModelSerializer):
         queryset=User.objects.all(), write_only=True, source='assigned_by', required=False
     )
     assigned_to_id = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), write_only=True, source='assigned_to'
+        queryset=User.objects.all(), write_only=True, source='assigned_to', required=False
+    )
+    assigned_to_ids = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), write_only=True, many=True, required=False
     )
 
     class Meta:
@@ -380,6 +400,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'assigned_by_id',
             'assigned_to',
             'assigned_to_id',
+            'assigned_to_ids',
             'status',
             'priority',
             'deadline',
@@ -402,24 +423,33 @@ class TaskSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         current_user = getattr(request, 'user', None)
         deadline = attrs.get('deadline')
+        errors = {}
 
         if not self.instance and deadline is None:
-            raise serializers.ValidationError(
-                {'deadline': 'Deadline is required.'}
-            )
+            errors['deadline'] = 'Deadline is required.'
 
         if deadline is not None:
             now = timezone.now().replace(second=0, microsecond=0)
             if deadline < now:
-                raise serializers.ValidationError(
-                    {'deadline': 'Deadline cannot be in the past.'}
-                )
+                errors['deadline'] = 'Deadline cannot be in the past.'
 
         assigned_to = attrs.get('assigned_to')
-        if assigned_to is not None and current_user and assigned_to == current_user:
-            raise serializers.ValidationError(
-                {'assigned_to_id': 'You cannot assign a task to yourself.'}
-            )
+        assigned_to_ids = attrs.get('assigned_to_ids')
+
+        if not self.instance:
+            if not assigned_to and not assigned_to_ids:
+                errors['assigned_to_id'] = 'Please select at least one assignee.'
+            if assigned_to_ids and not assigned_to:
+                attrs['assigned_to'] = assigned_to_ids[0]
+
+        if current_user:
+            if assigned_to and assigned_to == current_user:
+                errors['assigned_to_id'] = 'You cannot assign a task to yourself.'
+            if assigned_to_ids and current_user in assigned_to_ids:
+                errors['assigned_to_ids'] = 'You cannot assign a task to yourself.'
+
+        if errors:
+            raise serializers.ValidationError(errors)
 
         if not self.instance:
             return attrs
@@ -904,3 +934,30 @@ class DailyReportSendEmailSerializer(serializers.Serializer):
             seen.add(key)
             normalized.append(stripped)
         return normalized
+
+
+class TaskDraftSerializer(serializers.ModelSerializer):
+    assigned_to_users = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskDraft
+        fields = [
+            'id',
+            'mode',
+            'title',
+            'description',
+            'priority',
+            'deadline',
+            'assigned_to_ids',
+            'assigned_to_users',
+            'recurrence_config',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'assigned_to_users']
+
+    def get_assigned_to_users(self, obj):
+        if not obj.assigned_to_ids:
+            return []
+        users = User.objects.filter(id__in=obj.assigned_to_ids)
+        return UserSimpleSerializer(users, many=True).data
