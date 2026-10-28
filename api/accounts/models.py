@@ -44,13 +44,19 @@ class StaffProfile(TimeStampedModel):
         """
         Dynamically returns the user's direct superior based on their 
         deepest level in the organization hierarchy.
+        Escalates if the user is the leader of that structural unit.
         """
-        if self.team and self.team.team_lead:
+        if self.team and self.team.team_lead and self.team.team_lead != self.user:
             return self.team.team_lead
-        if self.unit and self.unit.supervisor:
-            return self.unit.supervisor
-        if self.department and self.department.line_manager:
-            return self.department.line_manager
+            
+        unit = self.unit or (self.team.unit if self.team else None)
+        if unit and unit.supervisor and unit.supervisor != self.user:
+            return unit.supervisor
+            
+        dept = self.department or (unit.department if unit else None)
+        if dept and dept.line_manager and dept.line_manager != self.user:
+            return dept.line_manager
+
         return None
 
     @property

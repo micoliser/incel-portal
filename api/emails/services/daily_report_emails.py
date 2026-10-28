@@ -100,33 +100,8 @@ class DailyReportEmailManager:
     @staticmethod
     def get_manager_for_user(user):
         """Helper to find the direct manager: team lead -> supervisor -> line manager."""
-        if not hasattr(user, 'staff_profile'):
-            return None
-            
-        profile = user.staff_profile
-        if not profile.department_id:
-            return None
-            
-        from organization.models import Department, Unit, Team
-        
-        # Check team lead
-        if profile.team_id:
-            team = Team.objects.filter(id=profile.team_id).first()
-            if team and team.team_lead_id and team.team_lead_id != user.id:
-                return team.team_lead
-                
-        # Check supervisor
-        if profile.unit_id:
-            unit = Unit.objects.filter(id=profile.unit_id).first()
-            if unit and unit.supervisor_id and unit.supervisor_id != user.id:
-                return unit.supervisor
-                
-        # Check line manager
-        dept = Department.objects.filter(id=profile.department_id).first()
-        if dept and dept.line_manager_id and dept.line_manager_id != user.id:
-            return dept.line_manager
-            
-        return None
+        from emails.utils import get_direct_manager
+        return get_direct_manager(user)
 
     @staticmethod
     def send_manager_notification(report, sender, is_eod=False) -> bool:

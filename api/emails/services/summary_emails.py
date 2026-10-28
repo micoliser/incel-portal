@@ -20,6 +20,9 @@ class WeeklySummaryEmailService(BaseEmailService):
 
     def _get_subject(self, context: Dict[str, Any]) -> str:
         week_start = context.get('week_start_display') or context.get('week_start') or 'this week'
+        if context.get('is_manager_copy'):
+            user_name = context.get('user_name', 'Team Member')
+            return f"Weekly Summary for {user_name} - Week of {week_start}"
         return f"Your Weekly Summary - Week of {week_start}"
 
 
@@ -62,6 +65,30 @@ class SummaryEmailManager:
                 user.email,
                 summary_data.get('week_start_date'),
             )
+
+        # Notify direct manager if applicable
+        try:
+            from emails.utils import get_direct_manager
+            manager = get_direct_manager(user)
+            if manager and manager.id != user.id and manager.email:
+                manager_context = dict(context)
+                manager_context['is_manager_copy'] = True
+                manager_context['manager_name'] = manager.get_full_name() or manager.username
+                manager_sent = service.send([manager.email], manager_context)
+                if manager_sent:
+                    logger.info(
+                        "Weekly summary email for %s sent to manager %s",
+                        user.email,
+                        manager.email,
+                    )
+                else:
+                    logger.error(
+                        "Weekly summary email for %s failed to manager %s",
+                        user.email,
+                        manager.email,
+                    )
+        except Exception as e:
+            logger.error("Failed to send manager copy of weekly summary for %s: %s", user.id, str(e))
 
         return sent
     

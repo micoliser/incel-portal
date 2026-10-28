@@ -18,6 +18,16 @@ class TaskCreatedEmailService(BaseEmailService):
 
         if recipient_type == 'assigner':
             return f"You created a new task: {task_name}"
+        if recipient_type == 'manager_both':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Team Task] {assigner_name} assigned a task to {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Task Assigned] {assignee_name} was assigned: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Task Delegation] {assigner_name} assigned a task: {task_name}"
         return f"You've been assigned a new task: {task_name}"
 
 
@@ -33,6 +43,16 @@ class TaskCompletedEmailService(BaseEmailService):
 
         if recipient_type == 'assigner':
             return f"Task completed: {task_name}"
+        if recipient_type == 'manager_both':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Team Task Completed] {assignee_name} completed task from {assigner_name}: {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Task Completed] {assignee_name} completed: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Task Completed] Task delegated by {assigner_name} completed: {task_name}"
         return f"You completed a task: {task_name}"
 
 
@@ -48,6 +68,16 @@ class RecurringTaskCreatedEmailService(BaseEmailService):
 
         if recipient_type == 'assigner':
             return f"You created a recurring task: {task_name}"
+        if recipient_type == 'manager_both':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Team Recurring Task] {assigner_name} created recurring task for {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Recurring Task Assigned] {assignee_name} assigned: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Recurring Task Delegation] {assigner_name} created recurring task: {task_name}"
         return f"You've been assigned a recurring task: {task_name}"
 
 
@@ -59,6 +89,15 @@ class RecurringTaskUpdatedEmailService(BaseEmailService):
 
     def _get_subject(self, context: Dict[str, Any]) -> str:
         task_name = context.get('task_name', 'Recurring Task')
+        recipient_type = context.get('recipient_type', 'assignee')
+        if recipient_type == 'manager_both':
+            return f"[Team Recurring Task Updated] {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Recurring Task Updated] {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Recurring Task Updated] {assigner_name}'s task: {task_name}"
         return f"Recurring task updated: {task_name}"
 
 
@@ -70,6 +109,15 @@ class RecurringTaskPausedEmailService(BaseEmailService):
 
     def _get_subject(self, context: Dict[str, Any]) -> str:
         task_name = context.get('task_name', 'Recurring Task')
+        recipient_type = context.get('recipient_type', 'assignee')
+        if recipient_type == 'manager_both':
+            return f"[Team Recurring Task Paused] {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Recurring Task Paused] {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Recurring Task Paused] {assigner_name}'s task: {task_name}"
         return f"Recurring task paused: {task_name}"
 
 
@@ -81,6 +129,15 @@ class RecurringTaskResumedEmailService(BaseEmailService):
 
     def _get_subject(self, context: Dict[str, Any]) -> str:
         task_name = context.get('task_name', 'Recurring Task')
+        recipient_type = context.get('recipient_type', 'assignee')
+        if recipient_type == 'manager_both':
+            return f"[Team Recurring Task Resumed] {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Recurring Task Resumed] {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Recurring Task Resumed] {assigner_name}'s task: {task_name}"
         return f"Recurring task resumed: {task_name}"
 
 
@@ -92,6 +149,15 @@ class RecurringTaskEndedEmailService(BaseEmailService):
 
     def _get_subject(self, context: Dict[str, Any]) -> str:
         task_name = context.get('task_name', 'Recurring Task')
+        recipient_type = context.get('recipient_type', 'assignee')
+        if recipient_type == 'manager_both':
+            return f"[Team Recurring Task Ended] {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Recurring Task Ended] {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Recurring Task Ended] {assigner_name}'s task: {task_name}"
         return f"Recurring task ended: {task_name}"
 
 
@@ -140,13 +206,17 @@ class TaskEmailManager:
             )
             return
 
+        assignee_name = getattr(assigned_to, 'get_full_name', lambda: None)() or getattr(assigned_to, 'username', '')
+        assigner_name = getattr(created_by, 'get_full_name', lambda: None)() or getattr(created_by, 'username', '')
+
         # Context for assignee
         assignee_context = {
             'task_id': task_id,
             'task_name': task_name,
             'recipient_type': 'assignee',
-            'recipient_name': getattr(assigned_to, 'get_full_name', lambda: None)() or getattr(assigned_to, 'username', ''),
-            'assigner_name': getattr(created_by, 'get_full_name', lambda: None)() or getattr(created_by, 'username', ''),
+            'recipient_name': assignee_name,
+            'assignee_name': assignee_name,
+            'assigner_name': assigner_name,
             'description': description,
             'due_date': due_date,
             'priority': priority,
@@ -167,6 +237,87 @@ class TaskEmailManager:
         except Exception as e:
             logger.error(f"Failed to send assignee email for task {task_id}: {str(e)}")
 
+        # Notify direct managers
+        TaskEmailManager._notify_managers(
+            service,
+            assignee_context,
+            assigned_to,
+            created_by,
+            task_id,
+            'task_created',
+        )
+
+    @staticmethod
+    def _notify_managers(
+        service,
+        base_context: Dict[str, Any],
+        assignee: Any,
+        assigner: Any,
+        item_id: str,
+        event_name: str,
+    ) -> None:
+        """
+        Notifies the direct manager of the assignee and/or assigner,
+        applying deduplication and conflict rules.
+        """
+        try:
+            from emails.utils import get_direct_manager
+
+            assignee_manager = get_direct_manager(assignee) if assignee else None
+            assigner_manager = get_direct_manager(assigner) if assigner else None
+
+            assignee_id = getattr(assignee, 'id', None)
+            assigner_id = getattr(assigner, 'id', None)
+
+            # Conflict Rule: If a manager IS the assigner or assignee, do not send that manager an oversight email
+            if assignee_manager and (assignee_manager.id == assigner_id or assignee_manager.id == assignee_id):
+                assignee_manager = None
+
+            if assigner_manager and (assigner_manager.id == assigner_id or assigner_manager.id == assignee_id):
+                assigner_manager = None
+
+            # Case 1: Both share the same manager
+            if assignee_manager and assigner_manager and assignee_manager.id == assigner_manager.id:
+                context = dict(base_context)
+                context['recipient_type'] = 'manager_both'
+                context['recipient_name'] = assignee_manager.get_full_name() or assignee_manager.username
+                TaskEmailManager._send_to_recipient(
+                    service,
+                    assignee_manager.email,
+                    context,
+                    item_id,
+                    f'manager_both_{event_name}',
+                )
+                return
+
+            # Case 2: Assignee manager
+            if assignee_manager:
+                context = dict(base_context)
+                context['recipient_type'] = 'manager_assignee'
+                context['recipient_name'] = assignee_manager.get_full_name() or assignee_manager.username
+                TaskEmailManager._send_to_recipient(
+                    service,
+                    assignee_manager.email,
+                    context,
+                    item_id,
+                    f'manager_assignee_{event_name}',
+                )
+
+            # Case 3: Assigner manager
+            if assigner_manager:
+                context = dict(base_context)
+                context['recipient_type'] = 'manager_assigner'
+                context['recipient_name'] = assigner_manager.get_full_name() or assigner_manager.username
+                TaskEmailManager._send_to_recipient(
+                    service,
+                    assigner_manager.email,
+                    context,
+                    item_id,
+                    f'manager_assigner_{event_name}',
+                )
+        except Exception as e:
+            logger.error(f"Failed to notify managers for {event_name} {item_id}: {str(e)}")
+
     @staticmethod
     def send_task_completed_emails(task: Any) -> None:
         """Send emails when task is completed."""
@@ -179,21 +330,31 @@ class TaskEmailManager:
             )
             return
 
+        assigner_name = created_by.get_full_name() or created_by.username
+        assignee_name = completed_by.get_full_name() or completed_by.username
         assigner_context = {
             'task_id': str(task.id),
             'task_name': task.title,
             'recipient_type': 'assigner',
-            'recipient_name': created_by.get_full_name()
-            or created_by.username,
-            'assignee_name': completed_by.get_full_name()
-            or completed_by.username,
+            'recipient_name': assigner_name,
+            'assigner_name': assigner_name,
+            'assignee_name': assignee_name,
             'description': task.description,
-            'completed_by': completed_by.get_full_name()
-            or completed_by.username,
+            'completed_by': assignee_name,
         }
 
         service = TaskCompletedEmailService()
         TaskEmailManager._send_to_recipient(service, created_by.email, assigner_context, str(task.id), 'assigner')
+
+        # Notify direct managers
+        TaskEmailManager._notify_managers(
+            service,
+            assigner_context,
+            completed_by,
+            created_by,
+            str(task.id),
+            'task_completed',
+        )
 
     @staticmethod
     def send_recurring_task_created_emails(task: Any) -> None:
@@ -208,14 +369,15 @@ class TaskEmailManager:
             )
             return
 
+        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        assigner_name = created_by.get_full_name() or created_by.username
         assignee_context = {
             'task_id': str(task.id),
             'task_name': task.title,
             'recipient_type': 'assignee',
-            'recipient_name': assigned_to.get_full_name()
-            or assigned_to.username,
-            'assigner_name': created_by.get_full_name()
-            or created_by.username,
+            'recipient_name': assignee_name,
+            'assignee_name': assignee_name,
+            'assigner_name': assigner_name,
             'description': task.description,
             'recurrence_pattern': recurrence_pattern,
             'is_recurring': True,
@@ -224,17 +386,30 @@ class TaskEmailManager:
         service = RecurringTaskCreatedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, assignee_context, str(task.id), 'assignee')
 
+        # Notify direct managers
+        TaskEmailManager._notify_managers(
+            service,
+            assignee_context,
+            assigned_to,
+            created_by,
+            str(task.id),
+            'recurring_task_created',
+        )
+
     @staticmethod
     def _build_recurring_schedule_context(schedule: Any, recipient_type: str, event_label: str) -> Dict[str, Any]:
         assigned_by = getattr(schedule, 'assigned_by', None)
         assigned_to = getattr(schedule, 'assigned_to', None)
+        assignee_name = getattr(assigned_to, 'get_full_name', lambda: None)() or getattr(assigned_to, 'username', '') if assigned_to else ''
+        assigner_name = getattr(assigned_by, 'get_full_name', lambda: None)() or getattr(assigned_by, 'username', '') if assigned_by else ''
 
         return {
             'schedule_id': str(getattr(schedule, 'id', getattr(schedule, 'pk', ''))),
             'task_name': getattr(schedule, 'title', 'Recurring Task'),
             'recipient_type': recipient_type,
-            'recipient_name': getattr(assigned_to, 'get_full_name', lambda: None)() or getattr(assigned_to, 'username', '') if assigned_to else '',
-            'assigner_name': getattr(assigned_by, 'get_full_name', lambda: None)() or getattr(assigned_by, 'username', '') if assigned_by else '',
+            'recipient_name': assignee_name,
+            'assignee_name': assignee_name,
+            'assigner_name': assigner_name,
             'description': getattr(schedule, 'description', ''),
             'frequency': getattr(schedule, 'frequency', ''),
             'interval': getattr(schedule, 'interval', 1),
@@ -250,6 +425,7 @@ class TaskEmailManager:
     @staticmethod
     def send_recurring_task_updated_emails(schedule: Any) -> None:
         assigned_to = getattr(schedule, 'assigned_to', None)
+        assigned_by = getattr(schedule, 'assigned_by', None)
         if not assigned_to:
             from emails import logger as emails_logger
 
@@ -265,10 +441,12 @@ class TaskEmailManager:
         )
         service = RecurringTaskUpdatedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+        TaskEmailManager._notify_managers(service, context, assigned_to, assigned_by, str(schedule.id), 'recurring_updated')
 
     @staticmethod
     def send_recurring_task_paused_emails(schedule: Any) -> None:
         assigned_to = getattr(schedule, 'assigned_to', None)
+        assigned_by = getattr(schedule, 'assigned_by', None)
         if not assigned_to:
             from emails import logger as emails_logger
 
@@ -284,10 +462,12 @@ class TaskEmailManager:
         )
         service = RecurringTaskPausedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+        TaskEmailManager._notify_managers(service, context, assigned_to, assigned_by, str(schedule.id), 'recurring_paused')
 
     @staticmethod
     def send_recurring_task_resumed_emails(schedule: Any) -> None:
         assigned_to = getattr(schedule, 'assigned_to', None)
+        assigned_by = getattr(schedule, 'assigned_by', None)
         if not assigned_to:
             from emails import logger as emails_logger
 
@@ -303,10 +483,12 @@ class TaskEmailManager:
         )
         service = RecurringTaskResumedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+        TaskEmailManager._notify_managers(service, context, assigned_to, assigned_by, str(schedule.id), 'recurring_resumed')
 
     @staticmethod
     def send_recurring_task_ended_emails(schedule: Any) -> None:
         assigned_to = getattr(schedule, 'assigned_to', None)
+        assigned_by = getattr(schedule, 'assigned_by', None)
         if not assigned_to:
             from emails import logger as emails_logger
 
@@ -322,3 +504,4 @@ class TaskEmailManager:
         )
         service = RecurringTaskEndedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
+        TaskEmailManager._notify_managers(service, context, assigned_to, assigned_by, str(schedule.id), 'recurring_ended')

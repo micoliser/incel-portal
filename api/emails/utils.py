@@ -9,6 +9,43 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def get_direct_manager(user: Any) -> Optional[User]:
+    """
+    Returns the user's direct manager from their staff profile,
+    ensuring the manager is active, has a valid email, and is not the user.
+    """
+    if not user:
+        return None
+    try:
+        profile = getattr(user, 'staff_profile', None)
+        if not profile:
+            from accounts.models import StaffProfile
+            profile = StaffProfile.objects.select_related(
+                'team__team_lead',
+                'team__unit__supervisor',
+                'team__unit__department__line_manager',
+                'unit__supervisor',
+                'unit__department__line_manager',
+                'department__line_manager',
+            ).filter(user=user).first()
+
+        if not profile:
+            return None
+
+        manager = profile.direct_manager
+        if manager and getattr(manager, 'id', None) != getattr(user, 'id', None) and getattr(manager, 'is_active', True):
+            email = getattr(manager, 'email', '')
+            if email and email.strip():
+                return manager
+    except Exception as e:
+        logger.warning(
+            "Error resolving direct manager for user %s: %s",
+            getattr(user, 'id', None),
+            str(e),
+        )
+    return None
+
+
 class EmailNotificationHelper:
     """Helper class for managing email notifications."""
 

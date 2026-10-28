@@ -80,11 +80,28 @@
       </div>
 
       <div class="content">
+        {% if recipient_type == 'manager_assignee' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          The recurring task <strong>{{ task_name }}</strong> assigned to your team member <strong>{{ assignee_name }}</strong> has been {{ event_label }}.
+        </p>
+        {% elif recipient_type == 'manager_assigner' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          The recurring task <strong>{{ task_name }}</strong> created by your team member <strong>{{ assigner_name }}</strong> has been {{ event_label }}.
+        </p>
+        {% elif recipient_type == 'manager_both' %}
+        <p>Hi {{ recipient_name }},</p>
+        <p>
+          The recurring task <strong>{{ task_name }}</strong> (assigned to <strong>{{ assignee_name }}</strong>) has been {{ event_label }} within your team.
+        </p>
+        {% else %}
         <p>Hi {{ recipient_name }},</p>
         <p>
           Your recurring task <strong>{{ task_name }}</strong> has been {{
           event_label }}.
         </p>
+        {% endif %}
 
         <div class="task-details">
           <p><span class="label">Task:</span> {{ task_name }}</p>
