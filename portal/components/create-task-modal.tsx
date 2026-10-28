@@ -1,9 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { AlertCircle, Loader2, HelpCircle } from "lucide-react";
+import { AlertCircle, Loader2, HelpCircle, X, Check, Bookmark } from "lucide-react";
 import { toast } from "sonner";
-import { createRecurringSchedule, createTask, getUsers } from "@/lib/api/tasks";
+import {
+  createRecurringSchedule,
+  createTask,
+  getUsers,
+  createTaskDraft,
+  updateTaskDraft,
+  deleteTaskDraft,
+  type TaskDraft,
+} from "@/lib/api/tasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +28,7 @@ type User = Awaited<ReturnType<typeof getUsers>>[number];
 
 type FormErrors = Partial<{
   title: string;
-  assigned_to_id: string;
+  assigned_to_ids: string;
   deadline: string;
   mode: string;
   frequency: string;
@@ -54,7 +62,7 @@ const initialForm = {
   mode: "one_time" as CreateMode,
   title: "",
   description: "",
-  assigned_to_id: "",
+  assigned_to_ids: [] as number[],
   priority: "medium",
   deadline: "",
   frequency: "daily",
@@ -83,7 +91,7 @@ function validateForm(
     mode: CreateMode;
     title: string;
     description: string;
-    assigned_to_id: string;
+    assigned_to_ids: number[];
     deadline: string;
     priority: string;
     frequency: string;
@@ -103,8 +111,8 @@ function validateForm(
     errors.title = "Task title is required.";
   }
 
-  if (!formData.assigned_to_id) {
-    errors.assigned_to_id = "Please select a user to assign this task to.";
+  if (!formData.assigned_to_ids || formData.assigned_to_ids.length === 0) {
+    errors.assigned_to_ids = "Please select at least one user to assign this task to.";
   }
 
   if (formData.mode === "one_time") {
@@ -177,6 +185,8 @@ interface CreateTaskModalProps {
   onOpenChange: (open: boolean) => void;
   onTaskCreated: () => void;
   currentUserId?: number | null;
+  initialDraft?: TaskDraft | null;
+  onDraftSaved?: () => void;
 }
 
 export function CreateTaskModal({
@@ -184,11 +194,17 @@ export function CreateTaskModal({
   onOpenChange,
   onTaskCreated,
   currentUserId,
+  initialDraft,
+  onDraftSaved,
 }: CreateTaskModalProps) {
   const [users, setUsers] = useState<User[]>([]);
+  const [userCache, setUserCache] = useState<Record<number, User>>({});
   const [initialLoading, setInitialLoading] = useState(true);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const isHandledRef = useRef(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [assigneeSearchInput, setAssigneeSearchInput] = useState("");
@@ -210,7 +226,71 @@ export function CreateTaskModal({
     setAssigneeSearchQuery("");
     setAssigneeHasTyped(false);
     setIsAssigneeDropdownOpen(false);
+    setDraftId(null);
   };
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (initialDraft) {
+      setDraftId(initialDraft.id);
+      const isRecurring = initialDraft.mode === "recurring";
+      const rec = (initialDraft.recurrence_config || {}) as {
+        frequency?: "daily" | "weekly";
+        interval?: number;
+        weekdays?: number[];
+        times?: string[];
+        timezone?: string;
+        start_at?: string;
+        end_at?: string | null;
+        deadline_offset_minutes?: number;
+      };
+
+      const formatIsoToLocalInput = (iso?: string | null) => {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "";
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const hours = String(d.getHours()).padStart(2, "0");
+        const minutes = String(d.getMinutes()).padStart(2, "0");
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+      };
+
+      if (initialDraft.assigned_to_users) {
+        setUserCache((prev) => {
+          const next = { ...prev };
+          for (const u of initialDraft.assigned_to_users || []) {
+            next[u.id] = u as any;
+          }
+          return next;
+        });
+      }
+
+      setFormData({
+        mode: isRecurring ? "recurring" : "one_time",
+        title: initialDraft.title || "",
+        description: initialDraft.description || "",
+        assigned_to_ids: initialDraft.assigned_to_ids || [],
+        priority: initialDraft.priority || "medium",
+        deadline: formatIsoToLocalInput(initialDraft.deadline),
+        frequency: rec.frequency || "daily",
+        interval: String(rec.interval || "1"),
+        weekdays: rec.weekdays || [],
+        times: rec.times && rec.times.length > 0 ? rec.times : ["09:00"],
+        timezone: rec.timezone || "Asia/Dubai",
+        start_at: formatIsoToLocalInput(rec.start_at),
+        end_at: formatIsoToLocalInput(rec.end_at),
+        deadline_offset_minutes: String(rec.deadline_offset_minutes ?? "0"),
+      });
+      isHandledRef.current = false;
+    } else {
+      setDraftId(null);
+      setFormData({ ...initialForm });
+      isHandledRef.current = false;
+    }
+  }, [open, initialDraft]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -250,6 +330,13 @@ export function CreateTaskModal({
             ? data
             : data.filter((user) => user.id !== currentUserId);
         setUsers(selectableUsers);
+        setUserCache((prev) => {
+          const next = { ...prev };
+          for (const u of selectableUsers) {
+            next[u.id] = u;
+          }
+          return next;
+        });
         setApiError(null);
       } catch {
         const message = "Failed to load users";
@@ -267,15 +354,123 @@ export function CreateTaskModal({
   useEffect(() => {
     if (!isAssigneeDropdownOpen) return;
 
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        assigneeDropdownRef.current &&
+        !assigneeDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsAssigneeDropdownOpen(false);
+      }
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsAssigneeDropdownOpen(false);
       }
     };
 
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [isAssigneeDropdownOpen]);
+
+  const buildDraftPayload = (data: typeof formData): Partial<TaskDraft> => {
+    return {
+      mode: data.mode,
+      title: data.title,
+      description: data.description,
+      priority: data.priority as "low" | "medium" | "high",
+      deadline: data.deadline ? new Date(data.deadline).toISOString() : null,
+      assigned_to_ids: data.assigned_to_ids,
+      recurrence_config: {
+        frequency: data.frequency as "daily" | "weekly",
+        interval: Number(data.interval || 1),
+        weekdays: data.weekdays,
+        times: data.times,
+        timezone: data.timezone,
+        start_at: data.start_at
+          ? new Date(data.start_at).toISOString()
+          : undefined,
+        end_at: data.end_at ? new Date(data.end_at).toISOString() : null,
+        deadline_offset_minutes: Number(data.deadline_offset_minutes || 0),
+      },
+    };
+  };
+
+  const hasContentToDraft = (data: typeof formData) => {
+    return (
+      data.title.trim().length > 0 ||
+      data.description.trim().length > 0 ||
+      data.assigned_to_ids.length > 0 ||
+      Boolean(data.deadline) ||
+      (data.mode === "recurring" && Boolean(data.start_at))
+    );
+  };
+
+  const handleSaveDraft = async () => {
+    try {
+      setSavingDraft(true);
+      const payload = buildDraftPayload(formData);
+      if (draftId) {
+        await updateTaskDraft(draftId, payload);
+      } else {
+        const saved = await createTaskDraft(payload);
+        setDraftId(saved.id);
+      }
+      toast.success("Draft saved successfully");
+      isHandledRef.current = true;
+      resetForm();
+      onOpenChange(false);
+      onDraftSaved?.();
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err, "Failed to save draft"));
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handleModalClose = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (!isHandledRef.current && hasContentToDraft(formData)) {
+        const payload = buildDraftPayload(formData);
+        if (draftId) {
+          updateTaskDraft(draftId, payload)
+            .then(() => onDraftSaved?.())
+            .catch(() => {});
+        } else {
+          createTaskDraft(payload)
+            .then(() => onDraftSaved?.())
+            .catch(() => {});
+        }
+        toast.info("Draft saved automatically");
+      }
+      resetForm();
+    } else {
+      isHandledRef.current = false;
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const handleToggleAssignee = (user: User) => {
+    setUserCache((prev) => ({ ...prev, [user.id]: user }));
+    setFormData((curr) => {
+      const exists = curr.assigned_to_ids.includes(user.id);
+      const nextIds = exists
+        ? curr.assigned_to_ids.filter((id) => id !== user.id)
+        : [...curr.assigned_to_ids, user.id];
+      return { ...curr, assigned_to_ids: nextIds };
+    });
+    setFormErrors((curr) => ({
+      ...curr,
+      assigned_to_ids: undefined,
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,7 +489,7 @@ export function CreateTaskModal({
         await createRecurringSchedule({
           title: formData.title,
           description: formData.description,
-          assigned_to_id: Number(formData.assigned_to_id),
+          assigned_to_ids: formData.assigned_to_ids,
           priority: formData.priority as "low" | "medium" | "high",
           frequency: formData.frequency as "daily" | "weekly",
           interval: Number(formData.interval),
@@ -314,18 +509,26 @@ export function CreateTaskModal({
         await createTask({
           title: formData.title,
           description: formData.description,
-          assigned_to_id: Number(formData.assigned_to_id),
+          assigned_to_ids: formData.assigned_to_ids,
           priority: formData.priority as "low" | "medium" | "high",
           deadline: formData.deadline || undefined,
         });
         toast.success("Task created successfully");
       }
-      setFormData({
-        ...initialForm,
-      });
+
+      if (draftId) {
+        try {
+          await deleteTaskDraft(draftId);
+        } catch {
+          // ignore cleanup error
+        }
+      }
+
+      isHandledRef.current = true;
       resetForm();
       onOpenChange(false);
       onTaskCreated();
+      onDraftSaved?.();
     } catch (err) {
       setApiError(extractApiErrorMessage(err, "Failed to create task"));
     } finally {
@@ -334,15 +537,7 @@ export function CreateTaskModal({
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          resetForm();
-        }
-        onOpenChange(nextOpen);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleModalClose}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Task</DialogTitle>
@@ -431,11 +626,53 @@ export function CreateTaskModal({
 
             <div>
               <Label htmlFor="assigned_to">Assign To *</Label>
+
+              {formData.assigned_to_ids.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/60 my-2">
+                  {formData.assigned_to_ids.map((id) => {
+                    const cached = userCache[id];
+                    const fullName = cached
+                      ? [cached.first_name, cached.last_name]
+                          .filter(Boolean)
+                          .join(" ")
+                      : null;
+                    const label = fullName || cached?.email || `User #${id}`;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/80"
+                      >
+                        <span>{label}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData((curr) => ({
+                              ...curr,
+                              assigned_to_ids: curr.assigned_to_ids.filter(
+                                (item) => item !== id,
+                              ),
+                            }))
+                          }
+                          className="text-blue-500 hover:text-red-600 dark:hover:text-red-400 focus:outline-none"
+                          title="Remove user"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="relative mt-2" ref={assigneeDropdownRef}>
                 <Input
                   id="assigned_to"
                   type="text"
-                  placeholder="Select or search assignee"
+                  placeholder={
+                    formData.assigned_to_ids.length > 0
+                      ? "Search to add more assignees..."
+                      : "Select or search assignees"
+                  }
                   value={assigneeSearchInput}
                   onFocus={() => {
                     setAssigneeHasTyped(false);
@@ -448,16 +685,11 @@ export function CreateTaskModal({
                   onChange={(e) => {
                     setAssigneeSearchInput(e.target.value);
                     setAssigneeHasTyped(true);
-                    setFormData({ ...formData, assigned_to_id: "" });
-                    setFormErrors((current) => ({
-                      ...current,
-                      assigned_to_id: undefined,
-                    }));
                     setIsAssigneeDropdownOpen(true);
                   }}
-                  disabled={submitting}
+                  disabled={submitting || savingDraft}
                   autoComplete="off"
-                  aria-invalid={Boolean(formErrors.assigned_to_id)}
+                  aria-invalid={Boolean(formErrors.assigned_to_ids)}
                 />
 
                 {isAssigneeDropdownOpen && (
@@ -479,24 +711,26 @@ export function CreateTaskModal({
                         const label = fullName
                           ? `${fullName} (${user.email})`
                           : user.email;
+                        const isSelected = formData.assigned_to_ids.includes(
+                          user.id,
+                        );
 
                         return (
                           <button
                             key={user.id}
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              setFormData({
-                                ...formData,
-                                assigned_to_id: String(user.id),
-                              });
-                              setAssigneeSearchInput(label);
-                              setAssigneeHasTyped(false);
-                              setIsAssigneeDropdownOpen(false);
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                            onClick={() => handleToggleAssignee(user)}
+                            className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                              isSelected
+                                ? "bg-blue-50/70 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                : ""
+                            }`}
                           >
-                            {label}
+                            <span>{label}</span>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                            )}
                           </button>
                         );
                       })
@@ -504,9 +738,9 @@ export function CreateTaskModal({
                   </div>
                 )}
               </div>
-              {formErrors.assigned_to_id ? (
+              {formErrors.assigned_to_ids ? (
                 <p className="mt-1 text-xs text-destructive">
-                  {formErrors.assigned_to_id}
+                  {formErrors.assigned_to_ids}
                 </p>
               ) : null}
             </div>
@@ -874,15 +1108,31 @@ export function CreateTaskModal({
               </div>
             ) : null}
 
-            <div className="flex gap-3 pt-2 border-t">
-              <Button type="submit" disabled={submitting}>
-                {submitting && (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                )}
-                {formData.mode === "recurring"
-                  ? "Create Schedule"
-                  : "Create Task"}
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t">
+              <div className="flex gap-2">
+                <Button type="submit" disabled={submitting || savingDraft}>
+                  {submitting && (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  )}
+                  {formData.mode === "recurring"
+                    ? "Create Schedule"
+                    : "Create Task"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleSaveDraft}
+                  disabled={submitting || savingDraft}
+                  className="gap-1.5"
+                >
+                  {savingDraft ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Bookmark className="h-4 w-4" />
+                  )}
+                  Save as Draft
+                </Button>
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -890,7 +1140,7 @@ export function CreateTaskModal({
                   resetForm();
                   onOpenChange(false);
                 }}
-                disabled={submitting}
+                disabled={submitting || savingDraft}
               >
                 Cancel
               </Button>

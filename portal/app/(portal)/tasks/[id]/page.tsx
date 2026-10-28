@@ -49,7 +49,7 @@ const priorityColors: Record<string, string> = {
   high: "text-red-500",
 };
 
-const COMMENT_MAX_LENGTH = 200;
+const COMMENT_MAX_LENGTH = 500;
 
 const backButtonClassName =
   "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";

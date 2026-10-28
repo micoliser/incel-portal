@@ -21,7 +21,7 @@ from emails.services.daily_report_emails import DailyReportEmailManager
 from emails.services.task_emails import TaskEmailManager
 from common.permissions import has_global_access
 from .models import (
-    RecurringSchedule, Task, TaskActivity, TaskAttachment, WeeklySummary,
+    RecurringSchedule, Task, TaskActivity, TaskAttachment, TaskDraft, WeeklySummary,
     WeeklySummaryShare, WeeklySummaryUserShare, SummaryExport, UserGoal,
     DailyReport, DailyReportSubreport, DailyReportComment,
 )
@@ -35,6 +35,7 @@ from .serializers import (
     TaskCommentCreateSerializer,
     RecurringScheduleSerializer,
     TaskSerializer,
+    TaskDraftSerializer,
     TaskActivitySerializer,
     WeeklySummarySerializer,
     WeeklySummaryListSerializer,
@@ -194,6 +195,39 @@ class TaskViewSet(ModelViewSet):
         if self.action in ['list', 'create']:
             return [IsAuthenticated()]
         return [IsAuthenticated(), IsTaskAssignedOrAssigner()]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        assignees = serializer.validated_data.get('assigned_to_ids')
+        if not assignees:
+            single = serializer.validated_data.get('assigned_to')
+            assignees = [single] if single else []
+
+        with transaction.atomic():
+            created_tasks = []
+            for assignee in assignees:
+                task = create_task_with_side_effects(
+                    assigner=request.user,
+                    assignee=assignee,
+                    title=serializer.validated_data['title'],
+                    description=serializer.validated_data.get('description', ''),
+                    priority=serializer.validated_data['priority'],
+                    deadline=serializer.validated_data['deadline'],
+                    request=request,
+                )
+                created_tasks.append(task)
+
+        headers = self.get_success_headers(serializer.data)
+        serialized = TaskSerializer(created_tasks, many=True, context={'request': request}).data
+        if len(created_tasks) == 1 and 'assigned_to_ids' not in request.data:
+            return Response(serialized[0], status=status.HTTP_201_CREATED, headers=headers)
+        return Response({
+            'count': len(created_tasks),
+            'tasks': serialized,
+            'id': serialized[0]['id'] if serialized else None,
+        }, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         task = create_task_with_side_effects(
@@ -363,6 +397,56 @@ class RecurringScheduleViewSet(ModelViewSet):
         return RecurringSchedule.objects.filter(
             models.Q(assigned_to=user) | models.Q(assigned_by=user)
         ).distinct()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        assignees = serializer.validated_data.get('assigned_to_ids')
+        if not assignees:
+            single = serializer.validated_data.get('assigned_to')
+            assignees = [single] if single else []
+
+        with transaction.atomic():
+            created_schedules = []
+            validated = dict(serializer.validated_data)
+            validated.pop('assigned_to_ids', None)
+            for assignee in assignees:
+                schedule_data = dict(validated)
+                schedule_data['assigned_by'] = request.user
+                schedule_data['assigned_to'] = assignee
+                schedule = RecurringSchedule.objects.create(**schedule_data)
+                schedule.next_run_at = calculate_next_run_at(schedule, reference=timezone.now())
+                if schedule.end_at and schedule.next_run_at and schedule.next_run_at > schedule.end_at:
+                    schedule.is_active = False
+                    schedule.ended_at = schedule.ended_at or timezone.now()
+                    schedule.next_run_at = None
+                schedule.save()
+                log_audit(
+                    action='TASK_RECURRING_SCHEDULE_CREATED',
+                    request=request,
+                    target_type='recurring_schedule',
+                    target_id=schedule.id,
+                    metadata={
+                        'title': schedule.title,
+                        'assigned_by_id': schedule.assigned_by_id,
+                        'assigned_to_id': schedule.assigned_to_id,
+                        'frequency': schedule.frequency,
+                        'interval': schedule.interval,
+                        'timezone': schedule.timezone,
+                    },
+                )
+                created_schedules.append(schedule)
+
+        headers = self.get_success_headers(serializer.data)
+        serialized = RecurringScheduleSerializer(created_schedules, many=True, context={'request': request}).data
+        if len(created_schedules) == 1 and 'assigned_to_ids' not in request.data:
+            return Response(serialized[0], status=status.HTTP_201_CREATED, headers=headers)
+        return Response({
+            'count': len(created_schedules),
+            'results': serialized,
+            'id': serialized[0]['id'] if serialized else None,
+        }, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         schedule = serializer.save(assigned_by=self.request.user)
@@ -1737,3 +1821,15 @@ class DailyReportSendEmailView(APIView):
             else f'Report forwarded to {recipient_count} recipients.'
         )
         return Response({'detail': detail}, status=status.HTTP_200_OK)
+
+
+class TaskDraftViewSet(ModelViewSet):
+    serializer_class = TaskDraftSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        return TaskDraft.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

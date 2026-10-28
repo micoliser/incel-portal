@@ -4,11 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Loader2, Plus, AlertCircle } from "lucide-react";
+import { Loader2, Plus, AlertCircle, Bookmark, Trash2, Edit3, Clock, Users } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
-import { getRecurringSchedules, getTasks } from "@/lib/api/tasks";
-import type { RecurringSchedule, Task } from "@/lib/api/tasks";
+import {
+  getRecurringSchedules,
+  getTasks,
+  getTaskDrafts,
+  deleteTaskDraft,
+  type RecurringSchedule,
+  type Task,
+  type TaskDraft,
+} from "@/lib/api/tasks";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
@@ -57,9 +64,18 @@ export default function TasksPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [reloadToken, setReloadToken] = useState(0);
-  const [activeView, setActiveView] = useState<"assigned" | "created">(
-    searchParams.get("view") === "created" ? "created" : "assigned",
+  const [activeView, setActiveView] = useState<
+    "assigned" | "created" | "drafts"
+  >(
+    searchParams.get("view") === "created"
+      ? "created"
+      : searchParams.get("view") === "drafts"
+        ? "drafts"
+        : "assigned",
   );
+  const [drafts, setDrafts] = useState<TaskDraft[]>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [selectedDraft, setSelectedDraft] = useState<TaskDraft | null>(null);
   const [selectedStatuses, setSelectedStatuses] = useState<Task["status"][]>(
     [],
   );
@@ -104,8 +120,34 @@ export default function TasksPage() {
       }
     };
 
-    void loadRecurringSchedules();
+    loadRecurringSchedules();
   }, [activeView, currentUserId, reloadToken]);
+
+  const loadDrafts = async () => {
+    try {
+      setLoadingDrafts(true);
+      const data = await getTaskDrafts();
+      setDrafts(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingDrafts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDrafts();
+  }, [reloadToken]);
+
+  const handleDeleteDraft = async (draftId: string) => {
+    try {
+      await deleteTaskDraft(draftId);
+      setDrafts((prev) => prev.filter((d) => d.id !== draftId));
+      toast.success("Draft deleted");
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err, "Failed to delete draft"));
+    }
+  };
 
   useEffect(() => {
     setTasks([]);
@@ -115,6 +157,12 @@ export default function TasksPage() {
 
   useEffect(() => {
     const loadTasks = async () => {
+      if (activeView === "drafts") {
+        setLoading(false);
+        setIsLoadingMore(false);
+        return;
+      }
+
       try {
         isRequestInFlightRef.current = true;
         if (currentPage === 1) {
@@ -254,9 +302,32 @@ export default function TasksPage() {
           >
             Created by Me
           </Button>
+          <Button
+            type="button"
+            variant={activeView === "drafts" ? "default" : "ghost"}
+            className="rounded-md gap-1.5"
+            onClick={() => {
+              setActiveView("drafts");
+              router.push("?view=drafts");
+            }}
+          >
+            <Bookmark className="h-3.5 w-3.5" />
+            Drafts
+            {drafts.length > 0 && (
+              <span className="ml-1 rounded-full bg-primary/20 px-1.5 py-0.2 text-xs font-semibold text-primary dark:bg-primary/30">
+                {drafts.length}
+              </span>
+            )}
+          </Button>
         </div>
 
-        <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
+        <Button
+          onClick={() => {
+            setSelectedDraft(null);
+            setCreateModalOpen(true);
+          }}
+          className="gap-2"
+        >
           <Plus className="h-4 w-4" />
           Create Task
         </Button>
@@ -269,57 +340,164 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className="space-y-3 rounded-lg border border-border p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-foreground">Status</span>
-          {statusFilterOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              size="sm"
-              variant={
-                selectedStatuses.includes(option.value) ? "default" : "outline"
-              }
-              onClick={() => toggleStatusFilter(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
+      {activeView !== "drafts" && (
+        <div className="space-y-3 rounded-lg border border-border p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground">Status</span>
+            {statusFilterOptions.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant={
+                  selectedStatuses.includes(option.value) ? "default" : "outline"
+                }
+                onClick={() => toggleStatusFilter(option.value)}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground">Priority</span>
+            {priorityFilterOptions.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant={
+                  selectedPriorities.includes(option.value)
+                    ? "default"
+                    : "outline"
+                }
+                onClick={() => togglePriorityFilter(option.value)}
+              >
+                {option.label}
+              </Button>
+            ))}
+
+            {hasActiveFilters && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSelectedStatuses([]);
+                  setSelectedPriorities([]);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
         </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-foreground">Priority</span>
-          {priorityFilterOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              size="sm"
-              variant={
-                selectedPriorities.includes(option.value)
-                  ? "default"
-                  : "outline"
-              }
-              onClick={() => togglePriorityFilter(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
+      {activeView === "drafts" ? (
+        <div>
+          {loadingDrafts ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : drafts.length === 0 ? (
+            <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold text-foreground">
+                  No Saved Drafts
+                </h2>
+                <p className="max-w-xl text-sm text-muted-foreground">
+                  No task drafts found. Unfinished task forms and saved drafts will appear here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {drafts.map((draft) => (
+                <Card
+                  key={draft.id}
+                  className="p-5 flex flex-col justify-between hover:shadow-md transition-shadow"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-base line-clamp-1">
+                        {draft.title.trim() || (
+                          <span className="italic text-muted-foreground font-normal">
+                            Untitled Draft
+                          </span>
+                        )}
+                      </h3>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-muted text-muted-foreground uppercase tracking-wider flex-shrink-0">
+                        {draft.mode === "recurring" ? "Recurring" : "One-time"}
+                      </span>
+                    </div>
 
-          {hasActiveFilters && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSelectedStatuses([]);
-                setSelectedPriorities([]);
-              }}
-            >
-              Clear filters
-            </Button>
+                    {draft.description ? (
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {draft.description}
+                      </p>
+                    ) : null}
+
+                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-muted-foreground">
+                      {draft.assigned_to_users &&
+                      draft.assigned_to_users.length > 0 ? (
+                        <div className="flex items-center gap-1">
+                          <Users className="h-3.5 w-3.5" />
+                          <span>
+                            {draft.assigned_to_users.length} assignee
+                            {draft.assigned_to_users.length > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground/60 italic">
+                          No assignees yet
+                        </span>
+                      )}
+
+                      {draft.deadline && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5" />
+                          <span>
+                            {format(new Date(draft.deadline), "MMM d, yyyy")}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 mt-4 border-t border-border">
+                    <span className="text-[11px] text-muted-foreground">
+                      {format(new Date(draft.updated_at), "MMM d, HH:mm")}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1 h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDeleteDraft(draft.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="gap-1 h-8 text-xs"
+                        onClick={() => {
+                          setSelectedDraft(draft);
+                          setCreateModalOpen(true);
+                        }}
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Resume
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      ) : (
 
       <div>
         {activeView === "created" && createdRecurringSchedules.length > 0 ? (
@@ -451,20 +629,33 @@ export default function TasksPage() {
           </div>
         )}
       </div>
+      )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-        {isLoadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
-      </div>
+      {activeView !== "drafts" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
+          {isLoadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+        </div>
+      )}
 
-      {hasNextPage && <div ref={loadMoreRef} className="h-8" />}
+      {activeView !== "drafts" && hasNextPage && (
+        <div ref={loadMoreRef} className="h-8" />
+      )}
 
       <CreateTaskModal
         open={createModalOpen}
-        onOpenChange={setCreateModalOpen}
+        onOpenChange={(open) => {
+          setCreateModalOpen(open);
+          if (!open) {
+            setSelectedDraft(null);
+          }
+        }}
         onTaskCreated={() => {
           setCurrentPage(1);
           setReloadToken((value) => value + 1);
+          loadDrafts();
         }}
+        onDraftSaved={loadDrafts}
+        initialDraft={selectedDraft}
         currentUserId={currentUserId}
       />
     </div>
