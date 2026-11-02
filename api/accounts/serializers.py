@@ -35,6 +35,8 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     team_id = serializers.SerializerMethodField()
     team_name = serializers.SerializerMethodField()
     has_global_access = serializers.SerializerMethodField()
+    is_manager = serializers.SerializerMethodField()
+    manager_scope = serializers.SerializerMethodField()
     department_code = serializers.SerializerMethodField()
 
     class Meta:
@@ -57,6 +59,8 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'team_id',
             'team_name',
             'has_global_access',
+            'is_manager',
+            'manager_scope',
         ]
 
     def _profile(self, obj):
@@ -65,6 +69,53 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     def get_has_global_access(self, obj):
         from common.permissions import has_global_access
         return has_global_access(obj)
+
+    def get_is_manager(self, obj):
+        from common.permissions import has_global_access
+        if has_global_access(obj):
+            return True
+        return (
+            obj.managed_departments.exists()
+            or obj.managed_units.exists()
+            or obj.managed_teams.exists()
+        )
+
+    def get_manager_scope(self, obj):
+        from common.permissions import has_global_access
+        if not obj or not obj.is_authenticated:
+            return None
+        if has_global_access(obj):
+            return {
+                'role_type': 'global',
+                'title': 'Global Oversight',
+                'scope_name': 'All Departments',
+                'description': 'Viewing company-wide tasks across all departments and units.',
+            }
+        if obj.managed_departments.exists():
+            names = ', '.join(obj.managed_departments.values_list('name', flat=True))
+            return {
+                'role_type': 'department',
+                'title': 'Department Line Manager',
+                'scope_name': names,
+                'description': f'Viewing all tasks related to the {names} department.',
+            }
+        if obj.managed_units.exists():
+            names = ', '.join(obj.managed_units.values_list('name', flat=True))
+            return {
+                'role_type': 'unit',
+                'title': 'Unit Supervisor',
+                'scope_name': names,
+                'description': f'Viewing all tasks related to the {names} unit.',
+            }
+        if obj.managed_teams.exists():
+            names = ', '.join(obj.managed_teams.values_list('name', flat=True))
+            return {
+                'role_type': 'team',
+                'title': 'Team Lead',
+                'scope_name': names,
+                'description': f'Viewing all tasks related to the {names} team.',
+            }
+        return None
 
     def get_role(self, obj):
         profile = self._profile(obj)

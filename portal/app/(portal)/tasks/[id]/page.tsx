@@ -12,6 +12,10 @@ import {
   Clock,
   AlertTriangle,
   Download,
+  Pencil,
+  Check,
+  XCircle,
+  Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -21,6 +25,7 @@ import {
   updateTaskStatus,
   addTaskComment,
   getTaskAttachmentUploadUrl,
+  approveTask,
 } from "@/lib/api/tasks";
 import type { Task, TaskActivity, TaskAttachment } from "@/lib/api/tasks";
 import { apiClient } from "@/lib/api-client";
@@ -30,11 +35,21 @@ import { PageErrorCard } from "@/components/page-error-card";
 import { TaskDetailSkeleton } from "@/components/skeletons/tasks-skeleton";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { processAndValidateFile } from "@/lib/file-utils";
+import { EditTaskModal } from "@/components/edit-task-modal";
+import { RejectTaskModal } from "@/components/reject-task-modal";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  in_progress: "bg-blue-100 text-blue-800",
-  completed: "bg-green-100 text-green-800",
+  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  in_progress: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  under_review: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
 };
 
 const priorityIcons: Record<string, React.ReactNode> = {
@@ -79,6 +94,12 @@ export default function TaskDetailPage() {
   const [selectedAttachments, setSelectedAttachments] = useState<File[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+  const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -125,6 +146,39 @@ export default function TaskDetailPage() {
     } finally {
       setUpdating(false);
     }
+  };
+
+  const handleApprove = async () => {
+    if (!task) return;
+    try {
+      setIsApproving(true);
+      const updated = await approveTask(taskId);
+      setTask(updated);
+      const newActivities = await getTaskActivities(taskId);
+      setActivities(newActivities);
+      toast.success("Task approved and marked as completed.");
+      setError(null);
+    } catch (err) {
+      const msg = extractApiErrorMessage(err, "Failed to approve task");
+      toast.error(msg);
+      setError(msg);
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleTaskRejected = async (updatedTask: Task) => {
+    setTask(updatedTask);
+    const newActivities = await getTaskActivities(taskId);
+    setActivities(newActivities);
+    setError(null);
+  };
+
+  const handleTaskUpdated = async (updatedTask: Task) => {
+    setTask(updatedTask);
+    const newActivities = await getTaskActivities(taskId);
+    setActivities(newActivities);
+    setError(null);
   };
 
   const handleAddComment = async () => {
@@ -224,18 +278,9 @@ export default function TaskDetailPage() {
     );
   }
 
-  const nextStatuses = {
-    pending: ["in_progress"],
-    in_progress: ["completed"],
-    completed: [],
-  };
-
-  const availableTransitions =
-    nextStatuses[task.status as keyof typeof nextStatuses] || [];
-  const canUpdateStatus = currentUserId === task.assigned_to.id;
-  const canComment =
-    currentUserId === task.assigned_to.id ||
-    currentUserId === task.assigned_by.id;
+  const isAssigner = currentUserId === task.assigned_by.id;
+  const isAssignee = currentUserId === task.assigned_to.id;
+  const canComment = true;
   const hasCompletedTimelineItem = Boolean(task.completed_at);
 
   return (
@@ -259,16 +304,29 @@ export default function TaskDetailPage() {
 
       {/* Header */}
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold">{task.title}</h1>
-            <p className="text-gray-600 mt-2">{task.description}</p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">{task.description}</p>
           </div>
-          <span
-            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${statusColors[task.status]}`}
-          >
-            {task.status.replace("_", " ")}
-          </span>
+          <div className="flex items-center gap-3">
+            {isAssigner && task.status !== "completed" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditModalOpen(true)}
+                className="flex items-center gap-1.5"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Task
+              </Button>
+            )}
+            <span
+              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${statusColors[task.status] || "bg-gray-100 text-gray-800"}`}
+            >
+              {formatStatusLabel(task.status)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -336,19 +394,21 @@ export default function TaskDetailPage() {
             <div className="flex items-center gap-2 mb-4">
               {task.status === "completed" ? (
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
+              ) : task.status === "under_review" ? (
+                <Clock className="h-5 w-5 text-purple-600" />
               ) : task.status === "in_progress" ? (
                 <Clock className="h-5 w-5 text-blue-600" />
               ) : (
                 <AlertTriangle className="h-5 w-5 text-yellow-600" />
               )}
               <span className="font-semibold capitalize">
-                {task.status.replace("_", " ")}
+                {formatStatusLabel(task.status)}
               </span>
             </div>
 
             {task.deadline && (
               <div className="text-sm">
-                <p className="text-gray-600">Deadline</p>
+                <p className="text-gray-600 dark:text-gray-400">Deadline</p>
                 <p className="font-medium">
                   {format(new Date(task.deadline), "MMM dd, yyyy HH:mm")}
                 </p>
@@ -357,37 +417,106 @@ export default function TaskDetailPage() {
 
             {task.completed_at && (
               <div className="text-sm">
-                <p className="text-gray-600">Completed</p>
+                <p className="text-gray-600 dark:text-gray-400">Completed</p>
                 <p className="font-medium">
                   {format(new Date(task.completed_at), "MMM dd, yyyy HH:mm")}
                 </p>
               </div>
             )}
 
-            {canUpdateStatus && availableTransitions.length > 0 && (
+            {/* Assignee Actions */}
+            {isAssignee && task.status !== "completed" && task.status !== "under_review" && (
               <div className="flex gap-2 flex-wrap pt-4 border-t">
-                {availableTransitions.map((status) => (
+                {task.status === "pending" && (
                   <Button
-                    key={status}
-                    onClick={() => handleStatusChange(status)}
+                    onClick={() => handleStatusChange("in_progress")}
                     disabled={updating}
                     variant="outline"
                     size="sm"
-                    className="capitalize"
                   >
                     {updating && (
                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                     )}
-                    Mark as {formatStatusLabel(status)}
+                    Start Task (In Progress)
                   </Button>
-                ))}
+                )}
+                {task.status === "in_progress" && (
+                  <Button
+                    onClick={() => setSubmitConfirmOpen(true)}
+                    disabled={updating}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    size="sm"
+                  >
+                    {updating && (
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    )}
+                    <Check className="h-3.5 w-3.5 mr-1" />
+                    Submit for Approval
+                  </Button>
+                )}
               </div>
             )}
 
-            {!canUpdateStatus && (
-              <p className="border-t pt-4 text-sm text-gray-600">
-                Only the assignee can update task progress.
-              </p>
+            {/* Assignee Waiting Banner */}
+            {isAssignee && task.status === "under_review" && (
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs text-purple-800 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-300 border-t pt-4">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" /> Submitted for Approval
+                </p>
+                <p className="mt-1">
+                  Awaiting review and approval from {task.assigned_by.full_name}. You will be notified once reviewed.
+                </p>
+              </div>
+            )}
+
+            {/* Assigner Approval Actions when under_review */}
+            {isAssigner && task.status === "under_review" && (
+              <div className="space-y-3 pt-4 border-t">
+                <div>
+                  <p className="text-xs font-semibold text-purple-800 dark:text-purple-300">
+                    Review Submission
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                    {task.assigned_to.full_name} submitted this task for your final approval.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setApproveConfirmOpen(true)}
+                    disabled={isApproving}
+                    className="bg-green-600 hover:bg-green-700 text-white flex-1"
+                  >
+                    {isApproving ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsRejectModalOpen(true)}
+                    disabled={isApproving}
+                    className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40 flex-1"
+                  >
+                    <XCircle className="h-3.5 w-3.5 mr-1" />
+                    Request Changes
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!isAssignee && !isAssigner && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 border-t pt-4">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5" /> Management Oversight
+                </p>
+                <p className="mt-1">
+                  You are viewing this task with managerial oversight. You can review all details, timeline activities, and post comments or guidance.
+                </p>
+              </div>
             )}
           </div>
         </Card>
@@ -562,6 +691,8 @@ export default function TaskDetailPage() {
                           <CheckCircle2 className="h-5 w-5 text-blue-600" />
                         ) : activity.activity_type === "created" ? (
                           <IconPlus className="h-5 w-5 text-gray-600" />
+                        ) : activity.activity_type === "task_edited" ? (
+                          <Pencil className="h-4 w-4 text-amber-600" />
                         ) : (
                           <Clock className="h-5 w-5 text-gray-600" />
                         )}
@@ -620,6 +751,107 @@ export default function TaskDetailPage() {
           </div>
         )}
       </div>
+
+      {task && (
+        <>
+          <EditTaskModal
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            task={task}
+            onTaskUpdated={handleTaskUpdated}
+          />
+          <RejectTaskModal
+            isOpen={isRejectModalOpen}
+            onClose={() => setIsRejectModalOpen(false)}
+            task={task}
+            onTaskRejected={handleTaskRejected}
+          />
+
+          {/* Submit for Approval Confirmation Dialog */}
+          <Dialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-400">
+                  <Check className="h-5 w-5" /> Submit Task for Approval
+                </DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to submit <strong>{task.title}</strong> for review? Your assigner ({task.assigned_by.full_name}) will review your work to finalize or request revisions.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSubmitConfirmOpen(false)}
+                  disabled={updating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  onClick={async () => {
+                    setSubmitConfirmOpen(false);
+                    await handleStatusChange("under_review");
+                  }}
+                  disabled={updating}
+                >
+                  {updating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit for Approval"
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Approve Confirmation Dialog */}
+          <Dialog open={approveConfirmOpen} onOpenChange={setApproveConfirmOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="h-5 w-5" /> Approve Task Completion
+                </DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to approve and finalize <strong>{task.title}</strong>? This will mark the task as <strong>Completed</strong> and notify {task.assigned_to.full_name}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setApproveConfirmOpen(false)}
+                  disabled={isApproving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={async () => {
+                    setApproveConfirmOpen(false);
+                    await handleApprove();
+                  }}
+                  disabled={isApproving}
+                >
+                  {isApproving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Approving...
+                    </>
+                  ) : (
+                    "Confirm Approval"
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }

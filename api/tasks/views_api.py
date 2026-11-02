@@ -21,7 +21,7 @@ from emails.services.daily_report_emails import DailyReportEmailManager
 from emails.services.task_emails import TaskEmailManager
 from common.permissions import has_global_access
 from .models import (
-    RecurringSchedule, Task, TaskActivity, TaskAttachment, TaskDraft, WeeklySummary,
+    RecurringSchedule, Task, TaskActivity, TaskAttachment, TaskDraft, TodoItem, WeeklySummary,
     WeeklySummaryShare, WeeklySummaryUserShare, SummaryExport, UserGoal,
     DailyReport, DailyReportSubreport, DailyReportComment,
 )
@@ -36,6 +36,7 @@ from .serializers import (
     RecurringScheduleSerializer,
     TaskSerializer,
     TaskDraftSerializer,
+    TodoItemSerializer,
     TaskActivitySerializer,
     WeeklySummarySerializer,
     WeeklySummaryListSerializer,
@@ -59,6 +60,7 @@ from .serializers import (
     DailyReportSendEmailSerializer,
 )
 from .permissions import IsRecurringScheduleAssignerOrAssignee, IsTaskAssignedOrAssigner
+from .hierarchy import get_subordinate_user_ids
 from .services import calculate_next_run_at, create_task_with_side_effects
 import logging
 import secrets
@@ -106,6 +108,7 @@ class TaskViewSet(ModelViewSet):
                 count=Count('id'),
                 pending=Count('id', filter=Q(status='pending')),
                 in_progress=Count('id', filter=Q(status='in_progress')),
+                under_review=Count('id', filter=Q(status='under_review')),
                 completed=Count('id', filter=Q(status='completed')),
                 high_priority=Count(
                     'id',
@@ -128,6 +131,7 @@ class TaskViewSet(ModelViewSet):
                 'count': counts['count'] or 0,
                 'pending': counts['pending'] or 0,
                 'in_progress': counts['in_progress'] or 0,
+                'under_review': counts['under_review'] or 0,
                 'completed': counts['completed'] or 0,
                 'high_priority': counts['high_priority'] or 0,
                 'due_soon_or_overdue': counts['due_soon_or_overdue'] or 0,
@@ -138,6 +142,7 @@ class TaskViewSet(ModelViewSet):
             count=Count('id'),
             pending=Count('id', filter=Q(status='pending')),
             in_progress=Count('id', filter=Q(status='in_progress')),
+            under_review=Count('id', filter=Q(status='under_review')),
             completed=Count('id', filter=Q(status='completed')),
             overdue=Count(
                 'id',
@@ -155,6 +160,7 @@ class TaskViewSet(ModelViewSet):
                     'count': total_counts['count'] or 0,
                     'pending': total_counts['pending'] or 0,
                     'in_progress': total_counts['in_progress'] or 0,
+                    'under_review': total_counts['under_review'] or 0,
                     'completed': total_counts['completed'] or 0,
                     'overdue': total_counts['overdue'] or 0,
                 },
@@ -163,15 +169,43 @@ class TaskViewSet(ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Task.objects.filter(
-            models.Q(assigned_to=user) | models.Q(assigned_by=user)
-        ).distinct()
+        if not user or not user.is_authenticated:
+            return Task.objects.none()
+
+        subordinate_ids = get_subordinate_user_ids(user)
+        has_global = has_global_access(user)
+
+        if has_global:
+            base_query = models.Q()
+        elif subordinate_ids:
+            base_query = (
+                models.Q(assigned_to=user)
+                | models.Q(assigned_by=user)
+                | models.Q(assigned_to_id__in=subordinate_ids)
+                | models.Q(assigned_by_id__in=subordinate_ids)
+            )
+        else:
+            base_query = models.Q(assigned_to=user) | models.Q(assigned_by=user)
+
+        queryset = Task.objects.filter(base_query).distinct()
 
         view_filter = (self.request.query_params.get('view') or '').strip()
         if view_filter == 'assigned':
             queryset = queryset.filter(assigned_to=user)
         elif view_filter == 'created':
             queryset = queryset.filter(assigned_by=user)
+        elif view_filter == 'team':
+            if has_global:
+                queryset = Task.objects.exclude(assigned_to=user, assigned_by=user)
+            elif subordinate_ids:
+                queryset = Task.objects.filter(
+                    models.Q(assigned_to_id__in=subordinate_ids)
+                    | models.Q(assigned_by_id__in=subordinate_ids)
+                ).distinct()
+            else:
+                queryset = Task.objects.none()
+        elif self.action == 'list' and not view_filter:
+            queryset = queryset.filter(models.Q(assigned_to=user) | models.Q(assigned_by=user))
 
         statuses_raw = (self.request.query_params.get('status') or '').strip()
         if statuses_raw:
@@ -244,21 +278,114 @@ class TaskViewSet(ModelViewSet):
     def perform_update(self, serializer):
         old_task = self.get_object()
         old_status = old_task.status
+        old_deadline = old_task.deadline
+        old_priority = old_task.priority
+        old_title = old_task.title
+        old_description = old_task.description
+
+        edit_reason = serializer.validated_data.pop('edit_reason', None)
+        rejection_reason = serializer.validated_data.pop('rejection_reason', None)
+
         task = serializer.save()
 
+        # Handle status changes
         if old_status != task.status:
             new_status = task.status
             if new_status == 'completed':
                 task.completed_at = timezone.now()
                 task.save(update_fields=['completed_at'])
+                TaskActivity.objects.create(
+                    task=task,
+                    user=self.request.user,
+                    activity_type='status_change',
+                    old_value=old_status,
+                    new_value=new_status,
+                    comment='Approved by assigner',
+                )
+                create_notification(
+                    recipient=task.assigned_to,
+                    actor=self.request.user,
+                    notification_type=Notification.TYPE_TASK_STATUS_CHANGED,
+                    title=f'Task approved: {task.title}',
+                    body=f'{_display_name(self.request.user)} approved completion of "{task.title}".',
+                    link_url=f'/tasks/{task.id}',
+                    payload={
+                        'task_id': task.id,
+                        'old_status': old_status,
+                        'new_status': new_status,
+                    },
+                )
+            elif new_status == 'under_review':
+                TaskActivity.objects.create(
+                    task=task,
+                    user=self.request.user,
+                    activity_type='status_change',
+                    old_value=old_status,
+                    new_value=new_status,
+                    comment='Submitted for review',
+                )
+                create_notification(
+                    recipient=task.assigned_by,
+                    actor=self.request.user,
+                    notification_type=Notification.TYPE_TASK_STATUS_CHANGED,
+                    title=f'Task submitted for review: {task.title}',
+                    body=f'{_display_name(self.request.user)} submitted "{task.title}" for completion approval.',
+                    link_url=f'/tasks/{task.id}',
+                    payload={
+                        'task_id': task.id,
+                        'old_status': old_status,
+                        'new_status': new_status,
+                    },
+                )
+                TaskEmailManager.send_task_submitted_for_review_emails(task)
+            elif old_status == 'under_review' and new_status in ['in_progress', 'pending']:
+                comment_text = f'Changes requested: {rejection_reason}' if rejection_reason else 'Changes requested by assigner'
+                TaskActivity.objects.create(
+                    task=task,
+                    user=self.request.user,
+                    activity_type='status_change',
+                    old_value=old_status,
+                    new_value=new_status,
+                    comment=comment_text,
+                )
+                create_notification(
+                    recipient=task.assigned_to,
+                    actor=self.request.user,
+                    notification_type=Notification.TYPE_TASK_STATUS_CHANGED,
+                    title=f'Changes requested: {task.title}',
+                    body=f'{_display_name(self.request.user)} requested changes on "{task.title}". Reason: {rejection_reason or "Review feedback provided."}',
+                    link_url=f'/tasks/{task.id}',
+                    payload={
+                        'task_id': task.id,
+                        'old_status': old_status,
+                        'new_status': new_status,
+                        'reason': rejection_reason or '',
+                    },
+                )
+                TaskEmailManager.send_task_revision_requested_emails(task, reason=rejection_reason or '')
+            else:
+                recipient = task.assigned_by if self.request.user == task.assigned_to else task.assigned_to
+                TaskActivity.objects.create(
+                    task=task,
+                    user=self.request.user,
+                    activity_type='status_change',
+                    old_value=old_status,
+                    new_value=new_status,
+                )
+                create_notification(
+                    recipient=recipient,
+                    actor=self.request.user,
+                    notification_type=Notification.TYPE_TASK_STATUS_CHANGED,
+                    title=f'Status updated for task {task.title}',
+                    body=f'{_display_name(self.request.user)} changed the status to {new_status.replace("_", " ")}',
+                    link_url=f'/tasks/{task.id}',
+                    payload={
+                        'task_id': task.id,
+                        'old_status': old_status,
+                        'new_status': new_status,
+                    },
+                )
 
-            TaskActivity.objects.create(
-                task=task,
-                user=self.request.user,
-                activity_type='status_change',
-                old_value=old_status,
-                new_value=new_status,
-            )
             log_audit(
                 action='TASK_STATUS_CHANGED',
                 request=self.request,
@@ -268,21 +395,103 @@ class TaskViewSet(ModelViewSet):
                     'old_status': old_status,
                     'new_status': new_status,
                     'assigned_to_id': task.assigned_to_id,
+                    'reason': rejection_reason or '',
                 },
             )
+
+        # Handle task detail edits (deadline, priority, title, description)
+        changes = {}
+        if old_deadline != task.deadline:
+            changes['deadline'] = {
+                'old': old_deadline.isoformat() if old_deadline else None,
+                'new': task.deadline.isoformat() if task.deadline else None,
+            }
+        if old_priority != task.priority:
+            changes['priority'] = {'old': old_priority, 'new': task.priority}
+        if old_title != task.title:
+            changes['title'] = {'old': old_title, 'new': task.title}
+        if old_description != task.description:
+            changes['description'] = {'old': old_description, 'new': task.description}
+
+        if changes:
+            change_descriptions = []
+            if 'deadline' in changes:
+                old_fmt = old_deadline.strftime('%b %d, %Y %H:%M') if old_deadline else 'None'
+                new_fmt = task.deadline.strftime('%b %d, %Y %H:%M') if task.deadline else 'None'
+                change_descriptions.append(f"Deadline updated from {old_fmt} to {new_fmt}")
+            if 'priority' in changes:
+                change_descriptions.append(f"Priority changed from {old_priority} to {task.priority}")
+            if 'title' in changes:
+                change_descriptions.append(f"Title updated to '{task.title}'")
+            if 'description' in changes:
+                change_descriptions.append("Description updated")
+
+            summary_text = "; ".join(change_descriptions)
+            activity_comment = f"{summary_text}. Note: {edit_reason}" if edit_reason else summary_text
+
+            TaskActivity.objects.create(
+                task=task,
+                user=self.request.user,
+                activity_type='task_edited',
+                old_value=str(changes)[:255],
+                new_value=summary_text[:255],
+                comment=activity_comment,
+            )
+
+            log_audit(
+                action='TASK_EDITED',
+                request=self.request,
+                target_type='task',
+                target_id=task.id,
+                metadata={
+                    'changes': changes,
+                    'reason': edit_reason or '',
+                    'assigned_to_id': task.assigned_to_id,
+                },
+            )
+
             create_notification(
-                recipient=task.assigned_by,
+                recipient=task.assigned_to,
                 actor=self.request.user,
                 notification_type=Notification.TYPE_TASK_STATUS_CHANGED,
-                title=f'Status updated for task {task.title}',
-                body=f'{_display_name(self.request.user)} changed the status to {new_status.replace("_", " ")}',
+                title=f'Task updated: {task.title}',
+                body=f'{_display_name(self.request.user)} updated task: {summary_text}',
                 link_url=f'/tasks/{task.id}',
-                payload={
-                    'task_id': task.id,
-                    'old_status': old_status,
-                    'new_status': new_status,
-                },
+                payload={'task_id': task.id, 'changes': changes},
             )
+
+            TaskEmailManager.send_task_updated_emails(task, changes=changes, reason=edit_reason or '')
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        task = self.get_object()
+        if request.user != task.assigned_by:
+            return Response({'error': 'Only the assigner can approve task completion.'}, status=status.HTTP_403_FORBIDDEN)
+        if task.status != 'under_review':
+            return Response({'error': 'Only tasks under review can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(task, data={'status': 'completed'}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(TaskSerializer(task, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        task = self.get_object()
+        if request.user != task.assigned_by:
+            return Response({'error': 'Only the assigner can reject task completion.'}, status=status.HTTP_403_FORBIDDEN)
+        if task.status != 'under_review':
+            return Response({'error': 'Only tasks under review can be rejected.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        reason = request.data.get('reason', '').strip()
+        target_status = request.data.get('target_status', 'in_progress')
+        if target_status not in ['in_progress', 'pending']:
+            target_status = 'in_progress'
+
+        serializer = self.get_serializer(task, data={'status': target_status, 'rejection_reason': reason}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(TaskSerializer(task, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='attachment-upload-url')
     def attachment_upload_url(self, request, pk=None):
@@ -394,9 +603,23 @@ class RecurringScheduleViewSet(ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return RecurringSchedule.objects.filter(
-            models.Q(assigned_to=user) | models.Q(assigned_by=user)
-        ).distinct()
+        if not user or not user.is_authenticated:
+            return RecurringSchedule.objects.none()
+
+        subordinate_ids = get_subordinate_user_ids(user)
+        if has_global_access(user):
+            base_query = models.Q()
+        elif subordinate_ids:
+            base_query = (
+                models.Q(assigned_to=user)
+                | models.Q(assigned_by=user)
+                | models.Q(assigned_to_id__in=subordinate_ids)
+                | models.Q(assigned_by_id__in=subordinate_ids)
+            )
+        else:
+            base_query = models.Q(assigned_to=user) | models.Q(assigned_by=user)
+
+        return RecurringSchedule.objects.filter(base_query).distinct()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -536,6 +759,9 @@ class RecurringScheduleViewSet(ModelViewSet):
         if request.user != schedule.assigned_by:
             raise PermissionDenied('Only the schedule creator can end it.')
 
+        if not schedule.is_active or schedule.ended_at is not None:
+            raise ValidationError('This recurring schedule has already ended.')
+
         schedule.is_active = False
         schedule.is_paused = False
         schedule.paused_at = None
@@ -566,7 +792,7 @@ class RecurringScheduleViewSet(ModelViewSet):
         if request.user != schedule.assigned_by:
             raise PermissionDenied('Only the schedule creator can pause it.')
 
-        if not schedule.is_active:
+        if not schedule.is_active or schedule.ended_at is not None:
             raise ValidationError('This recurring schedule has ended and cannot be paused.')
 
         if schedule.is_paused:
@@ -600,7 +826,7 @@ class RecurringScheduleViewSet(ModelViewSet):
         if request.user != schedule.assigned_by:
             raise PermissionDenied('Only the schedule creator can resume it.')
 
-        if not schedule.is_active:
+        if not schedule.is_active or schedule.ended_at is not None:
             raise ValidationError('This recurring schedule has ended and cannot be resumed.')
 
         if not schedule.is_paused:
@@ -1833,3 +2059,95 @@ class TaskDraftViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+class TodoItemViewSet(ModelViewSet):
+    serializer_class = TodoItemSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = TodoItem.objects.filter(user=self.request.user)
+        view = self.request.query_params.get('view')
+        now = timezone.now()
+        today = now.date()
+
+        if view == 'today':
+            qs = qs.filter(
+                Q(due_date=today) |
+                Q(completed_at__date=today) |
+                (Q(is_completed=False) & Q(due_datetime__lt=now))
+            ).distinct()
+        elif view == 'upcoming':
+            qs = qs.filter(due_date__gt=today, is_completed=False)
+        elif view == 'overdue':
+            qs = qs.filter(due_datetime__lt=now, is_completed=False)
+        elif view == 'completed':
+            qs = qs.filter(is_completed=True)
+
+        priority = self.request.query_params.get('priority')
+        if priority in ['low', 'medium', 'high']:
+            qs = qs.filter(priority=priority)
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
+
+        is_completed_param = self.request.query_params.get('is_completed')
+        if is_completed_param is not None:
+            if is_completed_param.lower() in ('true', '1'):
+                qs = qs.filter(is_completed=True)
+            elif is_completed_param.lower() in ('false', '0'):
+                qs = qs.filter(is_completed=False)
+
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'], url_path='toggle-complete')
+    def toggle_complete(self, request, pk=None):
+        todo = self.get_object()
+        todo.toggle_complete()
+        serializer = self.get_serializer(todo)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='snooze')
+    def snooze(self, request, pk=None):
+        todo = self.get_object()
+        try:
+            minutes = int(request.data.get('minutes', 15))
+        except (ValueError, TypeError):
+            minutes = 15
+        todo.snooze(minutes=minutes)
+        serializer = self.get_serializer(todo)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='stats')
+    def stats(self, request):
+        qs = TodoItem.objects.filter(user=request.user)
+        now = timezone.now()
+        today = now.date()
+
+        total = qs.count()
+        completed = qs.filter(is_completed=True).count()
+        overdue = qs.filter(is_completed=False, due_datetime__lt=now).count()
+        today_count = qs.filter(
+            Q(due_date=today) |
+            Q(completed_at__date=today) |
+            (Q(is_completed=False) & Q(due_datetime__lt=now))
+        ).distinct().count()
+        upcoming = qs.filter(due_date__gt=today, is_completed=False).count()
+
+        return Response({
+            'total': total,
+            'today': today_count,
+            'upcoming': upcoming,
+            'overdue': overdue,
+            'completed': completed,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='clear-completed')
+    def clear_completed(self, request):
+        deleted_count, _ = TodoItem.objects.filter(user=request.user, is_completed=True).delete()
+        return Response({'deleted_count': deleted_count}, status=status.HTTP_200_OK)

@@ -2,7 +2,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
@@ -19,6 +19,7 @@ from .models import (
     TaskActivity,
     TaskAttachment,
     TaskDraft,
+    TodoItem,
     WeeklySummary,
     WeeklySummaryUserShare,
     SummaryExport,
@@ -362,6 +363,11 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         if start_at and end_at and end_at < start_at:
             errors['end_at'] = 'End date must be after the start date.'
 
+        if self.instance and (not self.instance.is_active or self.instance.ended_at is not None):
+            raise serializers.ValidationError(
+                {'detail': 'Ended recurring task schedules cannot be edited.'}
+            )
+
         if self.instance and start_at and start_at != self.instance.start_at:
             if self.instance.start_at <= timezone.now():
                 errors['start_at'] = 'Start date cannot be changed after the schedule has started.'
@@ -389,6 +395,8 @@ class TaskSerializer(serializers.ModelSerializer):
     assigned_to_ids = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(), write_only=True, many=True, required=False
     )
+    edit_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    rejection_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Task
@@ -409,6 +417,8 @@ class TaskSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'completed_at',
+            'edit_reason',
+            'rejection_reason',
         ]
         read_only_fields = [
             'created_at',
@@ -454,6 +464,34 @@ class TaskSerializer(serializers.ModelSerializer):
         if not self.instance:
             return attrs
 
+        # Users cannot edit a completed task
+        if self.instance.status == 'completed':
+            editable_fields = {'title', 'description', 'priority', 'deadline'}
+            has_detail_changes = any(
+                field in attrs and getattr(self.instance, field) != attrs[field]
+                for field in editable_fields
+            )
+            if has_detail_changes:
+                raise serializers.ValidationError(
+                    {'detail': 'Completed tasks cannot be edited.'}
+                )
+            new_status = attrs.get('status')
+            if new_status and new_status != 'completed':
+                raise serializers.ValidationError(
+                    {'status': 'Completed tasks cannot be modified.'}
+                )
+
+        # Validate task detail editing permissions
+        editable_fields = {'title', 'description', 'priority', 'deadline'}
+        has_detail_changes = any(
+            field in attrs and getattr(self.instance, field) != attrs[field]
+            for field in editable_fields
+        )
+        if has_detail_changes and current_user and current_user != self.instance.assigned_by:
+            raise serializers.ValidationError(
+                {'detail': 'Only the assigner can edit task details.'}
+            )
+
         new_status = attrs.get('status')
         if new_status is None:
             return attrs
@@ -462,14 +500,35 @@ class TaskSerializer(serializers.ModelSerializer):
         if new_status == old_status:
             return attrs
 
-        if current_user and current_user != self.instance.assigned_to:
-            raise serializers.ValidationError(
-                {'status': 'Only the assignee can change task progress.'}
-            )
+        is_assignee = current_user == self.instance.assigned_to
+        is_assigner = current_user == self.instance.assigned_by
 
-        if new_status == 'pending' and old_status != 'pending':
+        if is_assignee and not is_assigner:
+            if new_status == 'completed':
+                raise serializers.ValidationError(
+                    {'status': 'Only the assigner can approve and finalize task completion.'}
+                )
+            if new_status == 'pending' and old_status != 'pending':
+                raise serializers.ValidationError(
+                    {'status': 'Task progress cannot move back to pending once started.'}
+                )
+            if new_status not in ['in_progress', 'under_review']:
+                raise serializers.ValidationError(
+                    {'status': f'Assignee cannot set task status to {new_status}.'}
+                )
+        elif is_assigner and not is_assignee:
+            if old_status == 'under_review':
+                if new_status not in ['completed', 'in_progress', 'pending']:
+                    raise serializers.ValidationError(
+                        {'status': 'Tasks under review can only be approved (completed) or rejected (in progress).'}
+                    )
+            elif new_status != 'completed':
+                raise serializers.ValidationError(
+                    {'status': 'Only the assignee can change task progress.'}
+                )
+        elif not is_assignee and not is_assigner:
             raise serializers.ValidationError(
-                {'status': 'Task progress cannot move back to pending once started.'}
+                {'status': 'You do not have permission to change this task status.'}
             )
 
         return attrs
@@ -961,3 +1020,67 @@ class TaskDraftSerializer(serializers.ModelSerializer):
             return []
         users = User.objects.filter(id__in=obj.assigned_to_ids)
         return UserSimpleSerializer(users, many=True).data
+
+
+class TodoItemSerializer(serializers.ModelSerializer):
+    is_overdue = serializers.SerializerMethodField()
+    status_category = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TodoItem
+        fields = [
+            'id',
+            'title',
+            'description',
+            'due_date',
+            'due_time',
+            'due_datetime',
+            'priority',
+            'is_completed',
+            'completed_at',
+            'reminder_at',
+            'reminder_offset',
+            'reminder_offsets',
+            'reminders_sent',
+            'reminder_sent',
+            'reminder_sent_at',
+            'send_email_reminder',
+            'is_overdue',
+            'status_category',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'completed_at',
+            'reminders_sent',
+            'reminder_sent',
+            'reminder_sent_at',
+            'is_overdue',
+            'status_category',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_is_overdue(self, obj):
+        if obj.is_completed or not obj.due_datetime:
+            return False
+        return obj.due_datetime < timezone.now()
+
+    def get_status_category(self, obj):
+        if obj.is_completed:
+            return 'completed'
+        if not obj.due_datetime:
+            return 'no_date'
+        now = timezone.now()
+        if obj.due_datetime < now:
+            return 'overdue'
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        if today_start <= obj.due_datetime < today_end:
+            return 'today'
+        return 'upcoming'
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)

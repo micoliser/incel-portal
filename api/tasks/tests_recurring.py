@@ -390,6 +390,29 @@ class RecurringScheduleApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         mock_send.assert_not_called()
 
+    def test_cannot_edit_ended_recurring_schedule(self):
+        schedule = self.create_schedule_record(is_active=False, ended_at=timezone.now(), next_run_at=None)
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.patch(
+            reverse('recurring-schedule-detail', kwargs={'pk': schedule.id}),
+            {'title': 'Attempting edit on ended schedule'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Ended recurring task schedules cannot be edited', str(response.data))
+
+    def test_cannot_pause_or_resume_ended_recurring_schedule(self):
+        schedule = self.create_schedule_record(is_active=False, ended_at=timezone.now(), next_run_at=None)
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        pause_resp = self.client.post(reverse('recurring-schedule-pause', kwargs={'pk': schedule.id}))
+        self.assertEqual(pause_resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+        resume_resp = self.client.post(reverse('recurring-schedule-resume', kwargs={'pk': schedule.id}))
+        self.assertEqual(resume_resp.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class RecurringScheduleWorkerTests(BaseAPITestCase):
     def setUp(self):

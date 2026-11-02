@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from applications.models import AuditLog
+from accounts.models import StaffProfile
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
 from tasks.models import Task, TaskActivity, TaskAttachment
@@ -347,9 +348,29 @@ class TasksApiTests(BaseAPITestCase):
         self.assertIsNone(task.completed_at)
         self.assertEqual(TaskActivity.objects.filter(task=task, activity_type='status_change').count(), 1)
 
+        # Assignee cannot complete directly
         response = self.client.patch(
             reverse('task-detail', kwargs={'pk': task.id}),
             {'status': 'completed'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Only the assigner can approve and finalize task completion', str(response.data))
+
+        # Assignee submits for review
+        response = self.client.patch(
+            reverse('task-detail', kwargs={'pk': task.id}),
+            {'status': 'under_review'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        task.refresh_from_db()
+        self.assertEqual(task.status, 'under_review')
+
+        # Assigner approves completion
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.post(
+            reverse('task-approve', kwargs={'pk': task.id}),
             format='json',
         )
 
@@ -359,7 +380,7 @@ class TasksApiTests(BaseAPITestCase):
         self.assertIsNotNone(task.completed_at)
 
         completion_activity = TaskActivity.objects.filter(task=task, activity_type='status_change').order_by('-created_at').first()
-        self.assertEqual(completion_activity.old_value, 'in_progress')
+        self.assertEqual(completion_activity.old_value, 'under_review')
         self.assertEqual(completion_activity.new_value, 'completed')
 
         status_logs = AuditLog.objects.filter(
@@ -367,23 +388,155 @@ class TasksApiTests(BaseAPITestCase):
             target_type='task',
             target_id=str(task.id),
         )
-        self.assertEqual(status_logs.count(), 2)
+        self.assertEqual(status_logs.count(), 3)
         latest_log = status_logs.order_by('-created_at').first()
-        self.assertEqual(latest_log.actor_user, self.staff_user)
-        self.assertEqual(latest_log.metadata_json.get('old_status'), 'in_progress')
+        self.assertEqual(latest_log.actor_user, self.admin_user)
+        self.assertEqual(latest_log.metadata_json.get('old_status'), 'under_review')
         self.assertEqual(latest_log.metadata_json.get('new_status'), 'completed')
 
-        status_notifications = Notification.objects.filter(
-            recipient=self.admin_user,
+        # Notification sent to assignee on approval
+        approval_notification = Notification.objects.filter(
+            recipient=self.staff_user,
             notification_type='task_status_changed',
+        ).order_by('-created_at').first()
+        self.assertIsNotNone(approval_notification)
+        self.assertEqual(approval_notification.title, f'Task approved: {task.title}')
+
+    def test_assigner_can_reject_task_under_review_with_reason(self):
+        task = Task.objects.create(
+            title='Reject me',
+            description='Test revision request',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            status='under_review',
         )
-        self.assertEqual(status_notifications.count(), 2)
-        latest_status_notification = status_notifications.order_by('-created_at').first()
-        self.assertEqual(
-            latest_status_notification.title,
-            f'Status updated for task {task.title}',
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.post(
+            reverse('task-reject', kwargs={'pk': task.id}),
+            {'reason': 'Please revise the second section.'},
+            format='json',
         )
-        self.assertIn('changed the status to completed', latest_status_notification.body)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        task.refresh_from_db()
+        self.assertEqual(task.status, 'in_progress')
+
+        activity = TaskActivity.objects.filter(task=task, activity_type='status_change').order_by('-created_at').first()
+        self.assertEqual(activity.old_value, 'under_review')
+        self.assertEqual(activity.new_value, 'in_progress')
+        self.assertIn('Please revise the second section.', activity.comment)
+
+        rejection_notification = Notification.objects.filter(
+            recipient=self.staff_user,
+            notification_type='task_status_changed',
+        ).order_by('-created_at').first()
+        self.assertIsNotNone(rejection_notification)
+        self.assertEqual(rejection_notification.title, f'Changes requested: {task.title}')
+        self.assertIn('Please revise the second section.', rejection_notification.body)
+
+    def test_assigner_can_edit_task_details_with_audit_log(self):
+        task = Task.objects.create(
+            title='Original Title',
+            description='Original Description',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            priority='low',
+            deadline=timezone.now() + timedelta(days=2),
+        )
+
+        new_deadline = timezone.now() + timedelta(days=5)
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.patch(
+            reverse('task-detail', kwargs={'pk': task.id}),
+            {
+                'title': 'Updated Title',
+                'priority': 'high',
+                'deadline': new_deadline.isoformat(),
+                'edit_reason': 'Client requested urgent delivery and extended timeframe',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        task.refresh_from_db()
+        self.assertEqual(task.title, 'Updated Title')
+        self.assertEqual(task.priority, 'high')
+
+        edit_activity = TaskActivity.objects.filter(task=task, activity_type='task_edited').first()
+        self.assertIsNotNone(edit_activity)
+        self.assertIn('Priority changed from low to high', edit_activity.new_value)
+        self.assertIn('Client requested urgent delivery', edit_activity.comment)
+
+        audit_log = AuditLog.objects.filter(action='TASK_EDITED', target_id=str(task.id)).first()
+        self.assertIsNotNone(audit_log)
+        self.assertEqual(audit_log.actor_user, self.admin_user)
+        self.assertIn('priority', audit_log.metadata_json.get('changes', {}))
+
+    def test_assignee_cannot_edit_task_details(self):
+        task = Task.objects.create(
+            title='Assignee Cannot Edit',
+            description='Desc',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            priority='low',
+            deadline=timezone.now() + timedelta(days=2),
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.patch(
+            reverse('task-detail', kwargs={'pk': task.id}),
+            {'priority': 'high'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Only the assigner can edit task details', str(response.data))
+
+    def test_cannot_edit_completed_task_details(self):
+        task = Task.objects.create(
+            title='Completed Task',
+            description='Finished task',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            priority='low',
+            status='completed',
+            completed_at=timezone.now(),
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.patch(
+            reverse('task-detail', kwargs={'pk': task.id}),
+            {
+                'title': 'Attempting edit',
+                'priority': 'high',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Completed tasks cannot be edited', str(response.data))
+
+    def test_cannot_change_status_of_completed_task(self):
+        task = Task.objects.create(
+            title='Completed Task Status Change',
+            description='Finished task',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            priority='low',
+            status='completed',
+            completed_at=timezone.now(),
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.patch(
+            reverse('task-detail', kwargs={'pk': task.id}),
+            {'status': 'in_progress'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Completed tasks cannot be modified', str(response.data))
 
     def test_assigner_cannot_change_status(self):
         task = Task.objects.create(
@@ -724,3 +877,113 @@ class TasksApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(TaskActivity.objects.filter(task=task).count(), 0)
+
+
+class ManagerTaskAccessTests(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.manager_user = User.objects.create_user(
+            username='eng_manager@example.com',
+            email='eng_manager@example.com',
+            password='ManagerPass123!',
+        )
+        StaffProfile.objects.create(
+            user=self.manager_user,
+            role=self.role_staff,
+            department=self.dep_eng,
+        )
+        self.dep_eng.line_manager = self.manager_user
+        self.dep_eng.save()
+
+        self.hr_user = User.objects.create_user(
+            username='hr_staff@example.com',
+            email='hr_staff@example.com',
+            password='HrStaffPass123!',
+        )
+        StaffProfile.objects.create(
+            user=self.hr_user,
+            role=self.role_staff,
+            department=self.dep_hr,
+        )
+
+        self.assigner_user = User.objects.create_user(
+            username='eng_assigner@example.com',
+            email='eng_assigner@example.com',
+            password='AssignerPass123!',
+        )
+        StaffProfile.objects.create(
+            user=self.assigner_user,
+            role=self.role_staff,
+            department=self.dep_eng,
+        )
+
+        self.task = Task.objects.create(
+            title='Subordinate Engineering Task',
+            description='Fix backend query latency',
+            assigned_by=self.assigner_user,
+            assigned_to=self.staff_user,
+            status='in_progress',
+            priority='high',
+            deadline=timezone.now() + timedelta(days=2),
+        )
+
+    def test_manager_can_view_subordinate_task(self):
+        self.client.credentials(**self.auth_headers_for(self.manager_user))
+        response = self.client.get(reverse('task-detail', kwargs={'pk': self.task.id}))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], str(self.task.id))
+
+    def test_manager_can_view_subordinate_task_activities(self):
+        TaskActivity.objects.create(
+            task=self.task,
+            user=self.assigner_user,
+            activity_type='status_change',
+            comment='Task started',
+        )
+        self.client.credentials(**self.auth_headers_for(self.manager_user))
+        response = self.client.get(reverse('task-activities', kwargs={'pk': self.task.id}))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_manager_can_post_comment_on_subordinate_task(self):
+        self.client.credentials(**self.auth_headers_for(self.manager_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': self.task.id}),
+            {'comment': 'Please ensure indexes are used.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(TaskActivity.objects.filter(task=self.task, user=self.manager_user).count(), 1)
+
+    def test_manager_cannot_edit_task_details(self):
+        self.client.credentials(**self.auth_headers_for(self.manager_user))
+        response = self.client.patch(
+            reverse('task-detail', kwargs={'pk': self.task.id}),
+            {'title': 'Unauthorized Manager Title Edit'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_manager_cannot_approve_task(self):
+        self.task.status = 'under_review'
+        self.task.save()
+        self.client.credentials(**self.auth_headers_for(self.manager_user))
+        response = self.client.post(reverse('task-approve', kwargs={'pk': self.task.id}))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unrelated_user_cannot_view_task(self):
+        self.client.credentials(**self.auth_headers_for(self.hr_user))
+        response = self.client.get(reverse('task-detail', kwargs={'pk': self.task.id}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_team_view_returns_subordinate_tasks(self):
+        self.client.credentials(**self.auth_headers_for(self.manager_user))
+        response = self.client.get(reverse('task-list') + '?view=team')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        task_ids = [t['id'] for t in response.data['results']]
+        self.assertIn(str(self.task.id), task_ids)
+
+    def test_global_access_user_can_view_any_task(self):
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.get(reverse('task-detail', kwargs={'pk': self.task.id}))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
