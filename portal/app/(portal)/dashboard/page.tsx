@@ -454,26 +454,38 @@ export default function DashboardPage() {
                           <p className="font-semibold text-foreground">
                             {task.title}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Created by{" "}
-                            {task.assigned_by.full_name ||
-                              task.assigned_by.username}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                            <span>
+                              <span className="font-medium text-foreground/80">By:</span>{" "}
+                              {task.assigned_by.full_name ||
+                                task.assigned_by.username}
+                            </span>
+                            <span>•</span>
+                            <span>
+                              <span className="font-medium text-foreground/80">To:</span>{" "}
+                              {task.assigned_to.full_name ||
+                                task.assigned_to.username}
+                            </span>
+                          </div>
                         </div>
                         <span
                           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
                             task.status === "completed"
                               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
-                              : task.status === "in_progress"
-                                ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200"
-                                : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+                              : task.status === "under_review"
+                                ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-200"
+                                : task.status === "in_progress"
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
                           }`}
                         >
                           {task.status === "in_progress"
                             ? "In Progress"
-                            : task.status === "completed"
-                              ? "Completed"
-                              : "Pending"}
+                            : task.status === "under_review"
+                              ? "Under Review"
+                              : task.status === "completed"
+                                ? "Completed"
+                                : "Pending"}
                         </span>
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-2">
@@ -569,26 +581,38 @@ export default function DashboardPage() {
                           <p className="font-semibold text-foreground">
                             {task.title}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Assigned to{" "}
-                            {task.assigned_to.full_name ||
-                              task.assigned_to.username}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                            <span>
+                              <span className="font-medium text-foreground/80">By:</span>{" "}
+                              {task.assigned_by.full_name ||
+                                task.assigned_by.username}
+                            </span>
+                            <span>•</span>
+                            <span>
+                              <span className="font-medium text-foreground/80">To:</span>{" "}
+                              {task.assigned_to.full_name ||
+                                task.assigned_to.username}
+                            </span>
+                          </div>
                         </div>
                         <span
                           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
                             task.status === "completed"
                               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
-                              : task.status === "in_progress"
-                                ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200"
-                                : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+                              : task.status === "under_review"
+                                ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-200"
+                                : task.status === "in_progress"
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
                           }`}
                         >
                           {task.status === "in_progress"
                             ? "In Progress"
-                            : task.status === "completed"
-                              ? "Completed"
-                              : "Pending"}
+                            : task.status === "under_review"
+                              ? "Under Review"
+                              : task.status === "completed"
+                                ? "Completed"
+                                : "Pending"}
                         </span>
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-2">

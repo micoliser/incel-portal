@@ -98,6 +98,7 @@ class Task(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('in_progress', 'In Progress'),
+        ('under_review', 'Under Review'),
         ('completed', 'Completed'),
     ]
     PRIORITY_CHOICES = TASK_PRIORITY_CHOICES
@@ -135,6 +136,7 @@ class TaskActivity(models.Model):
         ('assignment', 'Assignment'),
         ('comment', 'Comment'),
         ('created', 'Created'),
+        ('task_edited', 'Task Edited'),
     ]
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='activities')

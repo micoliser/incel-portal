@@ -156,7 +156,9 @@ export default function RecurringTaskDetailPage() {
   }
 
   const canManage =
-    currentUserId === schedule.assigned_by.id && schedule.is_active;
+    currentUserId === schedule.assigned_by.id &&
+    schedule.is_active &&
+    !schedule.ended_at;
   const statusLabel = !schedule.is_active
     ? "Ended"
     : schedule.is_paused
@@ -256,6 +258,12 @@ export default function RecurringTaskDetailPage() {
               </div>
             ) : null}
           </div>
+
+          {!schedule.is_active || schedule.ended_at ? (
+            <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
+              This recurring task schedule has ended and cannot be edited.
+            </div>
+          ) : null}
 
           {canManage ? (
             <div className="mt-6">

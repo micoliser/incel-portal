@@ -362,6 +362,11 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         if start_at and end_at and end_at < start_at:
             errors['end_at'] = 'End date must be after the start date.'
 
+        if self.instance and (not self.instance.is_active or self.instance.ended_at is not None):
+            raise serializers.ValidationError(
+                {'detail': 'Ended recurring task schedules cannot be edited.'}
+            )
+
         if self.instance and start_at and start_at != self.instance.start_at:
             if self.instance.start_at <= timezone.now():
                 errors['start_at'] = 'Start date cannot be changed after the schedule has started.'
@@ -389,6 +394,8 @@ class TaskSerializer(serializers.ModelSerializer):
     assigned_to_ids = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(), write_only=True, many=True, required=False
     )
+    edit_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    rejection_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Task
@@ -409,6 +416,8 @@ class TaskSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'completed_at',
+            'edit_reason',
+            'rejection_reason',
         ]
         read_only_fields = [
             'created_at',
@@ -454,6 +463,34 @@ class TaskSerializer(serializers.ModelSerializer):
         if not self.instance:
             return attrs
 
+        # Users cannot edit a completed task
+        if self.instance.status == 'completed':
+            editable_fields = {'title', 'description', 'priority', 'deadline'}
+            has_detail_changes = any(
+                field in attrs and getattr(self.instance, field) != attrs[field]
+                for field in editable_fields
+            )
+            if has_detail_changes:
+                raise serializers.ValidationError(
+                    {'detail': 'Completed tasks cannot be edited.'}
+                )
+            new_status = attrs.get('status')
+            if new_status and new_status != 'completed':
+                raise serializers.ValidationError(
+                    {'status': 'Completed tasks cannot be modified.'}
+                )
+
+        # Validate task detail editing permissions
+        editable_fields = {'title', 'description', 'priority', 'deadline'}
+        has_detail_changes = any(
+            field in attrs and getattr(self.instance, field) != attrs[field]
+            for field in editable_fields
+        )
+        if has_detail_changes and current_user and current_user != self.instance.assigned_by:
+            raise serializers.ValidationError(
+                {'detail': 'Only the assigner can edit task details.'}
+            )
+
         new_status = attrs.get('status')
         if new_status is None:
             return attrs
@@ -462,14 +499,35 @@ class TaskSerializer(serializers.ModelSerializer):
         if new_status == old_status:
             return attrs
 
-        if current_user and current_user != self.instance.assigned_to:
-            raise serializers.ValidationError(
-                {'status': 'Only the assignee can change task progress.'}
-            )
+        is_assignee = current_user == self.instance.assigned_to
+        is_assigner = current_user == self.instance.assigned_by
 
-        if new_status == 'pending' and old_status != 'pending':
+        if is_assignee and not is_assigner:
+            if new_status == 'completed':
+                raise serializers.ValidationError(
+                    {'status': 'Only the assigner can approve and finalize task completion.'}
+                )
+            if new_status == 'pending' and old_status != 'pending':
+                raise serializers.ValidationError(
+                    {'status': 'Task progress cannot move back to pending once started.'}
+                )
+            if new_status not in ['in_progress', 'under_review']:
+                raise serializers.ValidationError(
+                    {'status': f'Assignee cannot set task status to {new_status}.'}
+                )
+        elif is_assigner and not is_assignee:
+            if old_status == 'under_review':
+                if new_status not in ['completed', 'in_progress', 'pending']:
+                    raise serializers.ValidationError(
+                        {'status': 'Tasks under review can only be approved (completed) or rejected (in progress).'}
+                    )
+            elif new_status != 'completed':
+                raise serializers.ValidationError(
+                    {'status': 'Only the assignee can change task progress.'}
+                )
+        elif not is_assignee and not is_assigner:
             raise serializers.ValidationError(
-                {'status': 'Task progress cannot move back to pending once started.'}
+                {'status': 'You do not have permission to change this task status.'}
             )
 
         return attrs

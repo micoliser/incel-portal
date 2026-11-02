@@ -16,7 +16,7 @@ export interface Task {
     full_name: string;
     email: string;
   };
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "in_progress" | "under_review" | "completed";
   priority: "low" | "medium" | "high";
   deadline: string | null;
   recurrence_schedule: string | null;
@@ -81,7 +81,12 @@ export interface TaskActivity {
     full_name: string;
     email: string;
   };
-  activity_type: "status_change" | "assignment" | "comment" | "created";
+  activity_type:
+    | "status_change"
+    | "assignment"
+    | "comment"
+    | "created"
+    | "task_edited";
   old_value: string | null;
   new_value: string | null;
   comment: string | null;
@@ -168,7 +173,7 @@ export interface TaskDraft {
 }
 
 export interface GetTasksParams {
-  view?: "assigned" | "created";
+  view?: "assigned" | "created" | "team";
   status?: Task["status"][];
   priority?: Task["priority"][];
   page?: number;
@@ -347,6 +352,41 @@ export async function resumeRecurringSchedule(
   id: string,
 ): Promise<RecurringSchedule> {
   const response = await apiClient.post(`/recurring-schedules/${id}/resume/`);
+  return response.data;
+}
+
+export interface UpdateTaskPayload {
+  title?: string;
+  description?: string;
+  priority?: "low" | "medium" | "high";
+  deadline?: string | null;
+  edit_reason?: string;
+  status?: "pending" | "in_progress" | "under_review" | "completed";
+  rejection_reason?: string;
+}
+
+export async function updateTask(
+  id: string,
+  payload: UpdateTaskPayload,
+): Promise<Task> {
+  const response = await apiClient.patch(`/tasks/${id}/`, payload);
+  return response.data;
+}
+
+export async function approveTask(id: string): Promise<Task> {
+  const response = await apiClient.post(`/tasks/${id}/approve/`);
+  return response.data;
+}
+
+export async function rejectTask(
+  id: string,
+  reason: string,
+  targetStatus: "in_progress" | "pending" = "in_progress",
+): Promise<Task> {
+  const response = await apiClient.post(`/tasks/${id}/reject/`, {
+    reason,
+    target_status: targetStatus,
+  });
   return response.data;
 }
 

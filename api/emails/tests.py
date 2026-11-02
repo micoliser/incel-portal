@@ -66,6 +66,73 @@ class EmailServiceTestCase(TestCase):
         self.assertEqual(mock_send.call_count, 1)
 
     @patch('emails.services.base_email_service.BaseEmailService._send_sync')
+    def test_task_submitted_for_review_email(self, mock_send):
+        """Test assigner is emailed when assignee submits task for review."""
+        mock_send.return_value = True
+        assignee = User.objects.create_user(
+            username='reviewer_assignee',
+            email='reviewer_assignee@example.com',
+            password='testpass123'
+        )
+        task = Task.objects.create(
+            title='Review me',
+            description='Verify completion',
+            assigned_by=self.user,
+            assigned_to=assignee,
+            status='under_review',
+        )
+
+        mock_send.reset_mock()
+        TaskEmailManager.send_task_submitted_for_review_emails(task)
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('emails.services.base_email_service.BaseEmailService._send_sync')
+    def test_task_revision_requested_email(self, mock_send):
+        """Test assignee and managers are emailed when assigner requests revisions."""
+        mock_send.return_value = True
+        assignee = User.objects.create_user(
+            username='revision_assignee',
+            email='revision_assignee@example.com',
+            password='testpass123'
+        )
+        task = Task.objects.create(
+            title='Revise me',
+            description='Needs work',
+            assigned_by=self.user,
+            assigned_to=assignee,
+            status='in_progress',
+        )
+
+        mock_send.reset_mock()
+        TaskEmailManager.send_task_revision_requested_emails(task, reason='Fix formatting')
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('emails.services.base_email_service.BaseEmailService._send_sync')
+    def test_task_updated_email(self, mock_send):
+        """Test assignee and managers are emailed when task is edited."""
+        mock_send.return_value = True
+        assignee = User.objects.create_user(
+            username='updated_assignee',
+            email='updated_assignee@example.com',
+            password='testpass123'
+        )
+        task = Task.objects.create(
+            title='Edited Task',
+            description='Initial',
+            assigned_by=self.user,
+            assigned_to=assignee,
+            priority='medium',
+        )
+
+        mock_send.reset_mock()
+        TaskEmailManager.send_task_updated_emails(
+            task,
+            changes={'priority': {'old': 'medium', 'new': 'high'}},
+            reason='Escalated by client'
+        )
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('emails.services.base_email_service.BaseEmailService._send_sync')
     def test_user_status_changed_email(self, mock_send):
         """Test enabled/disabled email sends when user is reactivated."""
         mock_send.return_value = True

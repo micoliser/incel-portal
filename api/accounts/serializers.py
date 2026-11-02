@@ -35,6 +35,7 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     team_id = serializers.SerializerMethodField()
     team_name = serializers.SerializerMethodField()
     has_global_access = serializers.SerializerMethodField()
+    is_manager = serializers.SerializerMethodField()
     department_code = serializers.SerializerMethodField()
 
     class Meta:
@@ -57,12 +58,25 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'team_id',
             'team_name',
             'has_global_access',
+            'is_manager',
         ]
 
     def _profile(self, obj):
         return getattr(obj, 'staff_profile', None)
 
     def get_has_global_access(self, obj):
+        from common.permissions import has_global_access
+        return has_global_access(obj)
+
+    def get_is_manager(self, obj):
+        from common.permissions import has_global_access
+        if has_global_access(obj):
+            return True
+        return (
+            obj.managed_departments.exists()
+            or obj.managed_units.exists()
+            or obj.managed_teams.exists()
+        )
         from common.permissions import has_global_access
         return has_global_access(obj)
 

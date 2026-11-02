@@ -56,6 +56,61 @@ class TaskCompletedEmailService(BaseEmailService):
         return f"You completed a task: {task_name}"
 
 
+class TaskSubmittedForReviewEmailService(BaseEmailService):
+    """Send email when a task is submitted for review."""
+
+    email_type = EmailType.TASK_SUBMITTED_FOR_REVIEW
+    template_name = "emails/tasks/task_submitted_for_review.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Task')
+        return f"[Action Required] Task submitted for review: {task_name}"
+
+
+class TaskRevisionRequestedEmailService(BaseEmailService):
+    """Send email when assigner requests revisions on a task."""
+
+    email_type = EmailType.TASK_REVISION_REQUESTED
+    template_name = "emails/tasks/task_revision_requested.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Task')
+        recipient_type = context.get('recipient_type', 'assignee')
+
+        if recipient_type == 'manager_both':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Team Task Revision] Changes requested on {task_name} for {assignee_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Task Revision Requested] {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Task Revision Requested] {assigner_name}'s task: {task_name}"
+        return f"Changes requested on task: {task_name}"
+
+
+class TaskUpdatedEmailService(BaseEmailService):
+    """Send email when a task is edited/updated."""
+
+    email_type = EmailType.TASK_UPDATED
+    template_name = "emails/tasks/task_updated.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        task_name = context.get('task_name', 'Task')
+        recipient_type = context.get('recipient_type', 'assignee')
+
+        if recipient_type == 'manager_both':
+            return f"[Team Task Updated] {task_name}"
+        if recipient_type == 'manager_assignee':
+            assignee_name = context.get('assignee_name', 'Team Member')
+            return f"[Task Updated] {assignee_name}: {task_name}"
+        if recipient_type == 'manager_assigner':
+            assigner_name = context.get('assigner_name', 'Team Member')
+            return f"[Task Updated] {assigner_name}'s task: {task_name}"
+        return f"Task updated: {task_name}"
+
+
 class RecurringTaskCreatedEmailService(BaseEmailService):
     """Send email when a recurring task is created."""
 
@@ -355,6 +410,95 @@ class TaskEmailManager:
             str(task.id),
             'task_completed',
         )
+
+    @staticmethod
+    def send_task_submitted_for_review_emails(task: Any) -> None:
+        """Send email to assigner when assignee submits task for review."""
+        assigned_to = getattr(task, 'assigned_to', None)
+        created_by = getattr(task, 'created_by', getattr(task, 'assigned_by', None))
+        if not created_by or not assigned_to:
+            return
+
+        assigner_name = created_by.get_full_name() or created_by.username
+        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        task_id = str(getattr(task, 'id', getattr(task, 'pk', '')))
+        due_date = getattr(task, 'due_date', getattr(task, 'deadline', None))
+
+        context = {
+            'task_id': task_id,
+            'task_name': task.title,
+            'recipient_type': 'assigner',
+            'recipient_name': assigner_name,
+            'assigner_name': assigner_name,
+            'assignee_name': assignee_name,
+            'description': getattr(task, 'description', ''),
+            'due_date': due_date,
+            'priority': getattr(task, 'priority', ''),
+        }
+
+        service = TaskSubmittedForReviewEmailService()
+        TaskEmailManager._send_to_recipient(service, created_by.email, context, task_id, 'assigner_submitted_for_review')
+
+    @staticmethod
+    def send_task_revision_requested_emails(task: Any, reason: str = '') -> None:
+        """Send email to assignee and managers when assigner requests revisions."""
+        assigned_to = getattr(task, 'assigned_to', None)
+        created_by = getattr(task, 'created_by', getattr(task, 'assigned_by', None))
+        if not created_by or not assigned_to:
+            return
+
+        assigner_name = created_by.get_full_name() or created_by.username
+        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        task_id = str(getattr(task, 'id', getattr(task, 'pk', '')))
+        due_date = getattr(task, 'due_date', getattr(task, 'deadline', None))
+
+        context = {
+            'task_id': task_id,
+            'task_name': task.title,
+            'recipient_type': 'assignee',
+            'recipient_name': assignee_name,
+            'assigner_name': assigner_name,
+            'assignee_name': assignee_name,
+            'description': getattr(task, 'description', ''),
+            'due_date': due_date,
+            'priority': getattr(task, 'priority', ''),
+            'revision_reason': reason,
+        }
+
+        service = TaskRevisionRequestedEmailService()
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, context, task_id, 'assignee_revision_requested')
+        TaskEmailManager._notify_managers(service, context, assigned_to, created_by, task_id, 'task_revision_requested')
+
+    @staticmethod
+    def send_task_updated_emails(task: Any, changes: Dict[str, Any] = None, reason: str = '') -> None:
+        """Send emails when task details are edited."""
+        assigned_to = getattr(task, 'assigned_to', None)
+        created_by = getattr(task, 'created_by', getattr(task, 'assigned_by', None))
+        if not assigned_to or not created_by:
+            return
+
+        assigner_name = created_by.get_full_name() or created_by.username
+        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        task_id = str(getattr(task, 'id', getattr(task, 'pk', '')))
+        due_date = getattr(task, 'due_date', getattr(task, 'deadline', None))
+
+        context = {
+            'task_id': task_id,
+            'task_name': task.title,
+            'recipient_type': 'assignee',
+            'recipient_name': assignee_name,
+            'assigner_name': assigner_name,
+            'assignee_name': assignee_name,
+            'description': getattr(task, 'description', ''),
+            'due_date': due_date,
+            'priority': getattr(task, 'priority', ''),
+            'changes': changes or {},
+            'edit_reason': reason,
+        }
+
+        service = TaskUpdatedEmailService()
+        TaskEmailManager._send_to_recipient(service, assigned_to.email, context, task_id, 'assignee_task_updated')
+        TaskEmailManager._notify_managers(service, context, assigned_to, created_by, task_id, 'task_updated')
 
     @staticmethod
     def send_recurring_task_created_emails(task: Any) -> None:

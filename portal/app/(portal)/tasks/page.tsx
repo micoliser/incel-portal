@@ -26,6 +26,7 @@ import { extractApiErrorMessage } from "@/lib/api-errors";
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
   in_progress: "bg-blue-100 text-blue-800",
+  under_review: "bg-purple-100 text-purple-800",
   completed: "bg-green-100 text-green-800",
 };
 
@@ -38,6 +39,7 @@ const priorityColors: Record<string, string> = {
 const statusFilterOptions: Array<{ value: Task["status"]; label: string }> = [
   { value: "pending", label: "Pending" },
   { value: "in_progress", label: "In Progress" },
+  { value: "under_review", label: "Under Review" },
   { value: "completed", label: "Completed" },
 ];
 
@@ -65,13 +67,15 @@ export default function TasksPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [reloadToken, setReloadToken] = useState(0);
   const [activeView, setActiveView] = useState<
-    "assigned" | "created" | "drafts"
+    "assigned" | "created" | "team" | "drafts"
   >(
     searchParams.get("view") === "created"
       ? "created"
-      : searchParams.get("view") === "drafts"
-        ? "drafts"
-        : "assigned",
+      : searchParams.get("view") === "team"
+        ? "team"
+        : searchParams.get("view") === "drafts"
+          ? "drafts"
+          : "assigned",
   );
   const [drafts, setDrafts] = useState<TaskDraft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
@@ -83,6 +87,7 @@ export default function TasksPage() {
     Task["priority"][]
   >([]);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [isManager, setIsManager] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
@@ -92,8 +97,15 @@ export default function TasksPage() {
       try {
         const profileResponse = await apiClient.get("/me");
         setCurrentUserId(profileResponse.data.id ?? null);
+        setIsManager(
+          Boolean(
+            profileResponse.data.is_manager ||
+              profileResponse.data.has_global_access,
+          ),
+        );
       } catch {
         setCurrentUserId(null);
+        setIsManager(false);
       }
     };
 
@@ -239,12 +251,23 @@ export default function TasksPage() {
 
   const hasActiveFilters =
     selectedStatuses.length > 0 || selectedPriorities.length > 0;
+  const emptyTitle =
+    tasks.length === 0 && hasActiveFilters
+      ? "No Matching Tasks"
+      : activeView === "assigned"
+        ? "No Assigned Tasks"
+        : activeView === "created"
+          ? "No Created Tasks"
+          : "No Team Tasks";
+
   const emptyMessage =
     tasks.length === 0 && hasActiveFilters
       ? "No tasks match the selected filters"
       : activeView === "assigned"
         ? "No tasks assigned to you"
-        : "No tasks created by you";
+        : activeView === "created"
+          ? "No tasks created by you"
+          : "No active tasks found across your team";
 
   const toggleStatusFilter = (status: Task["status"]) => {
     setSelectedStatuses((current) =>
@@ -302,6 +325,20 @@ export default function TasksPage() {
           >
             Created by Me
           </Button>
+          {isManager && (
+            <Button
+              type="button"
+              variant={activeView === "team" ? "default" : "ghost"}
+              className="rounded-md gap-1.5"
+              onClick={() => {
+                setActiveView("team");
+                router.push("?view=team");
+              }}
+            >
+              <Users className="h-3.5 w-3.5" />
+              Team Tasks
+            </Button>
+          )}
           <Button
             type="button"
             variant={activeView === "drafts" ? "default" : "ghost"}
@@ -559,6 +596,20 @@ export default function TasksPage() {
                             )
                           : "N/A"}
                       </p>
+                      <div className="space-y-1 text-xs border-t border-border pt-2 mt-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">Assigner:</span>
+                          <span className="font-medium text-foreground truncate max-w-[140px]">
+                            {schedule.assigned_by.full_name || schedule.assigned_by.username}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">Assignee:</span>
+                          <span className="font-medium text-foreground truncate max-w-[140px]">
+                            {schedule.assigned_to.full_name || schedule.assigned_to.username}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </Card>
                 </Link>
@@ -571,11 +622,7 @@ export default function TasksPage() {
           <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-foreground">
-                {tasks.length === 0 && hasActiveFilters
-                  ? "No Matching Tasks"
-                  : activeView === "assigned"
-                    ? "No Assigned Tasks"
-                    : "No Created Tasks"}
+                {emptyTitle}
               </h2>
               <p className="max-w-xl text-sm text-muted-foreground">
                 {emptyMessage}
@@ -586,42 +633,57 @@ export default function TasksPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {tasks.map((task) => (
               <Link key={task.id} href={`/tasks/${task.id}`}>
-                <Card className="h-full cursor-pointer p-6 hover:shadow-lg transition-shadow">
+                <Card className="h-full cursor-pointer p-5 hover:shadow-lg transition-shadow flex flex-col justify-between">
                   <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <h3 className="font-semibold text-lg leading-tight">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-semibold text-base leading-tight text-foreground line-clamp-2">
                         {task.title}
                       </h3>
                       <span
-                        className={`whitespace-nowrap rounded px-2 py-1 text-xs font-semibold ${statusColors[task.status]}`}
+                        className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold ${statusColors[task.status]}`}
                       >
                         {task.status.replace("_", " ")}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700 dark:text-gray-300">
-                      {task.description.substring(0, 100)}...
+                    <p className="text-sm text-muted-foreground line-clamp-2">
+                      {task.description || "No description provided."}
                     </p>
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="text-gray-700 dark:text-gray-300">
-                        {activeView === "assigned" ? "By" : "To"}{" "}
-                        <span className="font-medium">
-                          {activeView === "assigned"
-                            ? task.assigned_by.full_name
-                            : task.assigned_to.full_name}
+                  </div>
+
+                  <div className="mt-4 space-y-2 border-t border-border pt-3">
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Assigner:</span>
+                        <span
+                          className="font-medium text-foreground truncate max-w-[150px]"
+                          title={task.assigned_by.full_name || task.assigned_by.username}
+                        >
+                          {task.assigned_by.full_name || task.assigned_by.username}
                         </span>
                       </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Assignee:</span>
+                        <span
+                          className="font-medium text-foreground truncate max-w-[150px]"
+                          title={task.assigned_to.full_name || task.assigned_to.username}
+                        >
+                          {task.assigned_to.full_name || task.assigned_to.username}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-dashed border-border/60">
                       <div
-                        className={`font-semibold ${priorityColors[task.priority]}`}
+                        className={`font-semibold capitalize ${priorityColors[task.priority]}`}
                       >
                         {task.priority}
                       </div>
+                      {task.deadline && (
+                        <div className="text-muted-foreground text-[11px]">
+                          Due: {format(new Date(task.deadline), "MMM dd, HH:mm")}
+                        </div>
+                      )}
                     </div>
-                    {task.deadline && (
-                      <div className="text-xs text-gray-600 dark:text-gray-300">
-                        Due:{" "}
-                        {format(new Date(task.deadline), "MMM dd, yyyy HH:mm")}
-                      </div>
-                    )}
                   </div>
                 </Card>
               </Link>
