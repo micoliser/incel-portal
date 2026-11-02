@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Calendar, Clock } from "lucide-react";
+import { Loader2, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { updateTask, type Task } from "@/lib/api/tasks";
 import { Button } from "@/components/ui/button";

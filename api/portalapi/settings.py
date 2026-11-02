@@ -221,6 +221,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'tasks.generate_recurring_task_occurrences',
         'schedule': 60.0,
     },
+    'check-due-todo-reminders': {
+        'task': 'tasks.check_due_todo_reminders',
+        'schedule': 60.0,
+    },
     'generate-weekly-summaries': {
         'task': 'tasks.generate_weekly_summaries',
         'schedule': crontab(hour=0, minute=0, day_of_week=1),  # Every Monday at 00:00

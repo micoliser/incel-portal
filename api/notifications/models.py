@@ -16,6 +16,7 @@ class Notification(models.Model):
     TYPE_SUPPORT_COMMENT = 'support_comment_added'
     TYPE_SUPPORT_RESOLVED = 'support_request_resolved'
     TYPE_SUPPORT_CLOSED = 'support_request_closed'
+    TYPE_TODO_REMINDER = 'todo_reminder'
 
     TYPE_CHOICES = [
         (TYPE_TASK_ASSIGNED, 'Task Assigned'),
@@ -27,6 +28,7 @@ class Notification(models.Model):
         (TYPE_SUPPORT_COMMENT, 'Support Comment Added'),
         (TYPE_SUPPORT_RESOLVED, 'Support Request Resolved'),
         (TYPE_SUPPORT_CLOSED, 'Support Request Closed'),
+        (TYPE_TODO_REMINDER, 'To-Do Reminder'),
     ]
 
     recipient = models.ForeignKey(

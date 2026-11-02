@@ -2,7 +2,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
@@ -19,6 +19,7 @@ from .models import (
     TaskActivity,
     TaskAttachment,
     TaskDraft,
+    TodoItem,
     WeeklySummary,
     WeeklySummaryUserShare,
     SummaryExport,
@@ -1019,3 +1020,67 @@ class TaskDraftSerializer(serializers.ModelSerializer):
             return []
         users = User.objects.filter(id__in=obj.assigned_to_ids)
         return UserSimpleSerializer(users, many=True).data
+
+
+class TodoItemSerializer(serializers.ModelSerializer):
+    is_overdue = serializers.SerializerMethodField()
+    status_category = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TodoItem
+        fields = [
+            'id',
+            'title',
+            'description',
+            'due_date',
+            'due_time',
+            'due_datetime',
+            'priority',
+            'is_completed',
+            'completed_at',
+            'reminder_at',
+            'reminder_offset',
+            'reminder_offsets',
+            'reminders_sent',
+            'reminder_sent',
+            'reminder_sent_at',
+            'send_email_reminder',
+            'is_overdue',
+            'status_category',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'completed_at',
+            'reminders_sent',
+            'reminder_sent',
+            'reminder_sent_at',
+            'is_overdue',
+            'status_category',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_is_overdue(self, obj):
+        if obj.is_completed or not obj.due_datetime:
+            return False
+        return obj.due_datetime < timezone.now()
+
+    def get_status_category(self, obj):
+        if obj.is_completed:
+            return 'completed'
+        if not obj.due_datetime:
+            return 'no_date'
+        now = timezone.now()
+        if obj.due_datetime < now:
+            return 'overdue'
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        if today_start <= obj.due_datetime < today_end:
+            return 'today'
+        return 'upcoming'
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)

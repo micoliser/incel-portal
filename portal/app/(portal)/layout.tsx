@@ -8,6 +8,7 @@ import { useCallback } from "react";
 import {
   Calendar,
   CheckSquare2,
+  ListTodo,
   Eye,
   EyeOff,
   Building2,
@@ -209,6 +210,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                     title: "Support",
                     subtitle: "Submit and track support requests",
                   }
+                : pathname.startsWith("/todos")
+                  ? {
+                      title: "My To-Dos",
+                      subtitle: "Personal task checklist and timed reminders.",
+                    }
                 : pathname.startsWith("/tasks")
                   ? {
                       title: "Tasks",
@@ -517,12 +523,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     <div className="h-screen overflow-hidden bg-background text-foreground">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-sidebar-border bg-sidebar p-5 text-sidebar-foreground shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur transition-transform duration-300 ease-out dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(9,15,26,0.98)_0%,rgba(4,8,15,0.98)_100%)] dark:shadow-[0_22px_44px_rgba(2,6,23,0.62)]",
+          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-x-hidden overflow-y-hidden border-r border-sidebar-border bg-sidebar p-5 text-sidebar-foreground shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur transition-transform duration-300 ease-out dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(9,15,26,0.98)_0%,rgba(4,8,15,0.98)_100%)] dark:shadow-[0_22px_44px_rgba(2,6,23,0.62)]",
           "-translate-x-full lg:translate-x-0",
           isSidebarOpen && "translate-x-0",
         )}
       >
-        <div className="flex items-center justify-between gap-3 rounded-2xl px-1 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-2xl px-1 py-3 flex-shrink-0">
           <div className="flex items-center gap-3">
             <Image src="/logo2.png" alt="Incel Group" width={50} height={50} />
             <div>
@@ -545,14 +551,14 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Button>
         </div>
 
-        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto pb-4">
+        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden pb-4">
           <Link
             href="/dashboard"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname === "/dashboard"
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -579,9 +585,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             href="/tasks"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname.startsWith("/tasks")
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -605,12 +611,41 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
+            href="/todos"
+            onClick={handleCloseSidebar}
+            className={cn(
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              pathname.startsWith("/todos")
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
+                pathname.startsWith("/todos") ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden="true"
+            />
+            <ListTodo
+              className={cn(
+                "size-4 transition-transform duration-300",
+                pathname.startsWith("/todos")
+                  ? "scale-110"
+                  : "group-hover:scale-105",
+              )}
+              aria-hidden="true"
+            />
+            <span>My To-Dos</span>
+          </Link>
+
+          <Link
             href="/reports"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname.startsWith("/reports")
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -637,9 +672,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             href="/applications"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname === "/applications"
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -666,9 +701,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             href="/goals"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname.startsWith("/goals")
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -695,9 +730,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             href="/support"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname.startsWith("/support")
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -724,9 +759,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             href="/summaries"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname.startsWith("/summaries")
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -753,9 +788,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             href="/my-assets"
             onClick={handleCloseSidebar}
             className={cn(
-              "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
               pathname.startsWith("/my-assets")
-                ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
@@ -783,9 +818,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               href="/users"
               onClick={handleCloseSidebar}
               className={cn(
-                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
                 pathname === "/users"
-                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -812,9 +847,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               href="/departments"
               onClick={handleCloseSidebar}
               className={cn(
-                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
                 pathname === "/departments"
-                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -841,9 +876,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               href="/inventory"
               onClick={handleCloseSidebar}
               className={cn(
-                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
                 pathname.startsWith("/inventory")
-                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -872,9 +907,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               href="/organization-summary"
               onClick={handleCloseSidebar}
               className={cn(
-                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
                 pathname === "/organization-summary"
-                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -905,9 +940,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               href="/logs"
               onClick={handleCloseSidebar}
               className={cn(
-                "group relative inline-flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
+                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
                 pathname === "/logs"
-                  ? "translate-x-1 bg-accent text-accent-foreground shadow-sm"
+                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -932,7 +967,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
         <Button
           variant="secondary"
-          className="w-full justify-start"
+          className="w-full justify-start mt-auto flex-shrink-0"
           onClick={() => void handleLogout()}
         >
           <LogOut className="mr-2 size-4" aria-hidden="true" />
@@ -1029,7 +1064,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
       <main
         className={cn(
-          "h-screen overflow-y-auto lg:ml-72",
+          "h-screen overflow-y-auto overflow-x-hidden max-w-full lg:ml-72",
           pathname === "/summaries" || pathname.startsWith("/reports")
             ? "pt-40 px-0 pb-0 sm:pt-40 sm:px-0 sm:pb-0 lg:pt-28"
             : "pt-44 px-4 pb-6 sm:px-6 sm:pb-8 lg:pt-36",

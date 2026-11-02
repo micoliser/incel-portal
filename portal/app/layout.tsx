@@ -4,7 +4,11 @@ import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 import { cn } from "@/lib/utils";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Incel Portal",
@@ -20,9 +24,9 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("h-full antialiased", "font-sans", inter.variable)}
+      className={cn("h-full antialiased font-sans", inter.className, inter.variable)}
     >
-      <body className="min-h-full bg-background text-foreground">
+      <body className={cn("min-h-full bg-background text-foreground font-sans", inter.className)}>
         <script
           dangerouslySetInnerHTML={{
             __html: `(() => {

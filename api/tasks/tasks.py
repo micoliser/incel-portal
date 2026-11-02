@@ -337,3 +337,121 @@ def send_eod_daily_reports() -> dict[str, int]:
             count += 1
             
     return {'sent': count}
+
+
+@shared_task(name='tasks.check_due_todo_reminders')
+def check_due_todo_reminders() -> dict[str, int]:
+    from notifications.services import create_notification
+    from notifications.models import Notification
+    from tasks.models import TodoItem
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    now = timezone.now()
+    due_reminders = TodoItem.objects.filter(
+        is_completed=False,
+        reminder_sent=False,
+        reminder_at__isnull=False,
+        reminder_at__lte=now,
+    ).select_related('user')[:100]
+
+    processed = 0
+    notifications_created = 0
+
+    for todo in due_reminders:
+        try:
+            with transaction.atomic():
+                item = TodoItem.objects.select_for_update(skip_locked=True).get(
+                    id=todo.id,
+                    reminder_sent=False,
+                )
+
+                time_str = ""
+                if item.due_time:
+                    time_str = f" due at {item.due_time.strftime('%I:%M %p')}"
+                elif item.due_date:
+                    time_str = f" due on {item.due_date.strftime('%b %d')}"
+
+                # Determine which offset(s) triggered
+                sent_set = set(item.reminders_sent or [])
+                offsets = list(item.reminder_offsets) if item.reminder_offsets else []
+                if not offsets and item.reminder_offset and item.reminder_offset != 'none':
+                    offsets = [item.reminder_offset]
+
+                dispatched_offsets = []
+                for o in offsets:
+                    if o in item.OFFSET_MAP and o not in sent_set:
+                        rem_time = (item.due_datetime - item.OFFSET_MAP[o]) if item.due_datetime else item.reminder_at
+                        if rem_time and rem_time <= now:
+                            dispatched_offsets.append(o)
+
+                offset_labels = {
+                    'exact': 'at due time',
+                    '5m': '5m before',
+                    '10m': '10m before',
+                    '15m': '15m before',
+                    '30m': '30m before',
+                    '1h': '1h before',
+                    '2h': '2h before',
+                    '1d': '1d before',
+                }
+                timing_note = f" ({', '.join([offset_labels.get(o, o) for o in dispatched_offsets])})" if dispatched_offsets else ""
+
+                create_notification(
+                    recipient=item.user,
+                    actor=None,
+                    notification_type=Notification.TYPE_TODO_REMINDER,
+                    title=f"To-Do Reminder: {item.title}",
+                    body=f"Reminder{timing_note} for your to-do '{item.title}'{time_str}.",
+                    link_url="/todos",
+                    payload={
+                        'todo_id': str(item.id),
+                        'title': item.title,
+                        'priority': item.priority,
+                        'offsets_dispatched': dispatched_offsets,
+                        'due_datetime': item.due_datetime.isoformat() if item.due_datetime else None,
+                    },
+                )
+                notifications_created += 1
+
+                if item.send_email_reminder and item.user.email:
+                    try:
+                        subject = f"[Reminder{timing_note}] {item.title}"
+                        message = (
+                            f"Hello {item.user.get_full_name() or item.user.username},\n\n"
+                            f"This is a reminder{timing_note} for your to-do item:\n\n"
+                            f"Title: {item.title}\n"
+                            f"Priority: {item.priority.capitalize()}\n"
+                            f"{f'Description: {item.description}' if item.description else ''}\n"
+                            f"{f'Due: {time_str}' if time_str else ''}\n\n"
+                            f"You can view and manage your to-dos here:\n"
+                            f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')}/todos\n\n"
+                            f"— Incel Portal"
+                        )
+                        send_mail(
+                            subject=subject,
+                            message=message,
+                            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@incelgroup.com'),
+                            recipient_list=[item.user.email],
+                            fail_silently=True,
+                        )
+                    except Exception as email_err:
+                        logger.warning("Could not send email reminder for todo %s: %s", item.id, email_err)
+
+                item.reminders_sent = list(sent_set.union(dispatched_offsets))
+                next_rem = item.compute_next_reminder()
+                if next_rem:
+                    item.reminder_at = next_rem
+                    item.reminder_sent = False
+                else:
+                    item.reminder_sent = True
+                    item.reminder_sent_at = now
+
+                item.save(update_fields=['reminders_sent', 'reminder_at', 'reminder_sent', 'reminder_sent_at'])
+                processed += 1
+        except TodoItem.DoesNotExist:
+            continue
+        except Exception as e:
+            logger.error("Error processing reminder for todo %s: %s", todo.id, e)
+
+    return {'processed': processed, 'notifications_created': notifications_created}

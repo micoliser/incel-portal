@@ -308,13 +308,14 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1 dark:border-slate-700 dark:bg-slate-900/60">
+    <div className="space-y-6 max-w-full overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex max-w-full items-center overflow-x-auto rounded-lg border border-border bg-muted/60 p-1 dark:border-slate-700 dark:bg-slate-900/60 scrollbar-none">
           <Button
             type="button"
+            size="sm"
             variant={activeView === "assigned" ? "default" : "ghost"}
-            className="rounded-md"
+            className="rounded-md flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9"
             onClick={() => {
               setActiveView("assigned");
               router.push("?view=assigned");
@@ -324,8 +325,9 @@ export default function TasksPage() {
           </Button>
           <Button
             type="button"
+            size="sm"
             variant={activeView === "created" ? "default" : "ghost"}
-            className="rounded-md"
+            className="rounded-md flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9"
             onClick={() => {
               setActiveView("created");
               router.push("?view=created");
@@ -336,8 +338,9 @@ export default function TasksPage() {
           {isManager && (
             <Button
               type="button"
+              size="sm"
               variant={activeView === "team" ? "default" : "ghost"}
-              className="rounded-md gap-1.5"
+              className="rounded-md gap-1.5 flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9"
               onClick={() => {
                 setActiveView("team");
                 router.push("?view=team");
@@ -349,8 +352,9 @@ export default function TasksPage() {
           )}
           <Button
             type="button"
+            size="sm"
             variant={activeView === "drafts" ? "default" : "ghost"}
-            className="rounded-md gap-1.5"
+            className="rounded-md gap-1.5 flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9"
             onClick={() => {
               setActiveView("drafts");
               router.push("?view=drafts");
@@ -359,7 +363,7 @@ export default function TasksPage() {
             <Bookmark className="h-3.5 w-3.5" />
             Drafts
             {drafts.length > 0 && (
-              <span className="ml-1 rounded-full bg-primary/20 px-1.5 py-0.2 text-xs font-semibold text-primary dark:bg-primary/30">
+              <span className="ml-1 rounded-full bg-primary/20 px-1.5 py-0.2 text-[10px] sm:text-xs font-semibold text-primary dark:bg-primary/30">
                 {drafts.length}
               </span>
             )}
@@ -371,7 +375,7 @@ export default function TasksPage() {
             setSelectedDraft(null);
             setCreateModalOpen(true);
           }}
-          className="gap-2"
+          className="gap-2 w-full sm:w-auto h-9"
         >
           <Plus className="h-4 w-4" />
           Create Task
@@ -381,22 +385,22 @@ export default function TasksPage() {
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div className="text-red-800">{error}</div>
+          <div className="text-red-800 text-sm">{error}</div>
         </div>
       )}
 
       {activeView === "team" && (
-        <div className="flex items-center gap-3.5 rounded-xl border border-blue-200 bg-blue-50/75 p-4 text-sm text-blue-900 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-200">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
-            <Users className="h-5 w-5" />
+        <div className="flex items-start sm:items-center gap-3.5 rounded-xl border border-blue-200 bg-blue-50/75 p-3.5 sm:p-4 text-sm text-blue-900 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-200 max-w-full">
+          <div className="flex h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+            <Users className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
-          <div className="flex-1">
-            <p className="font-semibold text-blue-950 dark:text-blue-100">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-blue-950 dark:text-blue-100 break-words text-xs sm:text-sm">
               {managerScope
                 ? `${managerScope.title}: ${managerScope.scope_name}`
                 : "Team Oversight"}
             </p>
-            <p className="text-xs text-blue-800/90 dark:text-blue-300/90 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-blue-800/90 dark:text-blue-300/90 mt-0.5 break-words">
               {managerScope?.description ||
                 "Viewing all tasks related to your team members."}
             </p>
@@ -624,15 +628,15 @@ export default function TasksPage() {
                           : "N/A"}
                       </p>
                       <div className="space-y-1 text-xs border-t border-border pt-2 mt-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground">Assigner:</span>
-                          <span className="font-medium text-foreground truncate max-w-[140px]">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <span className="text-muted-foreground flex-shrink-0">Assigner:</span>
+                          <span className="font-medium text-foreground truncate min-w-0 text-right">
                             {schedule.assigned_by.full_name || schedule.assigned_by.username}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground">Assignee:</span>
-                          <span className="font-medium text-foreground truncate max-w-[140px]">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <span className="text-muted-foreground flex-shrink-0">Assignee:</span>
+                          <span className="font-medium text-foreground truncate min-w-0 text-right">
                             {schedule.assigned_to.full_name || schedule.assigned_to.username}
                           </span>
                         </div>
@@ -679,19 +683,19 @@ export default function TasksPage() {
 
                   <div className="mt-4 space-y-2 border-t border-border pt-3">
                     <div className="space-y-1 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">Assigner:</span>
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <span className="text-muted-foreground flex-shrink-0">Assigner:</span>
                         <span
-                          className="font-medium text-foreground truncate max-w-[150px]"
+                          className="font-medium text-foreground truncate min-w-0 text-right"
                           title={task.assigned_by.full_name || task.assigned_by.username}
                         >
                           {task.assigned_by.full_name || task.assigned_by.username}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">Assignee:</span>
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <span className="text-muted-foreground flex-shrink-0">Assignee:</span>
                         <span
-                          className="font-medium text-foreground truncate max-w-[150px]"
+                          className="font-medium text-foreground truncate min-w-0 text-right"
                           title={task.assigned_to.full_name || task.assigned_to.username}
                         >
                           {task.assigned_to.full_name || task.assigned_to.username}
