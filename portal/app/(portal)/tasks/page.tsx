@@ -88,6 +88,12 @@ export default function TasksPage() {
   >([]);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [isManager, setIsManager] = useState(false);
+  const [managerScope, setManagerScope] = useState<{
+    role_type: "global" | "department" | "unit" | "team";
+    title: string;
+    scope_name: string;
+    description: string;
+  } | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
@@ -103,9 +109,11 @@ export default function TasksPage() {
               profileResponse.data.has_global_access,
           ),
         );
+        setManagerScope(profileResponse.data.manager_scope ?? null);
       } catch {
         setCurrentUserId(null);
         setIsManager(false);
+        setManagerScope(null);
       }
     };
 
@@ -374,6 +382,25 @@ export default function TasksPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div className="text-red-800">{error}</div>
+        </div>
+      )}
+
+      {activeView === "team" && (
+        <div className="flex items-center gap-3.5 rounded-xl border border-blue-200 bg-blue-50/75 p-4 text-sm text-blue-900 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-200">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+            <Users className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-blue-950 dark:text-blue-100">
+              {managerScope
+                ? `${managerScope.title}: ${managerScope.scope_name}`
+                : "Team Oversight"}
+            </p>
+            <p className="text-xs text-blue-800/90 dark:text-blue-300/90 mt-0.5">
+              {managerScope?.description ||
+                "Viewing all tasks related to your team members."}
+            </p>
+          </div>
         </div>
       )}
 
