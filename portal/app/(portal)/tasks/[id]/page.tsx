@@ -16,6 +16,9 @@ import {
   Check,
   XCircle,
   Shield,
+  Link2,
+  ExternalLink,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -30,6 +33,7 @@ import {
 import type { Task, TaskActivity, TaskAttachment } from "@/lib/api/tasks";
 import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
 import { TaskDetailSkeleton } from "@/components/skeletons/tasks-skeleton";
@@ -94,6 +98,35 @@ export default function TaskDetailPage() {
   const [selectedAttachments, setSelectedAttachments] = useState<File[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [attachedLinks, setAttachedLinks] = useState<{ url: string; title: string }[]>([]);
+  const [isAddingLink, setIsAddingLink] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkTitle, setLinkTitle] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  const handleAddLink = () => {
+    let url = linkUrl.trim();
+    if (!url) {
+      setLinkError("URL is required.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      url = "https://" + url;
+    }
+    try {
+      new URL(url);
+    } catch {
+      setLinkError("Please enter a valid URL.");
+      return;
+    }
+    const title = linkTitle.trim() || url;
+    setAttachedLinks((prev) => [...prev, { url, title }]);
+    setLinkUrl("");
+    setLinkTitle("");
+    setLinkError(null);
+    setIsAddingLink(false);
+  };
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -242,9 +275,19 @@ export default function TaskDetailPage() {
         }
       }
 
-      await addTaskComment(taskId, trimmed, attachmentsPayload);
+      await addTaskComment(
+        taskId,
+        trimmed,
+        attachmentsPayload,
+        attachedLinks.length > 0 ? attachedLinks : undefined,
+      );
       setComment("");
       setSelectedAttachments([]);
+      setAttachedLinks([]);
+      setIsAddingLink(false);
+      setLinkUrl("");
+      setLinkTitle("");
+      setLinkError(null);
       const newActivities = await getTaskActivities(taskId);
       setActivities(newActivities);
       toast.success("Comment posted successfully.");
@@ -569,23 +612,127 @@ export default function TaskDetailPage() {
                 }}
                 className="hidden"
               />
-              <div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!canComment || isPostingComment}
-                >
-                  Attach File(s)
-                </Button>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 text-xs h-9"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!canComment || isPostingComment}
+                  >
+                    Attach File(s)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 text-xs h-9 flex items-center gap-1.5"
+                    onClick={() => setIsAddingLink((prev) => !prev)}
+                    disabled={!canComment || isPostingComment}
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                    Attach Link
+                  </Button>
+                </div>
+
+                {isAddingLink && (
+                  <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2.5 dark:bg-slate-900/40">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Link2 className="h-3.5 w-3.5 text-blue-500" /> Attach Link
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingLink(false);
+                          setLinkUrl("");
+                          setLinkTitle("");
+                          setLinkError(null);
+                        }}
+                        className="text-muted-foreground hover:text-foreground text-xs"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="https://drive.google.com/... or any URL"
+                        value={linkUrl}
+                        onChange={(e) => {
+                          setLinkUrl(e.target.value);
+                          if (linkError) setLinkError(null);
+                        }}
+                        className="text-xs h-8"
+                        autoFocus
+                      />
+                      <Input
+                        placeholder="Title or label (e.g. Project Video, Specs Doc)"
+                        value={linkTitle}
+                        onChange={(e) => setLinkTitle(e.target.value)}
+                        className="text-xs h-8"
+                      />
+                      {linkError && <p className="text-xs text-destructive">{linkError}</p>}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs px-2.5"
+                          onClick={() => {
+                            setIsAddingLink(false);
+                            setLinkUrl("");
+                            setLinkTitle("");
+                            setLinkError(null);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs px-3"
+                          onClick={handleAddLink}
+                        >
+                          Add Link
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {attachedLinks.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {attachedLinks.map((item, idx) => (
+                      <div
+                        key={`${item.url}-${idx}`}
+                        className="flex items-center gap-2 rounded-md border border-dashed border-blue-400 bg-blue-50/60 px-2.5 py-1 text-xs text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                      >
+                        <Link2 className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <span className="max-w-[200px] truncate font-medium" title={item.url}>
+                          {item.title}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAttachedLinks((prev) =>
+                              prev.filter((_, i) => i !== idx),
+                            )
+                          }
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {selectedAttachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {selectedAttachments.map((file, idx) => (
                       <div
                         key={`${file.name}-${file.size}-${idx}`}
-                        className="flex items-center justify-between rounded-md border border-dashed px-3 py-2 text-sm text-gray-700"
+                        className="flex items-center justify-between rounded-md border border-dashed px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
                       >
                         <div>
                           <p className="font-medium">{file.name}</p>
@@ -723,9 +870,27 @@ export default function TaskDetailPage() {
                         </p>
                       )}
                       {activity.comment && (
-                        <p className="mt-1 text-sm italic text-gray-700">
+                        <p className="mt-1 text-sm italic text-gray-700 dark:text-gray-300">
                           {activity.comment}
                         </p>
+                      )}
+                      {activity.links && activity.links.length > 0 && (
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          {activity.links.map((linkItem, idx) => (
+                            <a
+                              key={`${linkItem.url}-${idx}`}
+                              href={linkItem.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground dark:bg-slate-800/80 dark:border-slate-700"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                              <span className="max-w-[250px] truncate" title={linkItem.url}>
+                                {linkItem.title || linkItem.url}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
                       )}
                       {activity.attachments.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">

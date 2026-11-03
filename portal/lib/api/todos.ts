@@ -58,12 +58,31 @@ export interface UpdateTodoPayload {
   is_completed?: boolean;
 }
 
-export async function getTodos(params?: {
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export interface GetTodosParams {
   view?: "all" | "today" | "upcoming" | "overdue" | "completed";
   priority?: "low" | "medium" | "high";
   search?: string;
-}): Promise<TodoItem[]> {
-  const res = await apiClient.get<TodoItem[]>("/todos/", { params });
+  page?: number;
+}
+
+export async function getTodos(params?: GetTodosParams): Promise<PaginatedResponse<TodoItem>> {
+  const queryParams = { page: 1, ...params };
+  const res = await apiClient.get<PaginatedResponse<TodoItem> | TodoItem[]>("/todos/", { params: queryParams });
+  if (Array.isArray(res.data)) {
+    return {
+      count: res.data.length,
+      next: null,
+      previous: null,
+      results: res.data,
+    };
+  }
   return res.data;
 }
 

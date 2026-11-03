@@ -955,6 +955,42 @@ class ManagerTaskAccessTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(TaskActivity.objects.filter(task=self.task, user=self.manager_user).count(), 1)
 
+    def test_comment_with_valid_links_saved_and_returned(self):
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': self.task.id}),
+            {
+                'comment': 'Check out this design and doc.',
+                'links': [
+                    {'url': 'https://drive.google.com/file/d/xyz', 'title': 'Project Design Doc'},
+                    {'url': 'https://figma.com/file/abc', 'title': 'Figma Mockups'},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('links', response.data)
+        self.assertEqual(len(response.data['links']), 2)
+        self.assertEqual(response.data['links'][0]['url'], 'https://drive.google.com/file/d/xyz')
+        self.assertEqual(response.data['links'][0]['title'], 'Project Design Doc')
+
+        activity = TaskActivity.objects.get(id=response.data['id'])
+        self.assertEqual(len(activity.links), 2)
+        self.assertEqual(activity.links[0]['title'], 'Project Design Doc')
+
+    def test_comment_with_invalid_links_rejected(self):
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('task-comments', kwargs={'pk': self.task.id}),
+            {
+                'comment': 'Bad link',
+                'links': [{'url': 'not_a_valid_url'}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
     def test_manager_cannot_edit_task_details(self):
         self.client.credentials(**self.auth_headers_for(self.manager_user))
         response = self.client.patch(

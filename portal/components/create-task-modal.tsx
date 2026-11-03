@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,7 @@ const initialForm = {
   deadline: "",
   frequency: "daily",
   interval: "1",
+  include_weekends: false,
   weekdays: [] as number[],
   times: ["09:00"],
   timezone: "Asia/Dubai",
@@ -96,6 +98,7 @@ function validateForm(
     priority: string;
     frequency: string;
     interval: string;
+    include_weekends: boolean;
     weekdays: number[];
     times: string[];
     timezone: string;
@@ -238,6 +241,7 @@ export function CreateTaskModal({
       const rec = (initialDraft.recurrence_config || {}) as {
         frequency?: "daily" | "weekly";
         interval?: number;
+        include_weekends?: boolean;
         weekdays?: number[];
         times?: string[];
         timezone?: string;
@@ -281,6 +285,7 @@ export function CreateTaskModal({
         deadline: formatIsoToLocalInput(initialDraft.deadline),
         frequency: rec.frequency || "daily",
         interval: String(rec.interval || "1"),
+        include_weekends: rec.include_weekends ?? false,
         weekdays: rec.weekdays || [],
         times: rec.times && rec.times.length > 0 ? rec.times : ["09:00"],
         timezone: rec.timezone || "Asia/Dubai",
@@ -395,6 +400,7 @@ export function CreateTaskModal({
       recurrence_config: {
         frequency: data.frequency as "daily" | "weekly",
         interval: Number(data.interval || 1),
+        include_weekends: data.include_weekends,
         weekdays: data.weekdays,
         times: data.times,
         timezone: data.timezone,
@@ -497,6 +503,7 @@ export function CreateTaskModal({
           priority: formData.priority as "low" | "medium" | "high",
           frequency: formData.frequency as "daily" | "weekly",
           interval: Number(formData.interval),
+          include_weekends: formData.include_weekends,
           weekdays: formData.weekdays,
           times: formData.times,
           timezone: formData.timezone,
@@ -580,10 +587,20 @@ export function CreateTaskModal({
                   variant={formData.mode === "recurring" ? "default" : "ghost"}
                   className="flex-1 rounded-md"
                   onClick={() =>
-                    setFormData((current) => ({
-                      ...current,
-                      mode: "recurring",
-                    }))
+                    setFormData((current) => {
+                      const nextTimes = [...current.times];
+                      if (current.start_at && current.start_at.includes("T")) {
+                        const timePart = current.start_at.split("T")[1]?.slice(0, 5);
+                        if (/^([0-1]?\d|2[0-3]):[0-5]\d$/.test(timePart)) {
+                          nextTimes[0] = timePart;
+                        }
+                      }
+                      return {
+                        ...current,
+                        mode: "recurring",
+                        times: nextTimes,
+                      };
+                    })
                   }
                 >
                   Recurring Task
@@ -800,10 +817,27 @@ export function CreateTaskModal({
                     type="datetime-local"
                     value={formData.start_at}
                     onChange={(e) => {
-                      setFormData({ ...formData, start_at: e.target.value });
+                      const nextStartAt = e.target.value;
+                      let nextTimes = [...formData.times];
+                      if (nextStartAt && nextStartAt.includes("T")) {
+                        const timePart = nextStartAt.split("T")[1]?.slice(0, 5);
+                        if (/^([0-1]?\d|2[0-3]):[0-5]\d$/.test(timePart)) {
+                          if (nextTimes.length === 0) {
+                            nextTimes = [timePart];
+                          } else {
+                            nextTimes[0] = timePart;
+                          }
+                        }
+                      }
+                      setFormData({
+                        ...formData,
+                        start_at: nextStartAt,
+                        times: nextTimes,
+                      });
                       setFormErrors((current) => ({
                         ...current,
                         start_at: undefined,
+                        times: undefined,
                       }));
                     }}
                     disabled={submitting}
@@ -872,6 +906,47 @@ export function CreateTaskModal({
                     ) : null}
                   </div>
                 </div>
+
+                {formData.frequency === "daily" ? (
+                  <div className="flex items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={formData.include_weekends}
+                      onClick={() =>
+                        setFormData((current) => ({
+                          ...current,
+                          include_weekends: !current.include_weekends,
+                        }))
+                      }
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                        formData.include_weekends
+                          ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-500"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted/50",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-4 w-4 items-center justify-center rounded border",
+                          formData.include_weekends
+                            ? "border-blue-600 bg-blue-600 text-white"
+                            : "border-gray-400 dark:border-gray-600",
+                        )}
+                      >
+                        {formData.include_weekends && (
+                          <Check className="h-3 w-3 stroke-[3]" />
+                        )}
+                      </div>
+                      <span>Include Weekends</span>
+                    </button>
+                    <span className="text-xs text-muted-foreground">
+                      {formData.include_weekends
+                        ? "Tasks will generate every day including Saturday & Sunday"
+                        : "Tasks will generate on weekdays only (Mon – Fri)"}
+                    </span>
+                  </div>
+                ) : null}
 
                 {formData.frequency === "weekly" ? (
                   <div>

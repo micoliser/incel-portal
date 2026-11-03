@@ -78,7 +78,11 @@ def iter_schedule_occurrences(
         days_since_anchor = (candidate_date - anchor_date).days
 
         if schedule.frequency == 'daily':
-            eligible = days_since_anchor >= 0 and days_since_anchor % schedule.interval == 0
+            is_weekend = candidate_date.weekday() >= 5
+            if not getattr(schedule, 'include_weekends', False) and is_weekend:
+                eligible = False
+            else:
+                eligible = days_since_anchor >= 0 and days_since_anchor % schedule.interval == 0
         else:
             eligible = (
                 days_since_anchor >= 0

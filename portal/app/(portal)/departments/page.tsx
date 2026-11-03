@@ -19,6 +19,7 @@ import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { OrganizationMembersModal } from "@/components/OrganizationMembersModal";
 import { AssignLeaderModal } from "@/components/AssignLeaderModal";
+import { DepartmentsSkeleton } from "@/components/skeletons/departments-skeleton";
 
 type UserBasicInfo = {
   id: number;
@@ -257,11 +258,7 @@ export default function DepartmentsPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex h-40 items-center justify-center">
-        <div className="text-sm text-muted-foreground">Loading hierarchy...</div>
-      </div>
-    );
+    return <DepartmentsSkeleton />;
   }
 
   return (

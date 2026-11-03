@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Loader2, Plus, AlertCircle, Bookmark, Trash2, Edit3, Clock, Users } from "lucide-react";
+import { Plus, AlertCircle, Bookmark, Trash2, Edit3, Clock, Users } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import {
@@ -19,7 +19,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
-import { TasksSkeleton } from "@/components/skeletons/tasks-skeleton";
+import { TasksSkeleton, TaskCardSkeleton } from "@/components/skeletons/tasks-skeleton";
+import { InfiniteScrollLoader } from "@/components/infinite-scroll-loader";
+import { Skeleton } from "@/components/ui/skeleton";
 import { CreateTaskModal } from "@/components/create-task-modal";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
@@ -60,7 +62,9 @@ export default function TasksPage() {
     RecurringSchedule[]
   >([]);
   const [loading, setLoading] = useState(true);
+  const [isFiltering, setIsFiltering] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const hasInitialLoadCompleted = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -185,8 +189,10 @@ export default function TasksPage() {
 
       try {
         isRequestInFlightRef.current = true;
-        if (currentPage === 1) {
+        if (!hasInitialLoadCompleted.current) {
           setLoading(true);
+        } else if (currentPage === 1) {
+          setIsFiltering(true);
         } else {
           setIsLoadingMore(true);
         }
@@ -215,7 +221,9 @@ export default function TasksPage() {
         }
       } finally {
         isRequestInFlightRef.current = false;
+        hasInitialLoadCompleted.current = true;
         setLoading(false);
+        setIsFiltering(false);
         setIsLoadingMore(false);
       }
     };
@@ -293,7 +301,7 @@ export default function TasksPage() {
     );
   };
 
-  if (loading) {
+  if (loading && !hasInitialLoadCompleted.current) {
     return <TasksSkeleton />;
   }
 
@@ -465,8 +473,21 @@ export default function TasksPage() {
       {activeView === "drafts" ? (
         <div>
           {loadingDrafts ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i} className="p-5 space-y-3 border border-border/80">
+                  <div className="flex items-start justify-between">
+                    <Skeleton className="h-5 w-3/4 rounded" />
+                    <Skeleton className="h-5 w-16 rounded" />
+                  </div>
+                  <Skeleton className="h-4 w-full rounded" />
+                  <Skeleton className="h-4 w-4/5 rounded" />
+                  <div className="flex items-center gap-3 pt-2">
+                    <Skeleton className="h-3.5 w-24 rounded" />
+                    <Skeleton className="h-3.5 w-28 rounded" />
+                  </div>
+                </Card>
+              ))}
             </div>
           ) : drafts.length === 0 ? (
             <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
@@ -567,9 +588,9 @@ export default function TasksPage() {
         </div>
       ) : (
 
-      <div>
+      <div className="w-full min-w-0">
         {activeView === "created" && createdRecurringSchedules.length > 0 ? (
-          <div className="mb-6 space-y-3 rounded-lg border border-border p-4">
+          <div className="mb-6 space-y-3 rounded-lg border border-border p-4 w-full min-w-0">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Recurring Tasks You Created
@@ -579,17 +600,17 @@ export default function TasksPage() {
               </span>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 w-full min-w-0">
               {createdRecurringSchedules.map((schedule) => (
                 <Link
                   key={schedule.id}
                   href={`/tasks/recurring/${schedule.id}`}
-                  className="block"
+                  className="block w-full min-w-0"
                 >
-                  <Card className="h-full cursor-pointer p-4 hover:shadow-lg transition-shadow">
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="font-semibold leading-tight">
+                  <Card className="h-full w-full min-w-0 overflow-hidden cursor-pointer p-4 hover:shadow-lg transition-shadow">
+                    <div className="space-y-2 min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <p className="font-semibold leading-tight break-words min-w-0 flex-1">
                           {schedule.title}
                         </p>
                         {(() => {
@@ -606,19 +627,19 @@ export default function TasksPage() {
 
                           return (
                             <span
-                              className={`rounded px-2 py-0.5 text-xs font-semibold ${statusClass}`}
+                              className={`rounded px-2 py-0.5 text-xs font-semibold flex-shrink-0 ${statusClass}`}
                             >
                               {statusLabel}
                             </span>
                           );
                         })()}
                       </div>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground break-words">
                         {schedule.frequency === "daily"
                           ? `Every ${schedule.interval} day${schedule.interval === 1 ? "" : "s"}`
                           : `Every ${schedule.interval} week${schedule.interval === 1 ? "" : "s"}`}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground break-words">
                         Next run:{" "}
                         {schedule.next_run_at
                           ? format(
@@ -649,7 +670,13 @@ export default function TasksPage() {
           </div>
         ) : null}
 
-        {tasks.length === 0 ? (
+        {isFiltering ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 w-full min-w-0">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <TaskCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : tasks.length === 0 ? (
           <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-foreground">
@@ -661,27 +688,27 @@ export default function TasksPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 w-full min-w-0">
             {tasks.map((task) => (
-              <Link key={task.id} href={`/tasks/${task.id}`}>
-                <Card className="h-full cursor-pointer p-5 hover:shadow-lg transition-shadow flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-semibold text-base leading-tight text-foreground line-clamp-2">
+              <Link key={task.id} href={`/tasks/${task.id}`} className="block w-full min-w-0">
+                <Card className="h-full w-full min-w-0 overflow-hidden cursor-pointer p-5 hover:shadow-lg transition-shadow flex flex-col justify-between">
+                  <div className="space-y-3 min-w-0">
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                      <h3 className="font-semibold text-base leading-tight text-foreground line-clamp-2 break-words min-w-0 flex-1">
                         {task.title}
                       </h3>
                       <span
-                        className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold ${statusColors[task.status]}`}
+                        className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold flex-shrink-0 ${statusColors[task.status]}`}
                       >
                         {task.status.replace("_", " ")}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
+                    <p className="text-sm text-muted-foreground line-clamp-2 break-words min-w-0">
                       {task.description || "No description provided."}
                     </p>
                   </div>
 
-                  <div className="mt-4 space-y-2 border-t border-border pt-3">
+                  <div className="mt-4 space-y-2 border-t border-border pt-3 min-w-0">
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <span className="text-muted-foreground flex-shrink-0">Assigner:</span>
@@ -703,14 +730,14 @@ export default function TasksPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-dashed border-border/60">
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-dashed border-border/60 min-w-0">
                       <div
-                        className={`font-semibold capitalize ${priorityColors[task.priority]}`}
+                        className={`font-semibold capitalize flex-shrink-0 ${priorityColors[task.priority]}`}
                       >
                         {task.priority}
                       </div>
                       {task.deadline && (
-                        <div className="text-muted-foreground text-[11px]">
+                        <div className="text-muted-foreground text-[11px] flex-shrink-0 text-right truncate min-w-0">
                           Due: {format(new Date(task.deadline), "MMM dd, HH:mm")}
                         </div>
                       )}
@@ -719,15 +746,19 @@ export default function TasksPage() {
                 </Card>
               </Link>
             ))}
+            {isLoadingMore && (
+              <>
+                <TaskCardSkeleton />
+                <TaskCardSkeleton />
+              </>
+            )}
           </div>
         )}
       </div>
       )}
 
       {activeView !== "drafts" && (
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-          {isLoadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
-        </div>
+        <InfiniteScrollLoader isLoading={isLoadingMore} entityName="tasks" />
       )}
 
       {activeView !== "drafts" && hasNextPage && (

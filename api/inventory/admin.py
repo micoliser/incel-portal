@@ -1,5 +1,18 @@
 from django.contrib import admin
-from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog
+from .models import (
+    InventoryCategory,
+    InventoryItem,
+    InventoryAssignment,
+    InventoryMaintenanceLog,
+    MaintenanceLogAttachment,
+)
+
+
+class MaintenanceLogAttachmentInline(admin.TabularInline):
+    model = MaintenanceLogAttachment
+    extra = 0
+    readonly_fields = ('id', 'file_name', 'content_type', 'size', 'object_key', 'created_at')
+
 
 @admin.register(InventoryCategory)
 class InventoryCategoryAdmin(admin.ModelAdmin):
@@ -25,3 +38,14 @@ class InventoryMaintenanceLogAdmin(admin.ModelAdmin):
     search_fields = ('item__name', 'item__serial_number', 'issue_reported')
     readonly_fields = ('id', 'created_at', 'updated_at')
     raw_id_fields = ('item', 'assigned_to', 'created_by')
+    inlines = [MaintenanceLogAttachmentInline]
+
+
+@admin.register(MaintenanceLogAttachment)
+class MaintenanceLogAttachmentAdmin(admin.ModelAdmin):
+    list_display = ('file_name', 'log', 'content_type', 'size', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('file_name', 'log__item__name')
+    readonly_fields = ('id', 'created_at')
+    raw_id_fields = ('log',)
+

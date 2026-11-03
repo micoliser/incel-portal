@@ -5,6 +5,8 @@ import { CheckCircle2, Eye, EyeOff, Pencil, Plus, Trash, ChevronDown, ChevronRig
 import { toast } from "sonner";
 
 import { UsersSkeleton } from "@/components/skeletons/users-skeleton";
+import { InfiniteScrollLoader } from "@/components/infinite-scroll-loader";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -685,11 +687,23 @@ export default function UsersPage() {
                     );
                   })
                 )}
+                {isLoadingMore && (
+                  <tr>
+                    <td colSpan={6} className="py-3 px-4">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-full rounded" />
+                        <Skeleton className="h-4 w-full rounded" />
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </Card>
       )}
+
+      <InfiniteScrollLoader isLoading={isLoadingMore} entityName="users" />
 
       {hasNextPage && <div ref={loadMoreRef} className="h-8" />}
 

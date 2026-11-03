@@ -45,6 +45,7 @@ export interface RecurringSchedule {
   priority: Task["priority"];
   frequency: "daily" | "weekly";
   interval: number;
+  include_weekends: boolean;
   weekdays: number[];
   times: string[];
   timezone: string;
@@ -72,6 +73,11 @@ export interface RecurringSchedule {
   updated_at: string;
 }
 
+export interface TaskActivityLink {
+  url: string;
+  title: string;
+}
+
 export interface TaskActivity {
   id: string;
   task: string;
@@ -90,6 +96,7 @@ export interface TaskActivity {
   old_value: string | null;
   new_value: string | null;
   comment: string | null;
+  links?: TaskActivityLink[];
   attachments: TaskAttachment[];
   created_at: string;
 }
@@ -135,6 +142,7 @@ export interface CreateRecurringSchedulePayload {
   priority: "low" | "medium" | "high";
   frequency: "daily" | "weekly";
   interval: number;
+  include_weekends?: boolean;
   weekdays: number[];
   times: string[];
   timezone: string;
@@ -161,6 +169,7 @@ export interface TaskDraft {
   recurrence_config: {
     frequency?: "daily" | "weekly";
     interval?: number;
+    include_weekends?: boolean;
     weekdays?: number[];
     times?: string[];
     timezone?: string;
@@ -420,10 +429,12 @@ export async function addTaskComment(
   taskId: string,
   comment: string,
   attachments?: TaskCommentAttachmentPayload[],
+  links?: TaskActivityLink[],
 ): Promise<TaskActivity> {
   const response = await apiClient.post(`/tasks/${taskId}/comments/`, {
     comment,
     ...(attachments ? { attachments } : {}),
+    ...(links && links.length > 0 ? { links } : {}),
   });
   return response.data;
 }

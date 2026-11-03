@@ -1,6 +1,18 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
+export function UserTableRowSkeleton() {
+  return (
+    <div className="grid grid-cols-12 gap-4 px-4 py-3.5 border-b border-border/60">
+      <Skeleton className="h-4 w-full col-span-2 rounded" />
+      <Skeleton className="h-4 w-full col-span-2 rounded" />
+      <Skeleton className="h-4 w-full col-span-4 rounded" />
+      <Skeleton className="h-4 w-full col-span-2 rounded" />
+      <Skeleton className="h-4 w-full col-span-2 rounded" />
+    </div>
+  );
+}
+
 export function UsersSkeleton() {
   return (
     <div className="space-y-4">

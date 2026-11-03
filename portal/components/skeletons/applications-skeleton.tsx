@@ -1,6 +1,26 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
+export function ApplicationCardSkeleton() {
+  return (
+    <Card className="overflow-hidden border border-border">
+      <CardHeader className="pb-3 bg-muted/40">
+        <div className="flex items-center justify-between">
+          <Skeleton className="size-8 rounded" />
+          <Skeleton className="h-5 w-20 rounded" />
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <Skeleton className="h-6 w-full mb-2" />
+        <Skeleton className="h-4 w-full mb-1" />
+        <Skeleton className="h-4 w-4/5 mb-4" />
+        <Skeleton className="h-5 w-16 mb-4 rounded-full" />
+        <Skeleton className="h-9 w-full rounded" />
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ApplicationsSkeleton() {
   return (
     <div className="space-y-6">

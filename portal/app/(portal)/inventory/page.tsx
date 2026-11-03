@@ -20,6 +20,11 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { Card } from "@/components/ui/card";
 import { PageErrorCard } from "@/components/page-error-card";
+import {
+  InventorySkeleton,
+  InventoryTableRowSkeleton,
+} from "@/components/skeletons/inventory-skeleton";
+import { InfiniteScrollLoader } from "@/components/infinite-scroll-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,6 +112,7 @@ export default function InventoryDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const hasInitialLoadCompleted = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [hasWriteAccess, setHasWriteAccess] = useState(false);
 
@@ -114,7 +120,7 @@ export default function InventoryDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
-  const loadMoreRef = useRef<HTMLTableRowElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const isRequestInFlightRef = useRef(false);
 
   // Modals
@@ -235,6 +241,7 @@ export default function InventoryDashboard() {
         setError(extractApiErrorMessage(err, "Failed to load inventory data."));
       } finally {
         isRequestInFlightRef.current = false;
+        hasInitialLoadCompleted.current = true;
         setLoading(false);
         setIsLoadingMore(false);
       }
@@ -573,6 +580,10 @@ export default function InventoryDashboard() {
     return count;
   }, [categoryFilter, statusFilter, managingDeptFilter]);
 
+  if (loading && !hasInitialLoadCompleted.current) {
+    return <InventorySkeleton />;
+  }
+
   return (
     <div className="space-y-8">
       {/* Summary Cards */}
@@ -771,7 +782,8 @@ export default function InventoryDashboard() {
           onRetry={() => setCurrentPage(1)}
         />
       ) : (
-        <Card className="overflow-hidden border border-border">
+        <>
+          <Card className="overflow-hidden border border-border">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px] text-left text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
@@ -790,11 +802,9 @@ export default function InventoryDashboard() {
               </thead>
               <tbody className="divide-y divide-border">
                 {loading && items.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center">
-                      <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
-                    </td>
-                  </tr>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <InventoryTableRowSkeleton key={i} columns={10} />
+                  ))
                 ) : items.length === 0 ? (
                   <tr>
                     <td
@@ -893,19 +903,21 @@ export default function InventoryDashboard() {
                         </td>
                       </tr>
                     ))}
-                    {hasNextPage && (
-                      <tr ref={loadMoreRef}>
-                        <td colSpan={9} className="py-6 text-center">
-                          <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
-                        </td>
-                      </tr>
+                    {isLoadingMore && (
+                      <>
+                        <InventoryTableRowSkeleton columns={10} />
+                        <InventoryTableRowSkeleton columns={10} />
+                      </>
                     )}
                   </>
                 )}
               </tbody>
             </table>
           </div>
+          {hasNextPage && <div ref={loadMoreRef} className="h-4" />}
         </Card>
+          <InfiniteScrollLoader isLoading={isLoadingMore} entityName="inventory items" />
+        </>
       )}
 
       {/* Category Modal */}

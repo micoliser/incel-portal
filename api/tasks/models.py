@@ -29,6 +29,7 @@ class RecurringSchedule(models.Model):
     priority = models.CharField(max_length=20, choices=TASK_PRIORITY_CHOICES, default='medium')
     frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES)
     interval = models.PositiveIntegerField(default=1)
+    include_weekends = models.BooleanField(default=False)
     weekdays = models.JSONField(default=list, blank=True)
     times = models.JSONField(default=list, blank=True)
     timezone = models.CharField(max_length=64, default='UTC')
@@ -147,6 +148,7 @@ class TaskActivity(models.Model):
     old_value = models.CharField(max_length=255, null=True, blank=True)
     new_value = models.CharField(max_length=255, null=True, blank=True)
     comment = models.TextField(null=True, blank=True)
+    links = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
