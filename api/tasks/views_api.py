@@ -2061,10 +2061,20 @@ class TaskDraftViewSet(ModelViewSet):
         serializer.save(user=self.request.user)
 
 
+class TodoPagination(PageNumberPagination):
+    page_size = 25
+    page_size_query_param = 'page_size'
+
+    def paginate_queryset(self, queryset, request, view=None):
+        if 'page' in request.query_params:
+            return super().paginate_queryset(queryset, request, view=view)
+        return None
+
+
 class TodoItemViewSet(ModelViewSet):
     serializer_class = TodoItemSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = None
+    pagination_class = TodoPagination
 
     def get_queryset(self):
         qs = TodoItem.objects.filter(user=self.request.user)

@@ -233,3 +233,35 @@ class TodoItemAPITests(TestCase):
         res2 = check_due_todo_reminders()
         self.assertEqual(res2['processed'], 0)
 
+    def test_todo_pagination(self):
+        # Create 30 todos
+        for i in range(30):
+            TodoItem.objects.create(
+                user=self.user1,
+                title=f"Todo {i}",
+                priority="medium",
+            )
+
+        # Unpaginated request (no page param) -> flat list
+        unpaginated = self.client1.get('/api/v1/todos/')
+        self.assertEqual(unpaginated.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(unpaginated.json(), list)
+        self.assertEqual(len(unpaginated.json()), 30)
+
+        # Paginated request (page=1) -> DRF paginated response
+        paginated_p1 = self.client1.get('/api/v1/todos/?page=1')
+        self.assertEqual(paginated_p1.status_code, status.HTTP_200_OK)
+        data = paginated_p1.json()
+        self.assertIn('results', data)
+        self.assertIn('count', data)
+        self.assertEqual(data['count'], 30)
+        self.assertEqual(len(data['results']), 25)
+        self.assertIsNotNone(data['next'])
+
+        # Page 2
+        paginated_p2 = self.client1.get('/api/v1/todos/?page=2')
+        self.assertEqual(paginated_p2.status_code, status.HTTP_200_OK)
+        data2 = paginated_p2.json()
+        self.assertEqual(len(data2['results']), 5)
+        self.assertIsNone(data2['next'])
+

@@ -1,6 +1,18 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 
+export function InventoryTableRowSkeleton({ columns = 5 }: { columns?: number }) {
+  return (
+    <tr className="border-b border-border/60">
+      {Array.from({ length: columns }).map((_, i) => (
+        <td key={i} className="py-3.5 px-4">
+          <Skeleton className={`h-4 ${i === 0 ? "w-32" : i === columns - 1 ? "w-16 ml-auto" : "w-24"} rounded`} />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
 export function InventorySkeleton() {
   return (
     <div className="space-y-8">

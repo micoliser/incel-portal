@@ -33,7 +33,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ApplicationsSkeleton } from "@/components/skeletons/applications-skeleton";
+import {
+  ApplicationsSkeleton,
+  ApplicationCardSkeleton,
+} from "@/components/skeletons/applications-skeleton";
+import { InfiniteScrollLoader } from "@/components/infinite-scroll-loader";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { processAndValidateFile } from "@/lib/file-utils";
@@ -2229,17 +2233,18 @@ export default function ApplicationsPage() {
                 </Card>
               );
             })}
+            {isLoadingMore && (
+              <>
+                <ApplicationCardSkeleton />
+                <ApplicationCardSkeleton />
+              </>
+            )}
           </div>
 
-          {isLoadingMore ? (
-            <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
-              <Loader2
-                className="mr-2 size-4 animate-spin"
-                aria-hidden="true"
-              />
-              Loading more applications...
-            </div>
-          ) : null}
+          <InfiniteScrollLoader
+            isLoading={isLoadingMore}
+            entityName="applications"
+          />
 
           {hasNextPage ? (
             <div ref={loadMoreRef} className="h-1 w-full" />

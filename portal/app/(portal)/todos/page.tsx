@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { format, isToday, isTomorrow, isPast, parseISO } from "date-fns";
 import {
   CheckCircle2,
@@ -23,6 +23,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+
+import {
+  TodosSkeleton,
+  TodoItemSkeleton,
+  TodoItemsListSkeleton,
+} from "@/components/skeletons/todos-skeleton";
+import { InfiniteScrollLoader } from "@/components/infinite-scroll-loader";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,6 +110,13 @@ export default function TodosPage() {
     completed: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const hasInitialLoadCompleted = useRef(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const isRequestInFlightRef = useRef(false);
   const [activeView, setActiveView] = useState<ViewFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -161,29 +175,68 @@ export default function TodosPage() {
     }
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+    setHasNextPage(false);
+  }, [activeView, priorityFilter, searchQuery]);
+
   const loadData = useCallback(async () => {
+    if (isRequestInFlightRef.current) return;
     try {
-      setLoading(true);
+      isRequestInFlightRef.current = true;
+      if (!hasInitialLoadCompleted.current) {
+        setLoading(true);
+      } else if (currentPage === 1) {
+        setIsFiltering(true);
+      } else {
+        setIsLoadingMore(true);
+      }
+
       const [todosData, statsData] = await Promise.all([
         getTodos({
           view: activeView,
           priority: priorityFilter !== "all" ? (priorityFilter as "low" | "medium" | "high") : undefined,
           search: searchQuery.trim() || undefined,
+          page: currentPage,
         }),
         getTodoStats(),
       ]);
-      setTodos(todosData);
+
+      setTodos((prev) => (currentPage === 1 ? todosData.results : [...prev, ...todosData.results]));
+      setHasNextPage(Boolean(todosData.next));
       setStats(statsData);
     } catch (err) {
       toast.error(extractApiErrorMessage(err, "Failed to load to-dos"));
     } finally {
+      isRequestInFlightRef.current = false;
+      hasInitialLoadCompleted.current = true;
       setLoading(false);
+      setIsFiltering(false);
+      setIsLoadingMore(false);
     }
-  }, [activeView, priorityFilter, searchQuery]);
+  }, [activeView, priorityFilter, searchQuery, currentPage]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!hasNextPage || loading || isFiltering || isLoadingMore) return;
+    const element = loadMoreRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isRequestInFlightRef.current) {
+          setCurrentPage((page) => page + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasNextPage, loading, isFiltering, isLoadingMore]);
 
   // Set default due date to today for quick creation
   const handleSetQuickDate = (preset: "today" | "tomorrow" | "none") => {
@@ -743,6 +796,10 @@ export default function TodosPage() {
     );
   };
 
+  if (loading && !hasInitialLoadCompleted.current) {
+    return <TodosSkeleton />;
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-5 pb-16 px-1 sm:px-4 max-w-full overflow-hidden">
       {/* Top Quick Status & Stats Row */}
@@ -1069,13 +1126,8 @@ export default function TodosPage() {
       </div>
 
       {/* Main List Content */}
-      {loading ? (
-        <div className="py-16 text-center">
-          <div className="inline-flex items-center justify-center size-10 rounded-full bg-primary/10 text-primary animate-spin mb-3">
-            <Clock className="size-5" />
-          </div>
-          <p className="text-sm text-muted-foreground">Loading your to-dos...</p>
-        </div>
+      {isFiltering ? (
+        <TodoItemsListSkeleton count={4} />
       ) : todos.length === 0 ? (
         /* Empty State */
         <Card className="py-16 px-4 text-center border-dashed rounded-2xl bg-card/60">
@@ -1258,6 +1310,16 @@ export default function TodosPage() {
               )}
             </div>
           )}
+
+          {isLoadingMore && (
+            <div className="pt-2">
+              <TodoItemSkeleton />
+            </div>
+          )}
+
+          <InfiniteScrollLoader isLoading={isLoadingMore} entityName="to-dos" />
+
+          {hasNextPage && <div ref={loadMoreRef} className="h-6" />}
         </div>
       )}
 

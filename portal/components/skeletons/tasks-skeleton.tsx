@@ -1,22 +1,55 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 
+export function TaskCardSkeleton() {
+  return (
+    <Card className="h-full w-full min-w-0 p-5 flex flex-col justify-between border border-border/80">
+      <div className="space-y-3 min-w-0">
+        <div className="flex items-start justify-between gap-3 min-w-0">
+          <Skeleton className="h-5 w-3/4 rounded" />
+          <Skeleton className="h-5 w-16 rounded flex-shrink-0" />
+        </div>
+        <Skeleton className="h-4 w-full rounded" />
+        <Skeleton className="h-4 w-4/5 rounded" />
+      </div>
+
+      <div className="mt-4 space-y-2 border-t border-border pt-3">
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-3.5 w-14 rounded" />
+            <Skeleton className="h-3.5 w-24 rounded" />
+          </div>
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-3.5 w-14 rounded" />
+            <Skeleton className="h-3.5 w-28 rounded" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-1 border-t border-dashed border-border/60">
+          <Skeleton className="h-4 w-12 rounded" />
+          <Skeleton className="h-3.5 w-20 rounded" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function TasksSkeleton() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1 dark:border-slate-700 dark:bg-slate-900/60">
           <Skeleton className="h-9 w-32 rounded-md" />
           <Skeleton className="ml-1 h-9 w-32 rounded-md" />
         </div>
-        <Skeleton className="h-10 w-32 rounded-md" />
+        <Skeleton className="h-9 w-32 rounded-md" />
       </div>
 
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Skeleton className="h-4 w-12" />
-            {Array.from({ length: 3 }).map((_, i) => (
+            {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-8 w-24 rounded-md" />
             ))}
           </div>
@@ -29,23 +62,9 @@ export function TasksSkeleton() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 w-full min-w-0">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Card key={i} className="h-full p-6">
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-4">
-                <Skeleton className="h-6 w-36" />
-                <Skeleton className="h-5 w-16 rounded" />
-              </div>
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-4 w-14" />
-              </div>
-              <Skeleton className="h-3 w-32" />
-            </div>
-          </Card>
+          <TaskCardSkeleton key={i} />
         ))}
       </div>
     </div>

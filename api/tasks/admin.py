@@ -3,7 +3,8 @@ from .models import (
     RecurrenceOccurrence, RecurringSchedule, Task, TaskActivity,
     TaskAttachment, WeeklySummary, WeeklySummaryShare, WeeklySummaryUserShare,
     DailyReport, DailyReportSubreport, DailyReportComment,
-    SummaryExport, UserGoal, OrganizationSummaryCache
+    SummaryExport, UserGoal, OrganizationSummaryCache,
+    TaskDraft, TodoItem
 )
 
 
@@ -102,3 +103,22 @@ class UserGoalAdmin(admin.ModelAdmin):
 class OrganizationSummaryCacheAdmin(admin.ModelAdmin):
     list_display = ['week_start_date', 'week_end_date', 'created_at']
     list_filter = ['week_start_date']
+
+
+@admin.register(TaskDraft)
+class TaskDraftAdmin(admin.ModelAdmin):
+    list_display = ['title', 'user', 'mode', 'priority', 'deadline', 'updated_at', 'created_at']
+    list_filter = ['mode', 'priority', 'updated_at', 'created_at']
+    search_fields = ['title', 'description', 'user__username', 'user__email']
+    readonly_fields = ['id', 'created_at', 'updated_at']
+    raw_id_fields = ['user']
+
+
+@admin.register(TodoItem)
+class TodoItemAdmin(admin.ModelAdmin):
+    list_display = ['title', 'user', 'priority', 'due_datetime', 'is_completed', 'reminder_at', 'reminder_sent', 'created_at']
+    list_filter = ['is_completed', 'priority', 'send_email_reminder', 'reminder_sent', 'created_at']
+    search_fields = ['title', 'description', 'user__username', 'user__email']
+    readonly_fields = ['id', 'created_at', 'updated_at', 'completed_at', 'reminder_sent_at']
+    raw_id_fields = ['user']
+
