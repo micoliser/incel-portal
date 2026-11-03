@@ -44,9 +44,14 @@ class StaffProfileModelTests(TestCase):
         self.assertIsNone(profile4.direct_manager)
 
     def test_display_title_resolution(self):
-        # 1. Global role overrides everything
+        # 1. Global role overrides everything (ED shows ED, MD shows MD)
         profile_ed = StaffProfile.objects.create(user=self.user_ed, role=self.role_ed, department=self.department)
-        self.assertEqual(profile_ed.display_title, 'Executive Director')
+        self.assertEqual(profile_ed.display_title, 'ED')
+
+        role_md = Role.objects.create(name='Managing Director', code='MD', has_global_access=True)
+        user_md = User.objects.create_user(username='md_user', password='pwd')
+        profile_md = StaffProfile.objects.create(user=user_md, role=role_md, department=self.department)
+        self.assertEqual(profile_md.display_title, 'MD')
 
         # 2. Structural role: Line Manager
         profile_lm = StaffProfile.objects.create(user=self.user_lm, role=self.role_staff, department=self.department)
@@ -69,6 +74,14 @@ class StaffProfileModelTests(TestCase):
         profile_staff.clean()
         profile_staff.save()
         self.assertEqual(profile_staff.display_title, 'Staff')
+
+        # 6. Non-managerial role with custom name still resolves to Staff
+        role_analyst = Role.objects.create(name='Business Analyst', code='ANALYST')
+        user_analyst = User.objects.create_user(username='analyst_user', password='pwd')
+        profile_analyst = StaffProfile.objects.create(user=user_analyst, role=role_analyst, team=self.team)
+        profile_analyst.clean()
+        profile_analyst.save()
+        self.assertEqual(profile_analyst.display_title, 'Staff')
 
     def test_clean_validation_hierarchy_mismatch(self):
         other_dept = Department.objects.create(name='HR', code='HR')

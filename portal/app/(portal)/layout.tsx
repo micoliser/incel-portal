@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
   buildLoginPath,
+  getUserRoleLabel,
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
@@ -71,6 +72,13 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     department_id?: number | string | null;
     department_code?: string | null;
     has_global_access?: boolean;
+    is_manager?: boolean;
+    manager_scope?: {
+      role_type: "global" | "department" | "unit" | "team";
+      title: string;
+      scope_name: string;
+      description: string;
+    } | null;
   } | null>(null);
   const [changePasswordForm, setChangePasswordForm] = useState({
     old_password: "",
@@ -119,6 +127,13 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           department_id?: number | string | null;
           department_code?: string | null;
           has_global_access?: boolean;
+          is_manager?: boolean;
+          manager_scope?: {
+            role_type: "global" | "department" | "unit" | "team";
+            title: string;
+            scope_name: string;
+            description: string;
+          } | null;
         };
         const permissionsData = permissionsResponse.data as {
           is_superuser?: boolean;
@@ -231,7 +246,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     userInfo?.email?.split("@")[0] ||
     "Portal User";
 
-  const roleLabel = userInfo?.role_code || userInfo?.role || "Unknown role";
+  const roleLabel = getUserRoleLabel(userInfo);
   const departmentLabel =
     userInfo?.department ||
     (userInfo?.department_id
