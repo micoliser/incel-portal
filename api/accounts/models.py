@@ -65,17 +65,24 @@ class StaffProfile(TimeStampedModel):
         Computes the user's display title for the frontend header.
         Global roles override structural roles. Structural roles override the base role.
         """
-        if self.role and self.role.code in ['ED', 'MD', 'ADMIN']:
-            return self.role.name
-            
+        if self.role:
+            code = (self.role.code or '').upper()
+            name = (self.role.name or '').upper()
+            if code == 'ED' or name in ['ED', 'EXECUTIVE DIRECTOR']:
+                return "ED"
+            if code == 'MD' or name in ['MD', 'MANAGING DIRECTOR']:
+                return "MD"
+            if code == 'ADMIN' or name in ['ADMIN', 'ADMINISTRATOR']:
+                return self.role.name or "Admin"
+
         if self.user.managed_departments.exists():
             return "Line Manager"
         if self.user.managed_units.exists():
             return "Supervisor"
         if self.user.managed_teams.exists():
             return "Team Lead"
-            
-        return self.role.name if self.role else "Staff"
+
+        return "Staff"
 
     def clean(self):
         super().clean()

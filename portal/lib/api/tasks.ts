@@ -218,6 +218,7 @@ export interface TaskDashboardBucket {
   count: number;
   pending: number;
   in_progress: number;
+  under_review?: number;
   completed: number;
   high_priority: number;
   due_soon_or_overdue: number;
