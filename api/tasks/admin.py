@@ -26,8 +26,8 @@ class TaskActivityAdmin(admin.ModelAdmin):
 
 @admin.register(RecurringSchedule)
 class RecurringScheduleAdmin(admin.ModelAdmin):
-    list_display = ['title', 'assigned_by', 'assigned_to', 'frequency', 'interval', 'is_active', 'next_run_at']
-    list_filter = ['frequency', 'is_active', 'created_at']
+    list_display = ['title', 'assigned_by', 'assigned_to', 'frequency', 'interval', 'include_weekends', 'is_active', 'next_run_at']
+    list_filter = ['frequency', 'include_weekends', 'is_active', 'created_at']
     search_fields = ['title', 'description']
     readonly_fields = ['created_at', 'updated_at', 'next_run_at', 'ended_at']
 

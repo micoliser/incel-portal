@@ -552,11 +552,13 @@ class TaskViewSet(ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
+        links_data = serializer.validated_data.get('links', [])
         activity = TaskActivity.objects.create(
             task=task,
             user=request.user,
             activity_type='comment',
             comment=serializer.validated_data['comment'],
+            links=links_data,
         )
 
         if attachments_data:
@@ -575,6 +577,10 @@ class TaskViewSet(ModelViewSet):
             attachment_count = len(attachments_data)
             files_text = "file" if attachment_count == 1 else "files"
             notification_body += f' [{attachment_count} {files_text} attached]'
+        if links_data:
+            link_count = len(links_data)
+            links_text = "link" if link_count == 1 else "links"
+            notification_body += f' [{link_count} {links_text} attached]'
         create_notification(
             recipient=recipient,
             actor=request.user,

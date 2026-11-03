@@ -30,9 +30,11 @@ const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function formatScheduleSummary(schedule: RecurringSchedule): string {
   if (schedule.frequency === "daily") {
-    return schedule.interval === 1
-      ? "Every day"
-      : `Every ${schedule.interval} days`;
+    const base =
+      schedule.interval === 1 ? "Every day" : `Every ${schedule.interval} days`;
+    return schedule.include_weekends
+      ? `${base} (including weekends)`
+      : `${base} (weekdays only)`;
   }
 
   const days = schedule.weekdays

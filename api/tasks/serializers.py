@@ -85,6 +85,7 @@ class TaskAttachmentUploadRequestSerializer(serializers.Serializer):
 class TaskCommentCreateSerializer(serializers.Serializer):
     comment = serializers.CharField(allow_blank=True, trim_whitespace=True)
     attachments = serializers.ListField(child=serializers.DictField(), required=False)
+    links = serializers.ListField(child=serializers.DictField(), required=False)
 
     def validate_comment(self, value):
         comment = value.strip()
@@ -95,6 +96,36 @@ class TaskCommentCreateSerializer(serializers.Serializer):
         return comment
 
     def validate(self, attrs):
+        # Validate attached links
+        raw_links = attrs.get('links')
+        if raw_links:
+            if not isinstance(raw_links, list):
+                raise serializers.ValidationError({'links': 'Links must be a list.'})
+            if len(raw_links) > 10:
+                raise serializers.ValidationError({'links': 'Maximum 10 links allowed.'})
+            from django.core.validators import URLValidator
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            url_validator = URLValidator(schemes=['http', 'https'])
+            validated_links = []
+            for idx, item in enumerate(raw_links):
+                if not isinstance(item, dict):
+                    raise serializers.ValidationError({'links': f'Link at index {idx} must be an object.'})
+                raw_url = str(item.get('url', '')).strip()
+                if not raw_url:
+                    raise serializers.ValidationError({'links': f'Link at index {idx} is missing a URL.'})
+                try:
+                    url_validator(raw_url)
+                except DjangoValidationError:
+                    raise serializers.ValidationError({'links': f'Link at index {idx} has an invalid URL.'})
+                raw_title = str(item.get('title', '')).strip()[:200]
+                validated_links.append({
+                    'url': raw_url,
+                    'title': raw_title or raw_url,
+                })
+            attrs['links'] = validated_links
+        else:
+            attrs['links'] = []
+
         # Backwards compatibility: accept single-file legacy fields and normalize
         # Note: legacy fields may appear in initial_data but not in attrs (since not defined fields),
         # so check self.initial_data as well.
@@ -176,6 +207,7 @@ class TaskActivitySerializer(serializers.ModelSerializer):
             'old_value',
             'new_value',
             'comment',
+            'links',
             'attachments',
             'created_at',
         ]
@@ -255,6 +287,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             'priority',
             'frequency',
             'interval',
+            'include_weekends',
             'weekdays',
             'times',
             'timezone',

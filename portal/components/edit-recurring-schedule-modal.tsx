@@ -2,8 +2,9 @@
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, HelpCircle, Loader2 } from "lucide-react";
+import { AlertCircle, HelpCircle, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   updateRecurringSchedule,
   type RecurringSchedule,
@@ -85,6 +86,7 @@ function validateForm(
     title: string;
     frequency: string;
     interval: string;
+    include_weekends: boolean;
     weekdays: number[];
     times: string[];
     timezone: string;
@@ -176,6 +178,7 @@ export function EditRecurringScheduleModal({
     priority: "medium" as RecurringSchedule["priority"],
     frequency: "daily" as RecurringSchedule["frequency"],
     interval: "1",
+    include_weekends: false,
     weekdays: [] as number[],
     times: ["09:00"],
     timezone: "Asia/Dubai",
@@ -199,6 +202,7 @@ export function EditRecurringScheduleModal({
       priority: schedule.priority,
       frequency: schedule.frequency,
       interval: String(schedule.interval),
+      include_weekends: schedule.include_weekends ?? false,
       weekdays: [...schedule.weekdays],
       times: [...schedule.times],
       timezone: schedule.timezone,
@@ -231,6 +235,7 @@ export function EditRecurringScheduleModal({
       formData.priority !== schedule.priority ||
       formData.frequency !== schedule.frequency ||
       Number(formData.interval) !== schedule.interval ||
+      formData.include_weekends !== (schedule.include_weekends ?? false) ||
       !arraysEqual(formData.weekdays, schedule.weekdays) ||
       !arraysEqual(formData.times, schedule.times) ||
       formData.timezone !== schedule.timezone ||
@@ -260,6 +265,7 @@ export function EditRecurringScheduleModal({
         priority: formData.priority,
         frequency: formData.frequency,
         interval: Number(formData.interval),
+        include_weekends: formData.include_weekends,
         weekdays: formData.weekdays,
         times: formData.times,
         timezone: formData.timezone,
@@ -386,10 +392,27 @@ export function EditRecurringScheduleModal({
                 type="datetime-local"
                 value={formData.start_at}
                 onChange={(event) => {
-                  setFormData({ ...formData, start_at: event.target.value });
+                  const nextStartAt = event.target.value;
+                  let nextTimes = [...formData.times];
+                  if (nextStartAt && nextStartAt.includes("T")) {
+                    const timePart = nextStartAt.split("T")[1]?.slice(0, 5);
+                    if (/^([0-1]?\d|2[0-3]):[0-5]\d$/.test(timePart)) {
+                      if (nextTimes.length === 0) {
+                        nextTimes = [timePart];
+                      } else {
+                        nextTimes[0] = timePart;
+                      }
+                    }
+                  }
+                  setFormData({
+                    ...formData,
+                    start_at: nextStartAt,
+                    times: nextTimes,
+                  });
                   setFormErrors((current) => ({
                     ...current,
                     start_at: undefined,
+                    times: undefined,
                   }));
                 }}
                 disabled={submitting || hasStarted}
@@ -465,6 +488,47 @@ export function EditRecurringScheduleModal({
                 ) : null}
               </div>
             </div>
+
+            {formData.frequency === "daily" ? (
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={formData.include_weekends}
+                  onClick={() =>
+                    setFormData((current) => ({
+                      ...current,
+                      include_weekends: !current.include_weekends,
+                    }))
+                  }
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                    formData.include_weekends
+                      ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-500"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded border",
+                      formData.include_weekends
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : "border-gray-400 dark:border-gray-600",
+                    )}
+                  >
+                    {formData.include_weekends && (
+                      <Check className="h-3 w-3 stroke-[3]" />
+                    )}
+                  </div>
+                  <span>Include Weekends</span>
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  {formData.include_weekends
+                    ? "Tasks will generate every day including Saturday & Sunday"
+                    : "Tasks will generate on weekdays only (Mon – Fri)"}
+                </span>
+              </div>
+            ) : null}
 
             {formData.frequency === "weekly" ? (
               <div>

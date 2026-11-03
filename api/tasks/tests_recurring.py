@@ -534,3 +534,48 @@ class RecurringScheduleWorkerTests(BaseAPITestCase):
         self.assertEqual(result['processed_schedules'], 0)
         self.assertEqual(result['created_tasks'], 0)
         self.assertFalse(Task.objects.filter(recurrence_schedule=schedule).exists())
+
+    def test_daily_recurrence_skips_weekends_when_include_weekends_false(self):
+        # Anchor on Friday Nov 7, 2025 at 09:00 UTC
+        from datetime import datetime as dt
+        from zoneinfo import ZoneInfo
+        friday_dt = dt(2025, 11, 7, 9, 0, tzinfo=ZoneInfo('UTC'))
+        schedule = RecurringSchedule(
+            title='Weekday Daily',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            frequency='daily',
+            interval=1,
+            include_weekends=False,
+            times=['09:00'],
+            timezone='UTC',
+            start_at=friday_dt,
+        )
+
+        # After Friday at 09:00, next run should be Monday Nov 10, 2025 at 09:00 UTC
+        next_run = calculate_next_run_at(schedule, reference=friday_dt + timedelta(minutes=1))
+        expected_monday = dt(2025, 11, 10, 9, 0, tzinfo=ZoneInfo('UTC'))
+        self.assertEqual(next_run, expected_monday)
+
+    def test_daily_recurrence_includes_weekends_when_include_weekends_true(self):
+        # Anchor on Friday Nov 7, 2025 at 09:00 UTC
+        from datetime import datetime as dt
+        from zoneinfo import ZoneInfo
+        friday_dt = dt(2025, 11, 7, 9, 0, tzinfo=ZoneInfo('UTC'))
+        schedule = RecurringSchedule(
+            title='All Days Daily',
+            assigned_by=self.admin_user,
+            assigned_to=self.staff_user,
+            frequency='daily',
+            interval=1,
+            include_weekends=True,
+            times=['09:00'],
+            timezone='UTC',
+            start_at=friday_dt,
+        )
+
+        # After Friday at 09:00, next run should be Saturday Nov 8, 2025 at 09:00 UTC
+        next_run = calculate_next_run_at(schedule, reference=friday_dt + timedelta(minutes=1))
+        expected_saturday = dt(2025, 11, 8, 9, 0, tzinfo=ZoneInfo('UTC'))
+        self.assertEqual(next_run, expected_saturday)
+
