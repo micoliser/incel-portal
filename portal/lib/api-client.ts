@@ -29,7 +29,10 @@ let refreshTokenPromise: Promise<string | null> | null = null;
 
 function shouldSkipAuthRefresh(url?: string) {
   return Boolean(
-    url && (url.includes("/auth/login") || url.includes("/auth/refresh")),
+    url &&
+      (url.includes("/auth/login") ||
+        url.includes("/auth/refresh") ||
+        url.includes("/auth/password-reset")),
   );
 }
 

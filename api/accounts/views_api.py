@@ -1,10 +1,13 @@
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
 from django.core.cache import cache
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 import logging
 from rest_framework import permissions, status
 from rest_framework.pagination import PageNumberPagination
@@ -24,6 +27,9 @@ from accounts.serializers import (
     ChangePasswordSerializer,
     LoginSerializer,
     LogoutSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetValidateSerializer,
     UpdateUserDepartmentSerializer,
     UpdateUserRoleSerializer,
     UpdateUserStatusSerializer,
@@ -294,6 +300,164 @@ class ChangePasswordView(APIView):
         )
         response = Response({'detail': 'Password changed.', 'tokens': tokens})
         return _set_jwt_cookies(response, tokens)
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+
+        user = User.objects.filter(email__iexact=email).first()
+        if user is None:
+            log_audit(
+                action='AUTH_PASSWORD_RESET_FAILED',
+                request=request,
+                target_type='User',
+                metadata={'reason': 'user_not_found', 'email': email},
+            )
+            return Response(
+                {'detail': 'No account found with this email address. Please check your spelling or contact your administrator.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not user.is_active:
+            log_audit(
+                action='AUTH_PASSWORD_RESET_FAILED',
+                request=request,
+                target_type='User',
+                target_id=user.id,
+                metadata={'reason': 'user_inactive', 'email': email},
+            )
+            return Response(
+                {'detail': 'This account is currently deactivated. Please contact your administrator.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        portal_base_url = getattr(settings, 'PORTAL_BASE_URL', 'http://localhost:3000').rstrip('/')
+        reset_url = f"{portal_base_url}/reset-password?uid={uid}&token={token}"
+        expiry_minutes = int(getattr(settings, 'PASSWORD_RESET_TIMEOUT', 3600) // 60)
+
+        if settings.DEBUG or getattr(settings, 'EMAIL_DEBUG', False):
+            print(f"\n{'=' * 70}\n[DEVELOPMENT PASSWORD RESET LINK for {user.email}]\n{reset_url}\n{'=' * 70}\n")
+            logger.info("[DEVELOPMENT PASSWORD RESET LINK for %s]: %s", user.email, reset_url)
+
+        try:
+            UserEmailManager.send_password_reset_email(
+                user=user,
+                reset_url=reset_url,
+                expiry_minutes=expiry_minutes,
+            )
+        except Exception as exc:
+            logger.error("Failed to send password reset email: %s", str(exc))
+
+        log_audit(
+            action='AUTH_PASSWORD_RESET_REQUESTED',
+            request=request,
+            target_type='User',
+            target_id=user.id,
+            metadata={'email': user.email},
+        )
+        return Response(
+            {'detail': 'A password reset link has been sent to your email.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetValidateView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        serializer = PasswordResetValidateSerializer(data=request.query_params)
+        if not serializer.is_valid():
+            return Response(
+                {'valid': False, 'detail': 'This password reset link is invalid or has expired.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_uid = serializer.validated_data['uid']
+        token = serializer.validated_data['token']
+
+        try:
+            uid = force_str(urlsafe_base64_decode(raw_uid))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
+
+        if user is None or not user.is_active or not default_token_generator.check_token(user, token):
+            return Response(
+                {'valid': False, 'detail': 'This password reset link is invalid or has expired.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user_email = user.email or ''
+        if '@' in user_email:
+            name_part, domain_part = user_email.split('@', 1)
+            masked_name = name_part[:2] + '***' if len(name_part) > 2 else name_part + '***'
+            masked_email = f"{masked_name}@{domain_part}"
+        else:
+            masked_email = '***'
+
+        return Response({'valid': True, 'email': masked_email}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request):
+        raw_uid = request.data.get('uid')
+        token = request.data.get('token')
+
+        try:
+            uid = force_str(urlsafe_base64_decode(raw_uid))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
+
+        if user is None or not user.is_active or not default_token_generator.check_token(user, token):
+            log_audit(
+                action='AUTH_PASSWORD_RESET_FAILED',
+                request=request,
+                target_type='User',
+                metadata={'reason': 'invalid_or_expired_token'},
+            )
+            return Response(
+                {'detail': 'This password reset link is invalid or has expired.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = PasswordResetConfirmSerializer(data=request.data, context={'user': user})
+        serializer.is_valid(raise_exception=True)
+
+        new_password = serializer.validated_data['new_password']
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+
+        log_audit(
+            action='AUTH_PASSWORD_RESET_COMPLETED',
+            request=request,
+            target_type='User',
+            target_id=user.id,
+            metadata={'email': user.email},
+        )
+
+        try:
+            UserEmailManager.send_password_changed_email(user, action='reset')
+        except Exception as exc:
+            logger.error("Failed to send password changed email: %s", str(exc))
+
+        return Response(
+            {'detail': 'Your password has been successfully reset. You can now log in with your new password.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class MeView(APIView):

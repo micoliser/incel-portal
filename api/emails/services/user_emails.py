@@ -25,6 +25,16 @@ class UserPasswordChangedEmailService(BaseEmailService):
         return f"Your password has been {action}"
 
 
+class UserPasswordResetEmailService(BaseEmailService):
+    """Send email when user requests a password reset."""
+
+    email_type = EmailType.USER_PASSWORD_RESET
+    template_name = "emails/users/user_password_reset.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        return "Reset Your Incel Portal Password"
+
+
 class UserStatusChangedEmailService(BaseEmailService):
     """Send email when user is enabled/disabled."""
 
@@ -85,6 +95,31 @@ class UserEmailManager:
 
         service = UserPasswordChangedEmailService()
         service.send([user.email], context)
+
+    @staticmethod
+    def send_password_reset_email(
+        user: Any,
+        reset_url: str,
+        expiry_minutes: int = 60,
+    ) -> bool:
+        """
+        Send password reset verification link to user.
+
+        Args:
+            user: User instance
+            reset_url: Verification link URL with uid and token
+            expiry_minutes: Link validity in minutes
+        """
+        context = {
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name or user.username,
+            'reset_url': reset_url,
+            'expiry_minutes': expiry_minutes,
+        }
+
+        service = UserPasswordResetEmailService()
+        return service.send([user.email], context)
 
     @staticmethod
     def send_user_status_changed_email(user: Any) -> None:

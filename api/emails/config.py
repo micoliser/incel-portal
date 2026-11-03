@@ -19,6 +19,7 @@ class EmailType(Enum):
     APPLICATION_ACCESS_GRANTED = "application_access_granted"
     APPLICATION_ACCESS_REVOKED = "application_access_revoked"
     USER_CREATED = "user_created"
+    USER_PASSWORD_RESET = "user_password_reset"
     USER_PASSWORD_CHANGED = "user_password_changed"
     USER_STATUS_CHANGED = "user_status_changed"
     DAILY_REPORT_FORWARD = "daily_report_forward"
