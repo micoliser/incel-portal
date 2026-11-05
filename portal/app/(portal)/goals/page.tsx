@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CheckSquare2,
   Flame,
-  Info,
   Loader2,
   MessageSquare,
   Paperclip,

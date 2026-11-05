@@ -21,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { GoalProgress, GoalRecord, GoalMetric } from "@/lib/api/goals";
+import type { GoalProgress, GoalRecord } from "@/lib/api/goals";
 
 interface GoalTrackerProps {
   title?: string;

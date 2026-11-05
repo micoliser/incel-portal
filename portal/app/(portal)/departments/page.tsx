@@ -8,13 +8,11 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Crown,
-  Layers,
   Loader2,
   Network,
   Pencil,
   Plus,
   Search,
-  ShieldCheck,
   User,
   Users,
   X,
@@ -38,7 +36,6 @@ import { extractApiErrorMessage } from "@/lib/api-errors";
 import { OrganizationMembersModal } from "@/components/OrganizationMembersModal";
 import { AssignLeaderModal } from "@/components/AssignLeaderModal";
 import { DepartmentsSkeleton } from "@/components/skeletons/departments-skeleton";
-import { cn } from "@/lib/utils";
 
 type UserBasicInfo = {
   id: number;

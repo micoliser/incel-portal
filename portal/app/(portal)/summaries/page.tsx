@@ -10,8 +10,6 @@ import {
   Share2,
   Copy,
   Check,
-  TrendingUp,
-  FileText,
   MessageSquare,
   Clock,
   ChevronLeft,

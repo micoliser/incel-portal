@@ -11,7 +11,6 @@ import {
   Filter,
   Monitor,
   CheckCircle,
-  Clock,
   Wrench,
   FileSpreadsheet,
   AlertCircle,
@@ -20,7 +19,6 @@ import {
   Layers,
   RotateCcw,
   Building2,
-  User,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -126,16 +124,6 @@ const statusConfig: Record<
     badge: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400",
     dot: "bg-[#dc2626] dark:bg-red-400",
   },
-};
-
-const statusColors: Record<string, string> = {
-  available:
-    "bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/25 dark:text-[#4ade80]",
-  assigned: "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]",
-  maintenance:
-    "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400",
-  retired: "bg-muted text-foreground dark:bg-muted/20 dark:text-muted-foreground",
-  unaccounted: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/25 dark:text-red-400",
 };
 
 export default function InventoryDashboard() {

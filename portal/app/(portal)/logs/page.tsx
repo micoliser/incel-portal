@@ -19,13 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { LogsTableSkeleton } from "@/components/skeletons/logs-skeleton";
 import { PageErrorCard } from "@/components/page-error-card";
 import { apiClient } from "@/lib/api-client";
@@ -78,14 +72,6 @@ type AppliedFilters = {
   createdFrom?: string;
   createdTo?: string;
 };
-
-function formatDate(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString();
-}
 
 function formatDateTime(value: string) {
   const parsed = new Date(value);
@@ -644,7 +630,7 @@ export default function LogsPage() {
     setPage(1);
   }
 
-  const logs = logsPayload?.results ?? [];
+  const logs = useMemo(() => logsPayload?.results ?? [], [logsPayload?.results]);
   const totalCount = logsPayload?.count ?? 0;
   const totalPages = logsPayload?.total_pages ?? 1;
   const hasNext = Boolean(logsPayload?.next_page);

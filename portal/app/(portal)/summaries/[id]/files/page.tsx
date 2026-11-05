@@ -17,10 +17,7 @@ import {
   Search,
   ExternalLink,
   CheckSquare2,
-  HardDrive,
   User,
-  Clock,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";

@@ -7,7 +7,6 @@ import {
   UserCheck,
   UserPlus,
   Loader2,
-  Share2,
   Users,
 } from "lucide-react";
 
