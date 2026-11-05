@@ -15,6 +15,7 @@ import {
   KeyRound,
   AppWindow,
   LayoutDashboard,
+  Loader2,
   LogOut,
   Menu,
   Moon,
@@ -60,6 +61,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isAdmin, setIsAdmin] = useState(false);
   const [userInfo, setUserInfo] = useState<{
@@ -904,7 +907,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           <Button
             variant="ghost"
             className="w-full justify-start text-muted-foreground hover:bg-[#dc2626]/10 hover:text-[#dc2626]"
-            onClick={() => void handleLogout()}
+            onClick={() => setLogoutConfirmOpen(true)}
           >
             <LogOut className="mr-2 size-4" aria-hidden="true" />
             Log out
@@ -1159,6 +1162,79 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader
+            icon={<LogOut className="size-4.5" />}
+            iconClassName="bg-[#dc2626]/10 text-[#dc2626] ring-[#dc2626]/20 dark:bg-[#dc2626]/20 dark:text-red-400"
+          >
+            <DialogTitle>Log out of Incel Portal?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to end your current session? You will be redirected to the sign-in screen.
+            </DialogDescription>
+          </DialogHeader>
+
+          {userInfo ? (
+            <div className="my-1 flex items-center gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#0d47a1] text-xs font-semibold text-white shadow-xs">
+                {initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {fullName}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {userInfo.email || userInfo.username}
+                </p>
+              </div>
+              {roleLabel ? (
+                <span className="shrink-0 rounded-full border border-border/80 bg-background/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {roleLabel}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLogoutConfirmOpen(false)}
+              disabled={isLoggingOut}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isLoggingOut}
+              onClick={async () => {
+                setIsLoggingOut(true);
+                try {
+                  await handleLogout("manual");
+                } finally {
+                  setIsLoggingOut(false);
+                  setLogoutConfirmOpen(false);
+                }
+              }}
+              className="gap-2"
+            >
+              {isLoggingOut ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Logging out...</span>
+                </>
+              ) : (
+                <>
+                  <LogOut className="size-3.5" />
+                  <span>Log out</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
