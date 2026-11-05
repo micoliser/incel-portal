@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Paperclip, X } from "lucide-react";
+import { Loader2, Paperclip, X, LifeBuoy } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -132,7 +132,7 @@ export function CreateSupportRequestModal() {
         <Button>New Request</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[540px]">
-        <DialogHeader>
+        <DialogHeader icon={<LifeBuoy className="size-4.5" />}>
           <DialogTitle>New Support Request</DialogTitle>
           <DialogDescription>
             Submit a request to IT or HR support.
@@ -243,8 +243,20 @@ export function CreateSupportRequestModal() {
             )}
           </div>
 
-          <DialogFooter>
-            <Button type="submit" disabled={submitting}>
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={submitting}
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+            >
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               Submit Request
             </Button>

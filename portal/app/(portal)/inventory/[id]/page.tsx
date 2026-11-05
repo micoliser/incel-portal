@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { format } from "date-fns";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, UserCheck, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { Card } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -62,15 +63,15 @@ type InventoryItem = {
 };
 
 const statusColors: Record<string, string> = {
-  available: "bg-emerald-100 text-emerald-800",
-  assigned: "bg-blue-100 text-blue-800",
+  available: "bg-[#16a34a]/10 text-[#16a34a]",
+  assigned: "bg-[#0d47a1]/10 text-[#0d47a1]",
   maintenance: "bg-amber-100 text-amber-800",
-  retired: "bg-gray-100 text-gray-800",
-  unaccounted: "bg-red-100 text-red-800",
+  retired: "bg-muted text-foreground",
+  unaccounted: "bg-[#dc2626]/10 text-[#dc2626]",
 };
 
 const backButtonClassName =
-  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+  "rounded-full border border-border/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-border hover:bg-muted hover:text-foreground dark:border-border/70 dark:bg-card/70 dark:text-foreground dark:hover:border-border dark:hover:bg-muted dark:hover:text-white";
 
 export default function InventoryItemDetail() {
   const params = useParams();
@@ -212,7 +213,7 @@ export default function InventoryItemDetail() {
               <h1 className="text-3xl font-bold">
                 {item.name} <span className="text-muted-foreground text-2xl font-normal">({item.code})</span>
               </h1>
-              <p className="text-gray-600 mt-2">Asset Details</p>
+              <p className="text-muted-foreground mt-2">Asset Details</p>
             </div>
           </div>
           <div className="flex flex-col items-center sm:items-end gap-2">
@@ -222,7 +223,7 @@ export default function InventoryItemDetail() {
               {item.status.toUpperCase()}
             </span>
             {(item.status === 'retired' || item.status === 'unaccounted') && item.status_reason && (
-              <div className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-[250px] text-center sm:text-right">
+              <div className="text-sm text-muted-foreground dark:text-muted-foreground mt-2 max-w-[250px] text-center sm:text-right">
                 <span className="font-semibold">Reason:</span> {item.status_reason}
               </div>
             )}
@@ -298,7 +299,7 @@ export default function InventoryItemDetail() {
                     </div>
                     {assignment.returned_at ? (
                       <div className="text-right">
-                        <span className="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full dark:bg-gray-800 dark:text-gray-300">
+                        <span className="inline-block bg-muted text-foreground text-xs px-2 py-0.5 rounded-full dark:bg-muted dark:text-foreground">
                           Returned
                         </span>
                         <p className="text-xs text-muted-foreground mt-1">
@@ -306,7 +307,7 @@ export default function InventoryItemDetail() {
                         </p>
                       </div>
                     ) : (
-                      <span className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full dark:bg-blue-900/30 dark:text-blue-400">
+                      <span className="inline-block bg-[#0d47a1]/10 text-[#0d47a1] text-xs px-2 py-0.5 rounded-full dark:bg-[#0d47a1]/15 dark:text-[#38bdf8]">
                         Active
                       </span>
                     )}
@@ -332,8 +333,8 @@ export default function InventoryItemDetail() {
           setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
         }
       }}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<UserCheck className="size-4.5" />}>
             <DialogTitle>Assign Item</DialogTitle>
             <DialogDescription>Assign {item.name} to a user.</DialogDescription>
           </DialogHeader>
@@ -355,12 +356,24 @@ export default function InventoryItemDetail() {
                 placeholder="e.g. Minor scratch on lid"
               />
             </div>
-            <div className="flex justify-end pt-4">
-              <Button type="submit" disabled={isSubmitting}>
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAssignOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+              >
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Assign
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -372,8 +385,8 @@ export default function InventoryItemDetail() {
           setReturnForm({ condition_notes: "" });
         }
       }}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<RotateCcw className="size-4.5" />}>
             <DialogTitle>Return Item</DialogTitle>
             <DialogDescription>Mark {item.name} as returned and available.</DialogDescription>
           </DialogHeader>
@@ -387,12 +400,24 @@ export default function InventoryItemDetail() {
                 placeholder="e.g. Screen cracked, needs repair"
               />
             </div>
-            <div className="flex justify-end pt-4">
-              <Button type="submit" disabled={isSubmitting}>
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsReturnOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+              >
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Process Return
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

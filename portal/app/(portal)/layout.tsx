@@ -36,6 +36,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -538,20 +539,22 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     <div className="h-screen overflow-hidden bg-background text-foreground">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-x-hidden overflow-y-hidden border-r border-sidebar-border bg-sidebar p-5 text-sidebar-foreground shadow-[0_10px_24px_rgba(15,23,42,0.08)] backdrop-blur transition-transform duration-300 ease-out dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(9,15,26,0.98)_0%,rgba(4,8,15,0.98)_100%)] dark:shadow-[0_22px_44px_rgba(2,6,23,0.62)]",
+          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-x-hidden overflow-y-hidden border-r border-sidebar-border bg-sidebar px-4 py-5 text-sidebar-foreground shadow-[0_4px_20px_rgba(9,9,11,0.04)] transition-transform duration-200 ease-out dark:shadow-[0_12px_32px_rgba(0,0,0,0.5)]",
           "-translate-x-full lg:translate-x-0",
           isSidebarOpen && "translate-x-0",
         )}
       >
-        <div className="flex items-center justify-between gap-3 rounded-2xl px-1 py-3 flex-shrink-0">
+        <div className="flex items-center justify-between gap-3 border-b border-sidebar-border px-2 pb-4 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <Image src="/logo2.png" alt="Incel Group" width={50} height={50} />
+            <div className="flex size-10 items-center justify-center rounded-xl bg-[#0d47a1]/10 p-1.5 ring-1 ring-[#0d47a1]/20 dark:bg-[#0d47a1]/20">
+              <Image src="/logo2.png" alt="Incel Group" width={36} height={36} className="object-contain" />
+            </div>
             <div>
-              <p className="text-base font-semibold leading-tight text-sidebar-foreground">
+              <p className="text-base font-bold tracking-tight text-sidebar-foreground">
                 Incel Group
               </p>
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
-                Workspace
+              <p className="text-xs font-medium text-muted-foreground">
+                Enterprise Portal
               </p>
             </div>
           </div>
@@ -566,444 +569,363 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </Button>
         </div>
 
-        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden pb-4">
-          <Link
-            href="/dashboard"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname === "/dashboard"
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+        <nav className="mt-4 flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden px-1 pb-4">
+          {/* Group 1: Overview & Work */}
+          <div className="flex flex-col gap-1">
+            <Link
+              href="/dashboard"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname === "/dashboard" ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <LayoutDashboard
-              className={cn(
-                "size-4 transition-transform duration-300",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 pathname === "/dashboard"
-                  ? "scale-110"
-                  : "group-hover:scale-105",
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <span>Dashboard</span>
-          </Link>
+            >
+              <LayoutDashboard
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname === "/dashboard"
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>Dashboard</span>
+            </Link>
 
-          <Link
-            href="/tasks"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/tasks")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+            <Link
+              href="/tasks"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/tasks") ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <CheckSquare2
-              className={cn(
-                "size-4 transition-transform duration-300",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 pathname.startsWith("/tasks")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <span>Tasks</span>
-          </Link>
+            >
+              <CheckSquare2
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/tasks")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>Tasks</span>
+            </Link>
 
-          <Link
-            href="/todos"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/todos")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+            <Link
+              href="/todos"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/todos") ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <ListTodo
-              className={cn(
-                "size-4 transition-transform duration-300",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 pathname.startsWith("/todos")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <span>My To-Dos</span>
-          </Link>
+            >
+              <ListTodo
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/todos")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>My To-Dos</span>
+            </Link>
 
-          <Link
-            href="/reports"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/reports")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+            <Link
+              href="/goals"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/reports") ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <Calendar
-              className={cn(
-                "size-4 transition-transform duration-300",
-                pathname.startsWith("/reports")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
-              )}
-              aria-hidden="true"
-            />
-            <span>Reports</span>
-          </Link>
-
-          <Link
-            href="/applications"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname === "/applications"
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
-              className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname === "/applications" ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <AppWindow
-              className={cn(
-                "size-4 transition-transform duration-300",
-                pathname === "/applications"
-                  ? "scale-110"
-                  : "group-hover:scale-105",
-              )}
-              aria-hidden="true"
-            />
-            <span>Applications</span>
-          </Link>
-
-          <Link
-            href="/goals"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/goals")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
-              className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/goals") ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <Target
-              className={cn(
-                "size-4 transition-transform duration-300",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 pathname.startsWith("/goals")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <span>Goals</span>
-          </Link>
+            >
+              <Target
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/goals")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>Goals</span>
+            </Link>
+          </div>
 
-          <Link
-            href="/support"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/support")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+          {/* Group 2: Insights & Workspace */}
+          <div className="flex flex-col gap-1 border-t border-sidebar-border/70 pt-3">
+            <Link
+              href="/reports"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/support") ? "opacity-100" : "opacity-0",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                pathname.startsWith("/reports")
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <LifeBuoy
-              className={cn(
-                "size-4 transition-transform duration-300",
-                pathname.startsWith("/support")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
-              )}
-              aria-hidden="true"
-            />
-            <span>Support</span>
-          </Link>
+            >
+              <Calendar
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/reports")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>Reports</span>
+            </Link>
 
-          <Link
-            href="/summaries"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/summaries")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+            <Link
+              href="/summaries"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/summaries") ? "opacity-100" : "opacity-0",
-              )}
-              aria-hidden="true"
-            />
-            <TrendingUp
-              className={cn(
-                "size-4 transition-transform duration-300",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 pathname.startsWith("/summaries")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <span>Summaries</span>
-          </Link>
+            >
+              <TrendingUp
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/summaries")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>Summaries</span>
+            </Link>
 
-          <Link
-            href="/my-assets"
-            onClick={handleCloseSidebar}
-            className={cn(
-              "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-              pathname.startsWith("/my-assets")
-                ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span
+            <Link
+              href="/applications"
+              onClick={handleCloseSidebar}
               className={cn(
-                "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                pathname.startsWith("/my-assets") ? "opacity-100" : "opacity-0",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                pathname === "/applications"
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
-              aria-hidden="true"
-            />
-            <Package
+            >
+              <AppWindow
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname === "/applications"
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span>Applications</span>
+            </Link>
+
+            <Link
+              href="/my-assets"
+              onClick={handleCloseSidebar}
               className={cn(
-                "size-4 transition-transform duration-300",
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 pathname.startsWith("/my-assets")
-                  ? "scale-110"
-                  : "group-hover:scale-105",
-              )}
-              aria-hidden="true"
-            />
-            <span>My Assets</span>
-          </Link>
-
-          {isAdmin || userInfo?.has_global_access ? (
-            <Link
-              href="/users"
-              onClick={handleCloseSidebar}
-              className={cn(
-                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-                pathname === "/users"
-                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
-              <span
+              <Package
                 className={cn(
-                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                  pathname === "/users" ? "opacity-100" : "opacity-0",
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/my-assets")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
                 )}
                 aria-hidden="true"
               />
-              <Users
-                className={cn(
-                  "size-4 transition-transform duration-300",
-                  pathname === "/users" ? "scale-110" : "group-hover:scale-105",
-                )}
-                aria-hidden="true"
-              />
-              <span>Users</span>
+              <span>My Assets</span>
             </Link>
-          ) : null}
 
-          {isAdmin || userInfo?.has_global_access ? (
             <Link
-              href="/departments"
+              href="/support"
               onClick={handleCloseSidebar}
               className={cn(
-                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-                pathname === "/departments"
-                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                pathname.startsWith("/support")
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
-              <span
+              <LifeBuoy
                 className={cn(
-                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                  pathname === "/departments" ? "opacity-100" : "opacity-0",
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/support")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
                 )}
                 aria-hidden="true"
               />
-              <Network
-                className={cn(
-                  "size-4 transition-transform duration-300",
-                  pathname === "/departments" ? "scale-110" : "group-hover:scale-105",
-                )}
-                aria-hidden="true"
-              />
-              <span>Departments</span>
+              <span>Support</span>
             </Link>
-          ) : null}
+          </div>
 
-          {isAdmin || userInfo?.has_global_access || userInfo?.department === 'IT' ? (
-            <Link
-              href="/inventory"
-              onClick={handleCloseSidebar}
-              className={cn(
-                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-                pathname.startsWith("/inventory")
-                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                  pathname.startsWith("/inventory") ? "opacity-100" : "opacity-0",
-                )}
-                aria-hidden="true"
-              />
-              <Archive
-                className={cn(
-                  "size-4 transition-transform duration-300",
-                  pathname.startsWith("/inventory") ? "scale-110" : "group-hover:scale-105",
-                )}
-                aria-hidden="true"
-              />
-              <span>Inventory</span>
-            </Link>
-          ) : null}
+          {/* Group 3: Administration & Oversight */}
+          {isAdmin || userInfo?.has_global_access || userInfo?.department === "IT" ? (
+            <div className="flex flex-col gap-1 border-t border-sidebar-border/70 pt-3">
+              {isAdmin || userInfo?.has_global_access ? (
+                <Link
+                  href="/users"
+                  onClick={handleCloseSidebar}
+                  className={cn(
+                    "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                    pathname === "/users"
+                      ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Users
+                    className={cn(
+                      "size-4 transition-transform duration-150",
+                      pathname === "/users"
+                        ? "text-white"
+                        : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span>Users</span>
+                </Link>
+              ) : null}
 
+              {isAdmin || userInfo?.has_global_access ? (
+                <Link
+                  href="/departments"
+                  onClick={handleCloseSidebar}
+                  className={cn(
+                    "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                    pathname === "/departments"
+                      ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Network
+                    className={cn(
+                      "size-4 transition-transform duration-150",
+                      pathname === "/departments"
+                        ? "text-white"
+                        : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span>Departments</span>
+                </Link>
+              ) : null}
 
+              {isAdmin || userInfo?.has_global_access || userInfo?.department === "IT" ? (
+                <Link
+                  href="/inventory"
+                  onClick={handleCloseSidebar}
+                  className={cn(
+                    "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                    pathname.startsWith("/inventory")
+                      ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Archive
+                    className={cn(
+                      "size-4 transition-transform duration-150",
+                      pathname.startsWith("/inventory")
+                        ? "text-white"
+                        : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span>Inventory</span>
+                </Link>
+              ) : null}
 
-          {isAdmin || userInfo?.has_global_access ? (
-            <Link
-              href="/organization-summary"
-              onClick={handleCloseSidebar}
-              className={cn(
-                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-                pathname === "/organization-summary"
-                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                  pathname === "/organization-summary"
-                    ? "opacity-100"
-                    : "opacity-0",
-                )}
-                aria-hidden="true"
-              />
-              <Building2
-                className={cn(
-                  "size-4 transition-transform duration-300",
-                  pathname === "/organization-summary"
-                    ? "scale-110"
-                    : "group-hover:scale-105",
-                )}
-                aria-hidden="true"
-              />
-              <span>Organization</span>
-            </Link>
-          ) : null}
+              {isAdmin || userInfo?.has_global_access ? (
+                <Link
+                  href="/organization-summary"
+                  onClick={handleCloseSidebar}
+                  className={cn(
+                    "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                    pathname === "/organization-summary"
+                      ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Building2
+                    className={cn(
+                      "size-4 transition-transform duration-150",
+                      pathname === "/organization-summary"
+                        ? "text-white"
+                        : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span>Organization</span>
+                </Link>
+              ) : null}
 
-          {isAdmin || userInfo?.has_global_access ? (
-            <Link
-              href="/logs"
-              onClick={handleCloseSidebar}
-              className={cn(
-                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300",
-                pathname === "/logs"
-                  ? "bg-accent text-accent-foreground shadow-sm font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary transition-opacity duration-300",
-                  pathname === "/logs" ? "opacity-100" : "opacity-0",
-                )}
-                aria-hidden="true"
-              />
-              <ScrollText
-                className={cn(
-                  "size-4 transition-transform duration-300",
-                  pathname === "/logs" ? "scale-110" : "group-hover:scale-105",
-                )}
-                aria-hidden="true"
-              />
-              <span>Logs</span>
-            </Link>
+              {isAdmin || userInfo?.has_global_access ? (
+                <Link
+                  href="/logs"
+                  onClick={handleCloseSidebar}
+                  className={cn(
+                    "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                    pathname === "/logs"
+                      ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <ScrollText
+                    className={cn(
+                      "size-4 transition-transform duration-150",
+                      pathname === "/logs"
+                        ? "text-white"
+                        : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span>Logs</span>
+                </Link>
+              ) : null}
+            </div>
           ) : null}
         </nav>
 
-        <Button
-          variant="secondary"
-          className="w-full justify-start mt-auto flex-shrink-0"
-          onClick={() => void handleLogout()}
-        >
-          <LogOut className="mr-2 size-4" aria-hidden="true" />
-          Log out
-        </Button>
+        <div className="mt-auto border-t border-sidebar-border pt-3 flex-shrink-0">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-muted-foreground hover:bg-[#dc2626]/10 hover:text-[#dc2626]"
+            onClick={() => void handleLogout()}
+          >
+            <LogOut className="mr-2 size-4" aria-hidden="true" />
+            Log out
+          </Button>
+        </div>
       </aside>
 
       {isSidebarOpen ? (
         <button
           type="button"
           onClick={handleCloseSidebar}
-          className="fixed inset-0 z-30 bg-foreground/20 backdrop-blur-[1px] lg:hidden"
+          className="fixed inset-0 z-30 bg-black/45 backdrop-blur-[1px] lg:hidden"
           aria-label="Close sidebar overlay"
         />
       ) : null}
 
       <header className="fixed left-0 right-0 top-0 z-20 lg:left-72">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-sidebar-border bg-sidebar px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur sm:px-6 dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(10,16,28,0.95)_0%,rgba(4,8,15,0.95)_100%)] dark:shadow-[0_18px_34px_rgba(2,6,23,0.56)]">
-          <div className="flex items-start gap-3">
+        <div className="flex min-h-[72px] sm:h-[72px] items-center justify-between gap-4 border-b border-border bg-card/90 px-4 py-3 shadow-[0_1px_3px_rgba(9,9,11,0.03)] backdrop-blur-md sm:px-6">
+          <div className="flex items-center gap-3">
             <Button
-              variant="secondary"
+              variant="outline"
               size="icon"
               onClick={() => setIsSidebarOpen(true)}
               aria-label="Open sidebar"
@@ -1012,13 +934,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               <Menu className="size-5" aria-hidden="true" />
             </Button>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/85">
-                Workspace
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {pageHeader.title}
               </h1>
-              <p className="mt-1 text-sm text-muted-foreground hidden sm:block">
+              <p className="text-xs text-muted-foreground hidden sm:block">
                 {pathname === "/dashboard"
                   ? `Welcome${userInfo?.first_name ? `, ${userInfo.first_name}` : ""}`
                   : pageHeader.subtitle}
@@ -1026,23 +945,24 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2.5 sm:gap-3">
             <NotificationCenter />
 
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setIsChangePasswordOpen(true)}
-              className="border-border bg-card text-foreground hover:bg-muted w-9 sm:w-auto px-0 sm:px-4"
+              className="w-9 sm:w-auto px-0 sm:px-3"
             >
-              <KeyRound className="size-4 sm:mr-2" aria-hidden="true" />
+              <KeyRound className="size-4 sm:mr-1.5" aria-hidden="true" />
               <span className="hidden sm:inline">Change password</span>
             </Button>
 
             <Button
               type="button"
               variant="outline"
-              size="icon"
+              size="icon-sm"
               onClick={handleToggleTheme}
               aria-label={
                 theme === "dark"
@@ -1054,7 +974,6 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                   ? "Switch to light mode"
                   : "Switch to dark mode"
               }
-              className="border-border bg-card text-foreground hover:bg-muted"
             >
               {theme === "dark" ? (
                 <Sun className="size-4" aria-hidden="true" />
@@ -1063,15 +982,19 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               )}
             </Button>
 
-            <div className="flex size-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
-              {initials}
-            </div>
-            <div className="leading-tight hidden sm:block">
-              <p className="text-sm font-semibold text-foreground">
-                {fullName}
-              </p>
-              <p className="text-xs text-muted-foreground">{roleLabel}</p>
-              <p className="text-xs text-muted-foreground">{departmentLabel}</p>
+            <div className="hidden h-7 w-px bg-border sm:block" />
+
+            <div className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1.5">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-[#0d47a1] text-xs font-bold text-white shadow-xs">
+                {initials}
+              </div>
+              <div className="leading-tight hidden sm:block">
+                <p className="text-sm font-semibold text-foreground">
+                  {fullName}
+                </p>
+                <p className="text-xs font-medium text-[#0d47a1] dark:text-[#38bdf8]">{roleLabel}</p>
+                <p className="text-[11px] text-muted-foreground">{departmentLabel}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -1079,10 +1002,10 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
       <main
         className={cn(
-          "h-screen overflow-y-auto overflow-x-hidden max-w-full lg:ml-72",
-          pathname === "/summaries" || pathname.startsWith("/reports")
-            ? "pt-40 px-0 pb-0 sm:pt-40 sm:px-0 sm:pb-0 lg:pt-28"
-            : "pt-44 px-4 pb-6 sm:px-6 sm:pb-8 lg:pt-36",
+          "h-screen max-w-full lg:ml-72",
+          pathname === "/summaries"
+            ? "pt-[72px] overflow-hidden"
+            : "overflow-y-auto overflow-x-hidden pt-[105px] px-4 pb-8 sm:px-6 sm:pb-10 lg:px-8",
         )}
       >
         {children}
@@ -1097,8 +1020,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<KeyRound className="size-4.5" />}>
             <DialogTitle>Change password</DialogTitle>
             <DialogDescription>
               Update your login password for the portal.
@@ -1218,19 +1141,23 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               </div>
             ) : null}
 
-            <div className="flex justify-end gap-2">
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 onClick={() => setIsChangePasswordOpen(false)}
                 disabled={isChangingPassword}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isChangingPassword}>
+              <Button
+                type="submit"
+                disabled={isChangingPassword}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+              >
                 {isChangingPassword ? "Saving..." : "Change password"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

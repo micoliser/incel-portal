@@ -41,7 +41,7 @@ import { extractApiErrorMessage } from "@/lib/api-errors";
 import { reportsAPI, type DailyReportDetail } from "@/lib/api/reports";
 
 const backButtonClassName =
-  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+  "rounded-full border border-border/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-border hover:bg-muted hover:text-foreground dark:border-border/70 dark:bg-card/70 dark:text-foreground dark:hover:border-border dark:hover:bg-muted dark:hover:text-white";
 
 const MAX_FORWARD_RECIPIENTS = 5;
 
@@ -57,7 +57,7 @@ function SubreportCard({
   canOpen: boolean;
 }) {
   return (
-    <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+    <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
       <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
         <div className="space-y-1">
           <p className="text-base font-semibold text-foreground">
@@ -296,7 +296,7 @@ export default function DailyReportPage() {
       </Button>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
           <CardHeader className="border-b border-border/60">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -307,7 +307,7 @@ export default function DailyReportPage() {
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm dark:bg-slate-900/80">
+                <div className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm dark:bg-card/80">
                   {report.subreport_count} report
                   {report.subreport_count === 1 ? "" : "s"}
                 </div>
@@ -327,16 +327,16 @@ export default function DailyReportPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 p-4 sm:p-6">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-slate-900/40">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-card/40">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
                     Report owner
                   </p>
-                  <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  <p className="mt-1 text-lg font-semibold text-foreground dark:text-white">
                     {report.creator.full_name}
                   </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  <p className="mt-1 text-sm text-muted-foreground dark:text-foreground">
                     Created{" "}
                     {formatDistanceToNow(parseISO(report.created_at), {
                       addSuffix: true,
@@ -382,7 +382,7 @@ export default function DailyReportPage() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader>
               <CardTitle className="text-lg">Add a report</CardTitle>
               <CardDescription>
@@ -417,7 +417,7 @@ export default function DailyReportPage() {
                   </div>
 
                   {actionError ? (
-                    <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                    <div className="flex gap-3 rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-4 text-sm text-[#dc2626] dark:border-[#dc2626]/30 dark:bg-[#dc2626]/15 dark:text-red-200">
                       <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                       <span>{actionError}</span>
                     </div>
@@ -449,7 +449,7 @@ export default function DailyReportPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Users className="h-5 w-5 text-primary" />
@@ -485,8 +485,8 @@ export default function DailyReportPage() {
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<Mail className="size-4.5" />}>
             <DialogTitle>Send report to email</DialogTitle>
             <DialogDescription>
               Forward this daily report with all report entries and comments.
@@ -545,13 +545,13 @@ export default function DailyReportPage() {
             ) : null}
 
             {sendEmailError ? (
-              <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+              <div className="flex gap-3 rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-4 text-sm text-[#dc2626] dark:border-[#dc2626]/30 dark:bg-[#dc2626]/15 dark:text-red-200">
                 <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <span>{sendEmailError}</span>
               </div>
             ) : null}
 
-            <DialogFooter>
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
               <Button
                 type="button"
                 variant="outline"
@@ -560,7 +560,11 @@ export default function DailyReportPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" className="gap-2" disabled={isSendingEmail}>
+              <Button
+                type="submit"
+                className="gap-2 bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+                disabled={isSendingEmail}
+              >
                 {isSendingEmail ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (

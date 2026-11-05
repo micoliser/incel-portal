@@ -15,6 +15,13 @@ import {
   Wrench,
   FileSpreadsheet,
   AlertCircle,
+  Pencil,
+  Package,
+  Layers,
+  RotateCcw,
+  Building2,
+  User,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
@@ -32,6 +39,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -47,10 +55,10 @@ import {
   AssigneeCombobox,
   AssigneeOption,
 } from "@/components/inventory/assignee-combobox";
-import { Pencil } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { processAndValidateFile } from "@/lib/file-utils";
+import { cn } from "@/lib/utils";
 
 type InventoryCategory = {
   id: string;
@@ -89,14 +97,45 @@ type InventoryStats = {
   unaccounted: number;
 };
 
+const statusConfig: Record<
+  string,
+  { label: string; badge: string; dot: string }
+> = {
+  available: {
+    label: "Available",
+    badge: "bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]",
+    dot: "bg-[#16a34a] dark:bg-[#4ade80]",
+  },
+  assigned: {
+    label: "Assigned",
+    badge: "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]",
+    dot: "bg-[#0d47a1] dark:bg-[#38bdf8]",
+  },
+  maintenance: {
+    label: "Maintenance",
+    badge: "bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400",
+    dot: "bg-amber-500 dark:bg-amber-400",
+  },
+  retired: {
+    label: "Retired",
+    badge: "bg-muted text-muted-foreground dark:bg-muted/40 dark:text-muted-foreground",
+    dot: "bg-muted-foreground",
+  },
+  unaccounted: {
+    label: "Unaccounted",
+    badge: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400",
+    dot: "bg-[#dc2626] dark:bg-red-400",
+  },
+};
+
 const statusColors: Record<string, string> = {
   available:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400",
-  assigned: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-400",
+    "bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/25 dark:text-[#4ade80]",
+  assigned: "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]",
   maintenance:
     "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400",
-  retired: "bg-gray-100 text-gray-800 dark:bg-gray-500/20 dark:text-gray-400",
-  unaccounted: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-400",
+  retired: "bg-muted text-foreground dark:bg-muted/20 dark:text-muted-foreground",
+  unaccounted: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/25 dark:text-red-400",
 };
 
 export default function InventoryDashboard() {
@@ -577,204 +616,328 @@ export default function InventoryDashboard() {
     if (categoryFilter !== "all") count++;
     if (statusFilter !== "all") count++;
     if (managingDeptFilter !== "all") count++;
+    if (searchInput.trim()) count++;
     return count;
-  }, [categoryFilter, statusFilter, managingDeptFilter]);
+  }, [categoryFilter, statusFilter, managingDeptFilter, searchInput]);
+
+  const handleResetFilters = () => {
+    setSearchInput("");
+    setSearchQuery("");
+    setStatusFilter("all");
+    setCategoryFilter("all");
+    setManagingDeptFilter("all");
+  };
 
   if (loading && !hasInitialLoadCompleted.current) {
     return <InventorySkeleton />;
   }
 
   return (
-    <div className="space-y-8">
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card className="p-4 border border-border">
-          <div className="flex items-center gap-4">
-            <div className="rounded-full bg-primary/10 p-3 text-primary">
-              <Archive className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Total Assets
-              </p>
-              <h3 className="text-2xl font-bold">{stats.total}</h3>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4 border border-border">
-          <div className="flex items-center gap-4">
-            <div className="rounded-full bg-emerald-100 p-3 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-              <CheckCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Available
-              </p>
-              <h3 className="text-2xl font-bold">{stats.available}</h3>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4 border border-border">
-          <div className="flex items-center gap-4">
-            <div className="rounded-full bg-blue-100 p-3 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
-              <Monitor className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Assigned
-              </p>
-              <h3 className="text-2xl font-bold">{stats.assigned}</h3>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4 border border-border">
-          <div className="flex items-center gap-4">
-            <div className="rounded-full bg-amber-100 p-3 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
-              <Clock className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Maintenance
-              </p>
-              <h3 className="text-2xl font-bold">{stats.maintenance}</h3>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4 border border-border">
-          <div className="flex items-center gap-4">
-            <div className="rounded-full bg-gray-100 p-3 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400">
-              <Archive className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Retired
-              </p>
-              <h3 className="text-2xl font-bold">{stats.retired}</h3>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4 border border-border">
-          <div className="flex items-center gap-4">
-            <div className="rounded-full bg-red-100 p-3 text-red-600 dark:bg-red-500/20 dark:text-red-400">
-              <AlertCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Unaccounted
-              </p>
-              <h3 className="text-2xl font-bold">{stats.unaccounted}</h3>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <div className="mx-auto w-full max-w-2xl">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="inventory-search"
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search by asset code, name, serial number, or assignee..."
-            className="h-11 rounded-full pl-10 pr-5 text-base"
-          />
+    <div className="space-y-6 max-w-full">
+      {/* 1. Executive Header & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Assets & Equipment
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Track enterprise hardware, assignments, lifecycle status, and service history.
+          </p>
         </div>
-      </div>
-
-      <div className="flex items-center justify-center">
-        <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-          {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} active
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button
-          type="button"
-          variant={categoryFilter === "all" ? "default" : "outline"}
-          className="rounded-full"
-          onClick={() => setCategoryFilter("all")}
-        >
-          All Categories
-        </Button>
-        {categories.map((category) => {
-          const isActive = categoryFilter === category.id;
-          return (
-            <Button
-              key={category.id}
-              type="button"
-              variant={isActive ? "default" : "outline"}
-              className="rounded-full"
-              onClick={() => setCategoryFilter(category.id)}
-            >
-              {category.name}
-            </Button>
-          );
-        })}
-      </div>
-
-      {/* Filters & Actions */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex gap-4 items-center">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="available">Available</SelectItem>
-              <SelectItem value="assigned">Assigned</SelectItem>
-              <SelectItem value="maintenance">Maintenance</SelectItem>
-              <SelectItem value="retired">Retired</SelectItem>
-              <SelectItem value="unaccounted">Unaccounted</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={managingDeptFilter} onValueChange={setManagingDeptFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Managing Dept" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="IT">IT</SelectItem>
-              <SelectItem value="Admin">Admin</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Button
             variant="outline"
+            size="sm"
             onClick={handleExport}
             disabled={isExporting}
+            className="rounded-lg h-9.5 text-xs sm:text-sm font-medium border-border"
           >
             {isExporting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="mr-1.5 size-4 animate-spin" />
             ) : (
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              <FileSpreadsheet className="mr-1.5 size-4" />
             )}
-            Export
+            Export CSV
           </Button>
-          <Button variant="outline" asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="rounded-lg h-9.5 text-xs sm:text-sm font-medium border-border"
+          >
             <Link href="/inventory/maintenance">
-              <Wrench className="mr-2 h-4 w-4" /> Maintenance Logs
+              <Wrench className="mr-1.5 size-4" />
+              Maintenance Logs
             </Link>
           </Button>
           {hasWriteAccess && (
             <>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setIsCategoryModalOpen(true)}
+                className="rounded-lg h-9.5 text-xs sm:text-sm font-medium border-border"
               >
-                <Plus className="mr-2 h-4 w-4" /> Category
+                <Plus className="mr-1.5 size-4" />
+                Add Category
               </Button>
-              <Button onClick={() => setIsItemModalOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" /> Item
+              <Button
+                size="sm"
+                onClick={() => setIsItemModalOpen(true)}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white rounded-lg px-4 h-9.5 text-xs sm:text-sm font-semibold shadow-sm"
+              >
+                <Plus className="mr-1.5 size-4" />
+                Add Asset
               </Button>
             </>
           )}
         </div>
       </div>
 
+      {/* 2. Key Operational Metrics */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 sm:gap-4">
+        {/* Total Assets */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Total Assets
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-primary/20">
+              <Package className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {stats.total}
+            </span>
+            <span className="text-xs text-muted-foreground">all items</span>
+          </div>
+        </Card>
+
+        {/* Available */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Available
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
+              <CheckCircle className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {stats.available}
+            </span>
+            <span className="text-xs text-[#16a34a] font-medium">ready to assign</span>
+          </div>
+        </Card>
+
+        {/* Assigned */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Assigned
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+              <Monitor className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {stats.assigned}
+            </span>
+            <span className="text-xs text-[#0d47a1] dark:text-[#38bdf8] font-medium">in active use</span>
+          </div>
+        </Card>
+
+        {/* Maintenance */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Maintenance
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+              <Wrench className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {stats.maintenance}
+            </span>
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">under repair</span>
+          </div>
+        </Card>
+
+        {/* Retired */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Retired
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-muted/30">
+              <Archive className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {stats.retired}
+            </span>
+            <span className="text-xs text-muted-foreground">decommissioned</span>
+          </div>
+        </Card>
+
+        {/* Unaccounted */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Unaccounted
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400">
+              <AlertCircle className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {stats.unaccounted}
+            </span>
+            <span className="text-xs text-[#dc2626] dark:text-red-400 font-medium">needs audit</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* 3. Integrated Filter Toolbar */}
+      <Card className="rounded-xl border border-border bg-card p-3 sm:p-4 shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Search Box */}
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+            <Input
+              id="inventory-search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search by asset code, name, serial number, or assignee..."
+              className="h-10 pl-9 pr-9 rounded-lg bg-background/50 border-input text-xs sm:text-sm"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Dropdowns */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
+            {/* Category Select */}
+            <div className="w-full sm:w-44 shrink-0">
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+                  <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Status Select */}
+            <div className="w-full sm:w-40 shrink-0">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+                  <Filter className="mr-1.5 size-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="available">Available</SelectItem>
+                  <SelectItem value="assigned">Assigned</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                  <SelectItem value="retired">Retired</SelectItem>
+                  <SelectItem value="unaccounted">Unaccounted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Managing Dept Select */}
+            <div className="w-full sm:w-36 shrink-0">
+              <Select value={managingDeptFilter} onValueChange={setManagingDeptFilter}>
+                <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+                  <SelectValue placeholder="Managing Dept" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Depts</SelectItem>
+                  <SelectItem value="IT">IT</SelectItem>
+                  <SelectItem value="Admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Reset button if active */}
+            {activeFilterCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                className="h-10 px-3 text-xs text-muted-foreground hover:text-foreground shrink-0"
+              >
+                <RotateCcw className="mr-1.5 size-3.5" />
+                Reset
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Category quick filter pills */}
+        {categories.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-2 border-t border-border/50 text-xs">
+            <span className="text-muted-foreground font-medium shrink-0 mr-1 flex items-center gap-1">
+              <Layers className="size-3.5" /> Quick Filter:
+            </span>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter("all")}
+              className={cn(
+                "px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0",
+                categoryFilter === "all"
+                  ? "bg-[#0d47a1] text-white"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              All
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setCategoryFilter(categoryFilter === cat.id ? "all" : cat.id)}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0",
+                  categoryFilter === cat.id
+                    ? "bg-[#0d47a1] text-white"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                {cat.name}
+              </button>
+            ))}
+            <div className="ml-auto text-xs text-muted-foreground shrink-0 pl-2">
+              Showing {items.length} {items.length === 1 ? "asset" : "assets"}
+              {activeFilterCount > 0 && ` (${activeFilterCount} active)`}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* 4. Inventory Data Table */}
       {error ? (
         <PageErrorCard
           title="Failed to load inventory"
@@ -783,139 +946,211 @@ export default function InventoryDashboard() {
         />
       ) : (
         <>
-          <Card className="overflow-hidden border border-border">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] text-left text-sm">
-              <thead className="bg-muted/50 text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Code</th>
-                  <th className="px-4 py-3 font-medium">Item Name</th>
-                  <th className="px-4 py-3 font-medium">Category</th>
-                  <th className="px-4 py-3 font-medium">Managing Dept.</th>
-                  <th className="px-4 py-3 font-medium">Serial Number</th>
-                  <th className="px-4 py-3 font-medium">Qty</th>
-                  <th className="px-4 py-3 font-medium">Purchase Date</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Assignee</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading && items.length === 0 ? (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <InventoryTableRowSkeleton key={i} columns={10} />
-                  ))
-                ) : items.length === 0 ? (
+          <Card className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead className="bg-muted/40 text-muted-foreground text-xs uppercase tracking-wider font-semibold border-b border-border">
                   <tr>
-                    <td
-                      colSpan={10}
-                      className="px-4 py-8 text-center text-muted-foreground"
-                    >
-                      No items found matching your filters.
-                    </td>
-                  </tr>
-                ) : (
-                  <>
-                    {items.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="hover:bg-muted/50 transition-colors"
-                      >
-                        <td className="px-4 py-3 font-mono text-sm font-semibold text-muted-foreground">
-                          {item.code}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {item.photo_url && (
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <div className="relative h-10 w-10 flex-shrink-0 cursor-pointer">
-                                    <Image
-                                      src={item.photo_url}
-                                      alt={item.name}
-                                      className="rounded-md object-cover border border-border"
-                                      fill
-                                      unoptimized
-                                    />
-                                  </div>
-                                </DialogTrigger>
-                                <DialogContent className="sm:max-w-2xl p-0 border-none bg-transparent shadow-none">
-                                  <DialogTitle className="sr-only">
-                                    Photo of {item.name}
-                                  </DialogTitle>
-                                  <div className="relative w-full h-[80vh]">
-                                    <Image
-                                      src={item.photo_url}
-                                      alt={item.name}
-                                      className="object-contain rounded-lg"
-                                      fill
-                                      unoptimized
-                                    />
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
-                            )}
-                            <Link
-                              href={`/inventory/${item.id}`}
-                              className="font-medium text-primary hover:underline"
-                            >
-                              {item.name}
-                            </Link>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">{item.category.name}</td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {item.managing_department?.name || "—"}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                          {item.serial_number || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {item.quantity}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                          {item.purchase_date || "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusColors[item.status]}`}
-                          >
-                            {item.status.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {item.current_assignee
-                            ? `${item.current_assignee.first_name} ${item.current_assignee.last_name}`
-                            : item.current_assignee_department
-                              ? item.current_assignee_department.name
-                              : "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {hasWriteAccess && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEditModal(item)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {isLoadingMore && (
-                      <>
-                        <InventoryTableRowSkeleton columns={10} />
-                        <InventoryTableRowSkeleton columns={10} />
-                      </>
+                    <th className="px-4 py-3">Code</th>
+                    <th className="px-4 py-3">Item Details</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Managing Dept</th>
+                    <th className="px-4 py-3">Serial No</th>
+                    <th className="px-4 py-3 text-center">Qty</th>
+                    <th className="px-4 py-3">Purchase Date</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Assignee</th>
+                    {hasWriteAccess && (
+                      <th className="px-4 py-3 text-right">Actions</th>
                     )}
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {hasNextPage && <div ref={loadMoreRef} className="h-4" />}
-        </Card>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {loading && items.length === 0 ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <InventoryTableRowSkeleton key={i} columns={hasWriteAccess ? 10 : 9} />
+                    ))
+                  ) : items.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={hasWriteAccess ? 10 : 9}
+                        className="px-4 py-12 text-center text-muted-foreground"
+                      >
+                        <Package className="size-8 mx-auto mb-2 opacity-40" />
+                        <p className="font-medium text-foreground">No assets found</p>
+                        <p className="text-xs mt-1">Try adjusting your filters or search terms.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {items.map((item) => {
+                        const statusCfg = statusConfig[item.status.toLowerCase()] || {
+                          label: item.status.toUpperCase(),
+                          badge: "bg-muted text-muted-foreground",
+                          dot: "bg-muted-foreground",
+                        };
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className="hover:bg-muted/30 transition-colors group"
+                          >
+                            {/* Code */}
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted/60 text-foreground border border-border/40">
+                                {item.code}
+                              </span>
+                            </td>
+
+                            {/* Item Details */}
+                            <td className="px-4 py-3.5">
+                              <div className="flex items-center gap-3">
+                                {item.photo_url ? (
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <div className="relative size-10 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-muted/30 hover:opacity-90 transition-opacity">
+                                        <Image
+                                          src={item.photo_url}
+                                          alt={item.name}
+                                          className="object-cover"
+                                          fill
+                                          unoptimized
+                                        />
+                                      </div>
+                                    </DialogTrigger>
+                                    <DialogContent className="sm:max-w-2xl p-0 border-none bg-transparent shadow-none">
+                                      <DialogTitle className="sr-only">
+                                        Photo of {item.name}
+                                      </DialogTitle>
+                                      <div className="relative w-full h-[80vh]">
+                                        <Image
+                                          src={item.photo_url}
+                                          alt={item.name}
+                                          className="object-contain rounded-lg"
+                                          fill
+                                          unoptimized
+                                        />
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                ) : (
+                                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30 text-muted-foreground">
+                                    <Package className="size-5 opacity-60" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 max-w-[220px]">
+                                  <Link
+                                    href={`/inventory/${item.id}`}
+                                    className="font-medium text-foreground hover:text-primary transition-colors hover:underline block truncate text-sm"
+                                    title={item.name}
+                                  >
+                                    {item.name}
+                                  </Link>
+                                  <span className="text-xs text-muted-foreground block truncate">
+                                    {item.category?.name || "Uncategorized"}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Category */}
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-muted/50 text-foreground/80">
+                                {item.category?.name || "—"}
+                              </span>
+                            </td>
+
+                            {/* Managing Dept */}
+                            <td className="px-4 py-3.5 whitespace-nowrap text-xs text-muted-foreground font-medium">
+                              {item.managing_department?.name || "—"}
+                            </td>
+
+                            {/* Serial Number */}
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {item.serial_number || "—"}
+                              </span>
+                            </td>
+
+                            {/* Quantity */}
+                            <td className="px-4 py-3.5 whitespace-nowrap text-center text-xs font-semibold text-foreground">
+                              {item.quantity}
+                            </td>
+
+                            {/* Purchase Date */}
+                            <td className="px-4 py-3.5 whitespace-nowrap text-xs text-muted-foreground">
+                              {item.purchase_date || "—"}
+                            </td>
+
+                            {/* Status */}
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium tracking-tight whitespace-nowrap",
+                                  statusCfg.badge
+                                )}
+                              >
+                                <span className={cn("size-1.5 rounded-full shrink-0", statusCfg.dot)} />
+                                {statusCfg.label}
+                              </span>
+                            </td>
+
+                            {/* Assignee */}
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              {item.current_assignee ? (
+                                <div className="flex items-center gap-2">
+                                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                                    {(
+                                      (item.current_assignee.first_name?.[0] || "") +
+                                      (item.current_assignee.last_name?.[0] || "")
+                                    ).toUpperCase() || "U"}
+                                  </div>
+                                  <span className="text-xs font-medium text-foreground truncate max-w-[180px]">
+                                    {item.current_assignee.first_name} {item.current_assignee.last_name}
+                                  </span>
+                                </div>
+                              ) : item.current_assignee_department ? (
+                                <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                                  <Building2 className="size-3.5 shrink-0" />
+                                  <span className="truncate max-w-[180px] font-medium text-foreground/80">
+                                    {item.current_assignee_department.name}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground/60">—</span>
+                              )}
+                            </td>
+
+                            {/* Actions */}
+                            {hasWriteAccess && (
+                              <td className="px-4 py-3.5 whitespace-nowrap text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8 text-muted-foreground hover:text-foreground opacity-70 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => openEditModal(item)}
+                                  title="Edit item"
+                                >
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                      {isLoadingMore && (
+                        <>
+                          <InventoryTableRowSkeleton columns={hasWriteAccess ? 10 : 9} />
+                          <InventoryTableRowSkeleton columns={hasWriteAccess ? 10 : 9} />
+                        </>
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {hasNextPage && <div ref={loadMoreRef} className="h-4" />}
+          </Card>
           <InfiniteScrollLoader isLoading={isLoadingMore} entityName="inventory items" />
         </>
       )}
@@ -927,8 +1162,8 @@ export default function InventoryDashboard() {
           setCategoryForm({ name: "", description: "" });
         }
       }}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<Archive className="size-4.5" />}>
             <DialogTitle>Create Category</DialogTitle>
             <DialogDescription>
               Add a new category for your inventory items (e.g., Laptops,
@@ -961,14 +1196,26 @@ export default function InventoryDashboard() {
                 placeholder="Optional description"
               />
             </div>
-            <div className="flex justify-end pt-4">
-              <Button type="submit" disabled={isSubmitting}>
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCategoryModalOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+              >
                 {isSubmitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
                 Create Category
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -996,8 +1243,8 @@ export default function InventoryDashboard() {
           setItemPhoto(null);
         }
       }}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<Monitor className="size-4.5" />}>
             <DialogTitle>Create Item</DialogTitle>
             <DialogDescription>
               Add a new hardware asset or equipment to the inventory.
@@ -1174,7 +1421,7 @@ export default function InventoryDashboard() {
             {(itemForm.status === "retired" || itemForm.status === "unaccounted") && (
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="item_status_reason">
-                  Reason {itemForm.status === "unaccounted" ? <span className="text-red-500">*</span> : "(Optional)"}
+                  Reason {itemForm.status === "unaccounted" ? <span className="text-[#dc2626]">*</span> : "(Optional)"}
                 </Label>
                 <Textarea
                   id="item_status_reason"
@@ -1216,14 +1463,26 @@ export default function InventoryDashboard() {
                 />
               </div>
             )}
-            <div className="flex justify-end pt-4">
-              <Button type="submit" disabled={isSubmitting}>
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsItemModalOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+              >
                 {isSubmitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
                 Create Item
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -1393,7 +1652,7 @@ export default function InventoryDashboard() {
             {(itemForm.status === "retired" || itemForm.status === "unaccounted") && (
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="edit_item_status_reason">
-                  Reason {itemForm.status === "unaccounted" ? <span className="text-red-500">*</span> : "(Optional)"}
+                  Reason {itemForm.status === "unaccounted" ? <span className="text-[#dc2626]">*</span> : "(Optional)"}
                 </Label>
                 <Textarea
                   id="edit_item_status_reason"
@@ -1437,21 +1696,26 @@ export default function InventoryDashboard() {
                 />
               </div>
             )}
-            <div className="flex justify-end gap-3 pt-4">
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsEditModalOpen(false)}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+              >
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Save Changes
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

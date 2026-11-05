@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { AlertCircle, Loader2, HelpCircle, X, Check, Bookmark } from "lucide-react";
+import {
+  AlertCircle,
+  Loader2,
+  HelpCircle,
+  X,
+  Check,
+  Bookmark,
+  CheckSquare2,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   createRecurringSchedule,
@@ -21,6 +29,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -115,7 +124,8 @@ function validateForm(
   }
 
   if (!formData.assigned_to_ids || formData.assigned_to_ids.length === 0) {
-    errors.assigned_to_ids = "Please select at least one user to assign this task to.";
+    errors.assigned_to_ids =
+      "Please select at least one user to assign this task to.";
   }
 
   if (formData.mode === "one_time") {
@@ -549,33 +559,39 @@ export function CreateTaskModal({
 
   return (
     <Dialog open={open} onOpenChange={handleModalClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader icon={<CheckSquare2 className="size-4.5" />}>
           <DialogTitle>Create Task</DialogTitle>
           <DialogDescription>
-            Assign a new task to a team member
+            Assign a new task to team members with deadline and optional
+            recurrence.
           </DialogDescription>
         </DialogHeader>
 
         {apiError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex gap-3">
-            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-red-800">{apiError}</div>
+          <div className="rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-3 flex gap-3">
+            <AlertCircle className="h-5 w-5 text-[#dc2626] flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-[#dc2626]">{apiError}</div>
           </div>
         )}
 
         {initialLoading ? (
-          <div className="flex items-center justify-center py-6">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-4 pt-1" noValidate>
             <div>
-              <div className="flex items-center gap-2 rounded-lg border border-border p-1 dark:border-slate-700 mb-6">
+              <div className="flex items-center gap-2 rounded-lg border border-border p-1 mb-5">
                 <Button
                   type="button"
                   variant={formData.mode === "one_time" ? "default" : "ghost"}
-                  className="flex-1 rounded-md"
+                  className={cn(
+                    "flex-1 rounded-md font-semibold text-xs transition-colors",
+                    formData.mode === "one_time"
+                      ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                   onClick={() =>
                     setFormData((current) => ({ ...current, mode: "one_time" }))
                   }
@@ -585,12 +601,19 @@ export function CreateTaskModal({
                 <Button
                   type="button"
                   variant={formData.mode === "recurring" ? "default" : "ghost"}
-                  className="flex-1 rounded-md"
+                  className={cn(
+                    "flex-1 rounded-md font-semibold text-xs transition-colors",
+                    formData.mode === "recurring"
+                      ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                   onClick={() =>
                     setFormData((current) => {
                       const nextTimes = [...current.times];
                       if (current.start_at && current.start_at.includes("T")) {
-                        const timePart = current.start_at.split("T")[1]?.slice(0, 5);
+                        const timePart = current.start_at
+                          .split("T")[1]
+                          ?.slice(0, 5);
                         if (/^([0-1]?\d|2[0-3]):[0-5]\d$/.test(timePart)) {
                           nextTimes[0] = timePart;
                         }
@@ -641,7 +664,7 @@ export function CreateTaskModal({
                   setFormData({ ...formData, description: e.target.value })
                 }
                 disabled={submitting}
-                className="mt-2 min-h-20 w-full rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:bg-gray-900 dark:text-white"
+                className="mt-2 min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-[#0d47a1] focus:outline-none dark:bg-card dark:text-foreground"
               />
             </div>
 
@@ -649,7 +672,7 @@ export function CreateTaskModal({
               <Label htmlFor="assigned_to">Assign To *</Label>
 
               {formData.assigned_to_ids.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/60 my-2">
+                <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-border dark:border-border bg-muted/70 dark:bg-card/60 my-2">
                   {formData.assigned_to_ids.map((id) => {
                     const cached = userCache[id];
                     const fullName = cached
@@ -661,7 +684,7 @@ export function CreateTaskModal({
                     return (
                       <span
                         key={id}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/80"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#0d47a1]/10 text-[#0d47a1] border border-[#0d47a1]/25 dark:bg-[#0d47a1]/15 dark:text-[#38bdf8] dark:border-[#0d47a1]/30"
                       >
                         <span>{label}</span>
                         <button
@@ -674,7 +697,7 @@ export function CreateTaskModal({
                               ),
                             }))
                           }
-                          className="text-blue-500 hover:text-red-600 dark:hover:text-red-400 focus:outline-none"
+                          className="text-[#0d47a1] hover:text-[#dc2626] dark:hover:text-red-400 focus:outline-none"
                           title="Remove user"
                         >
                           <X className="h-3 w-3" />
@@ -714,13 +737,13 @@ export function CreateTaskModal({
                 />
 
                 {isAssigneeDropdownOpen && (
-                  <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                  <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-lg dark:border-border dark:bg-card">
                     {isLoadingUsers ? (
                       <div className="flex items-center justify-center px-3 py-3">
-                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       </div>
                     ) : users.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                      <div className="px-3 py-2 text-sm text-muted-foreground dark:text-muted-foreground">
                         No users found
                       </div>
                     ) : (
@@ -742,15 +765,15 @@ export function CreateTaskModal({
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => handleToggleAssignee(user)}
-                            className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                            className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between hover:bg-muted dark:hover:bg-muted ${
                               isSelected
-                                ? "bg-blue-50/70 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                ? "bg-[#0d47a1]/70 font-medium text-[#0d47a1] dark:bg-[#0d47a1]/15 dark:text-[#38bdf8]"
                                 : ""
                             }`}
                           >
                             <span>{label}</span>
                             {isSelected && (
-                              <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                              <Check className="h-4 w-4 text-[#0d47a1] dark:text-[#38bdf8] flex-shrink-0" />
                             )}
                           </button>
                         );
@@ -776,7 +799,7 @@ export function CreateTaskModal({
                     setFormData({ ...formData, priority: e.target.value })
                   }
                   disabled={submitting}
-                  className="mt-2 w-full rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:bg-gray-900 dark:text-white"
+                  className="mt-2 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus:border-[#0d47a1] focus:outline-none dark:bg-card dark:text-foreground"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -855,7 +878,7 @@ export function CreateTaskModal({
             </div>
 
             {formData.mode === "recurring" ? (
-              <div className="space-y-4 rounded-lg border border-border p-4 dark:border-slate-700">
+              <div className="space-y-4 rounded-lg border border-border p-4 dark:border-border">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <Label htmlFor="frequency">Frequency</Label>
@@ -866,7 +889,7 @@ export function CreateTaskModal({
                         setFormData({ ...formData, frequency: e.target.value })
                       }
                       disabled={submitting}
-                      className="mt-2 w-full rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:bg-gray-900 dark:text-white"
+                      className="mt-2 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus:border-[#0d47a1] focus:outline-none dark:bg-card dark:text-foreground"
                     >
                       <option value="daily">Daily</option>
                       <option value="weekly">Weekly</option>
@@ -922,7 +945,7 @@ export function CreateTaskModal({
                       className={cn(
                         "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
                         formData.include_weekends
-                          ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-500"
+                          ? "border-[#0d47a1] bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/15 dark:text-[#38bdf8] dark:border-[#0d47a1]/30"
                           : "border-border bg-background text-muted-foreground hover:bg-muted/50",
                       )}
                     >
@@ -930,8 +953,8 @@ export function CreateTaskModal({
                         className={cn(
                           "flex h-4 w-4 items-center justify-center rounded border",
                           formData.include_weekends
-                            ? "border-blue-600 bg-blue-600 text-white"
-                            : "border-gray-400 dark:border-gray-600",
+                            ? "border-[#0d47a1] bg-[#0d47a1] text-white"
+                            : "border-border dark:border-border",
                         )}
                       >
                         {formData.include_weekends && (
@@ -1065,7 +1088,7 @@ export function CreateTaskModal({
                         setFormData({ ...formData, timezone: e.target.value })
                       }
                       disabled={submitting}
-                      className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      className="mt-2 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus:border-[#0d47a1] focus:outline-none dark:bg-card dark:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       aria-invalid={Boolean(formErrors.timezone)}
                     >
                       {TIMEZONE_OPTIONS.map((tz) => (
@@ -1118,9 +1141,11 @@ export function CreateTaskModal({
                             }));
                           }}
                           disabled={submitting}
-                          className="w-20"
+                          className="h-10 w-20 text-center font-medium"
                         />
-                        <span className="text-sm">h</span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          h
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Input
@@ -1147,9 +1172,11 @@ export function CreateTaskModal({
                             }));
                           }}
                           disabled={submitting}
-                          className="w-20"
+                          className="h-10 w-20 text-center font-medium"
                         />
-                        <span className="text-sm">m</span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          m
+                        </span>
                       </div>
                     </div>
                     {formErrors.deadline_offset_minutes ? (
@@ -1187,43 +1214,50 @@ export function CreateTaskModal({
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t">
-              <div className="flex gap-2">
-                <Button type="submit" disabled={submitting || savingDraft}>
+            <DialogFooter className="pt-4 border-t border-border/60 sm:justify-between flex-row items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSaveDraft}
+                disabled={submitting || savingDraft}
+                className="gap-1.5"
+              >
+                {savingDraft ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Bookmark className="h-3.5 w-3.5" />
+                )}
+                <span>Save as Draft</span>
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    resetForm();
+                    onOpenChange(false);
+                  }}
+                  disabled={submitting || savingDraft}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={submitting || savingDraft}
+                  className="bg-[#0d47a1] hover:bg-[#0a3880] text-white font-medium shadow-sm transition-colors"
+                >
                   {submitting && (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                   )}
                   {formData.mode === "recurring"
                     ? "Create Schedule"
                     : "Create Task"}
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleSaveDraft}
-                  disabled={submitting || savingDraft}
-                  className="gap-1.5"
-                >
-                  {savingDraft ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Bookmark className="h-4 w-4" />
-                  )}
-                  Save as Draft
-                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  resetForm();
-                  onOpenChange(false);
-                }}
-                disabled={submitting || savingDraft}
-              >
-                Cancel
-              </Button>
-            </div>
+            </DialogFooter>
           </form>
         )}
       </DialogContent>

@@ -30,7 +30,7 @@ type InventoryCategory = {
 };
 
 const backButtonClassName =
-  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+  "rounded-full border border-border/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-border hover:bg-muted hover:text-foreground dark:border-border/70 dark:bg-card/70 dark:text-foreground dark:hover:border-border dark:hover:bg-muted dark:hover:text-white";
 
 export default function MaintenanceLogsPage() {
   const router = useRouter();
@@ -173,9 +173,9 @@ export default function MaintenanceLogsPage() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "completed": return <CheckCircle className="h-4 w-4 text-emerald-500" />;
+      case "completed": return <CheckCircle className="h-4 w-4 text-[#16a34a]" />;
       case "in_progress": return <Wrench className="h-4 w-4 text-amber-500" />;
-      default: return <AlertCircle className="h-4 w-4 text-blue-500" />;
+      default: return <AlertCircle className="h-4 w-4 text-[#0d47a1]" />;
     }
   };
 
@@ -316,7 +316,7 @@ export default function MaintenanceLogsPage() {
                             {log.attachments && log.attachments.length > 0 ? (
                               <div className="space-y-1">
                                 {log.attachments.map((att) => (
-                                  <a key={att.id} href={att.file_url || att.object_key} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline flex items-center gap-1 text-xs">
+                                  <a key={att.id} href={att.file_url || att.object_key} target="_blank" rel="noopener noreferrer" className="text-[#0d47a1] hover:underline flex items-center gap-1 text-xs">
                                     <Paperclip className="h-3 w-3" /> {att.file_name}
                                   </a>
                                 ))}

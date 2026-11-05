@@ -2,7 +2,7 @@
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, HelpCircle, Loader2, Check } from "lucide-react";
+import { AlertCircle, HelpCircle, Loader2, Check, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -304,8 +305,8 @@ export function EditRecurringScheduleModal({
         }
       }}
     >
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader icon={<Repeat className="size-4.5" />}>
           <DialogTitle>Edit Recurring Task</DialogTitle>
           <DialogDescription>
             Update the schedule details. The assignee cannot be changed.
@@ -313,9 +314,9 @@ export function EditRecurringScheduleModal({
         </DialogHeader>
 
         {apiError ? (
-          <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
-            <div className="text-sm text-red-800">{apiError}</div>
+          <div className="flex gap-3 rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#dc2626]" />
+            <div className="text-sm text-[#dc2626]">{apiError}</div>
           </div>
         ) : null}
 
@@ -359,7 +360,7 @@ export function EditRecurringScheduleModal({
                 setFormData({ ...formData, description: event.target.value })
               }
               disabled={submitting}
-              className="mt-2 min-h-20 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              className="mt-2 min-h-20 w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-[#0d47a1] focus:outline-none dark:border-border dark:bg-card dark:text-white"
             />
           </div>
 
@@ -377,7 +378,7 @@ export function EditRecurringScheduleModal({
                   })
                 }
                 disabled={submitting}
-                className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-[#0d47a1] focus:outline-none dark:border-border dark:bg-card dark:text-white"
               >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
@@ -434,7 +435,7 @@ export function EditRecurringScheduleModal({
             </div>
           </div>
 
-          <div className="space-y-4 rounded-lg border border-border p-4 dark:border-slate-700">
+          <div className="space-y-4 rounded-lg border border-border p-4 dark:border-border">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <Label htmlFor="frequency">Frequency</Label>
@@ -449,7 +450,7 @@ export function EditRecurringScheduleModal({
                     })
                   }
                   disabled={submitting}
-                  className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                  className="mt-2 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus:border-[#0d47a1] focus:outline-none dark:bg-card dark:text-foreground"
                 >
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
@@ -504,7 +505,7 @@ export function EditRecurringScheduleModal({
                   className={cn(
                     "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
                     formData.include_weekends
-                      ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-500"
+                      ? "border-[#0d47a1] bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/15 dark:text-[#38bdf8] dark:border-[#0d47a1]/30"
                       : "border-border bg-background text-muted-foreground hover:bg-muted/50",
                   )}
                 >
@@ -512,8 +513,8 @@ export function EditRecurringScheduleModal({
                     className={cn(
                       "flex h-4 w-4 items-center justify-center rounded border",
                       formData.include_weekends
-                        ? "border-blue-600 bg-blue-600 text-white"
-                        : "border-gray-400 dark:border-gray-600",
+                        ? "border-[#0d47a1] bg-[#0d47a1] text-white"
+                        : "border-border dark:border-border",
                     )}
                   >
                     {formData.include_weekends && (
@@ -644,7 +645,7 @@ export function EditRecurringScheduleModal({
                     setFormData({ ...formData, timezone: event.target.value })
                   }
                   disabled={submitting}
-                  className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-2 h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus:border-[#0d47a1] focus:outline-none dark:bg-card dark:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   aria-invalid={Boolean(formErrors.timezone)}
                 >
                   {TIMEZONE_OPTIONS.map((tz) => (
@@ -695,9 +696,11 @@ export function EditRecurringScheduleModal({
                         }));
                       }}
                       disabled={submitting}
-                      className="w-20"
+                      className="h-10 w-20 text-center font-medium"
                     />
-                    <span className="text-sm">h</span>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      h
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Input
@@ -724,9 +727,11 @@ export function EditRecurringScheduleModal({
                         }));
                       }}
                       disabled={submitting}
-                      className="w-20"
+                      className="h-10 w-20 text-center font-medium"
                     />
-                    <span className="text-sm">m</span>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      m
+                    </span>
                   </div>
                 </div>
                 {formErrors.deadline_offset_minutes ? (
@@ -763,13 +768,7 @@ export function EditRecurringScheduleModal({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-2 border-t">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save Changes
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -778,7 +777,17 @@ export function EditRecurringScheduleModal({
             >
               Cancel
             </Button>
-          </div>
+            <Button
+              type="submit"
+              disabled={submitting}
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+            >
+              {submitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

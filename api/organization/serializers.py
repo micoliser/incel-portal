@@ -70,28 +70,40 @@ class RoleSerializer(serializers.ModelSerializer):
 # Nested serializers for the hierarchy tree
 class TeamHierarchySerializer(serializers.ModelSerializer):
     team_lead_info = _UserBasicSerializer(source='team_lead', read_only=True)
+    members_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Team
-        fields = ['id', 'name', 'code', 'team_lead_info', 'is_active']
+        fields = ['id', 'name', 'code', 'team_lead_info', 'is_active', 'members_count']
+
+    def get_members_count(self, obj):
+        return obj.members.filter(user__is_active=True).count()
 
 
 class UnitHierarchySerializer(serializers.ModelSerializer):
     supervisor_info = _UserBasicSerializer(source='supervisor', read_only=True)
     teams = TeamHierarchySerializer(many=True, read_only=True)
+    members_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Unit
-        fields = ['id', 'name', 'code', 'supervisor_info', 'is_active', 'teams']
+        fields = ['id', 'name', 'code', 'supervisor_info', 'is_active', 'teams', 'members_count']
+
+    def get_members_count(self, obj):
+        return obj.members.filter(user__is_active=True).count()
 
 
 class DepartmentHierarchySerializer(serializers.ModelSerializer):
     line_manager_info = _UserBasicSerializer(source='line_manager', read_only=True)
     units = UnitHierarchySerializer(many=True, read_only=True)
+    members_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Department
-        fields = ['id', 'name', 'code', 'line_manager_info', 'is_active', 'units']
+        fields = ['id', 'name', 'code', 'line_manager_info', 'is_active', 'units', 'members_count']
+
+    def get_members_count(self, obj):
+        return obj.members.filter(user__is_active=True).count()
 
 
 class BulkMemberSerializer(serializers.Serializer):

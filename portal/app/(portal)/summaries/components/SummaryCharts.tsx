@@ -23,7 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon } from "lucide-react";
 
 interface SummaryData {
   week_start_date: string;
@@ -41,23 +41,58 @@ interface TrendChartProps {
   loading?: boolean;
 }
 
-export function CompletionTrendChart({
-  summaries,
-  loading = false,
-}: TrendChartProps) {
-  void loading;
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    name: string;
+    value: number;
+    color: string;
+  }>;
+  label?: string;
+  unit?: string;
+}
+
+function CustomTooltip({ active, payload, label, unit = "" }: CustomTooltipProps) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-xl border border-border bg-popover/95 px-3.5 py-2.5 text-xs text-popover-foreground shadow-lg backdrop-blur-md">
+        <p className="font-semibold text-foreground">{label}</p>
+        <div className="mt-1.5 space-y-1">
+          {payload.map((entry, index) => (
+            <div key={index} className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+                {entry.name}:
+              </span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {entry.value}
+                {unit}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+export function CompletionTrendChart({ summaries }: TrendChartProps) {
   if (!summaries || summaries.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Completion Trend</CardTitle>
-          <CardDescription>Your completion rate over time</CardDescription>
+      <Card className="border-border/80 bg-card shadow-xs">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold">Completion Trend</CardTitle>
+          <CardDescription className="text-xs">Your rate trajectory over time</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64 text-gray-500">
+          <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              <span>Not enough data to display trend</span>
+              <AlertCircle className="size-4" />
+              <span>Not enough weekly data to calculate trends</span>
             </div>
           </div>
         </CardContent>
@@ -75,68 +110,80 @@ export function CompletionTrendChart({
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Completion Trend</CardTitle>
-        <CardDescription>
-          Your completion and on-time rate over the last 4 weeks
-        </CardDescription>
+    <Card className="border-border/80 bg-card shadow-xs">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+            <LineChartIcon className="size-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Completion Trend
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              Overall completion and on-time performance across recent weeks
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip
-              formatter={(value) => `${(value as number).toFixed(1)}%`}
-            />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="Completion Rate"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={{ fill: "#3b82f6", r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="On-Time Rate"
-              stroke="#10b981"
-              strokeWidth={2}
-              dot={{ fill: "#10b981", r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+      <CardContent className="pt-2">
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(150,150,150,0.15)" />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11, fill: "currentColor" }}
+                stroke="rgba(150,150,150,0.3)"
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "currentColor" }}
+                stroke="rgba(150,150,150,0.3)"
+                unit="%"
+                domain={[0, 100]}
+              />
+              <Tooltip content={<CustomTooltip unit="%" />} />
+              <Legend
+                wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
+                iconType="circle"
+              />
+              <Line
+                type="monotone"
+                dataKey="Completion Rate"
+                stroke="#0d47a1"
+                strokeWidth={2.5}
+                dot={{ fill: "#0d47a1", r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="On-Time Rate"
+                stroke="#16a34a"
+                strokeWidth={2.5}
+                dot={{ fill: "#16a34a", r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-interface TasksCompletedChartProps {
-  summaries: SummaryData[];
-  loading?: boolean;
-}
-
-export function TasksCompletedChart({
-  summaries,
-  loading = false,
-}: TasksCompletedChartProps) {
-  void loading;
+export function TasksCompletedChart({ summaries }: TrendChartProps) {
   if (!summaries || summaries.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Tasks Completed</CardTitle>
-          <CardDescription>Weekly task completion volume</CardDescription>
+      <Card className="border-border/80 bg-card shadow-xs">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold">Tasks Completed</CardTitle>
+          <CardDescription className="text-xs">Weekly task completion volume</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64 text-gray-500">
+          <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              <span>Not enough data to display</span>
+              <AlertCircle className="size-4" />
+              <span>Not enough activity records to display volume</span>
             </div>
           </div>
         </CardContent>
@@ -154,53 +201,77 @@ export function TasksCompletedChart({
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Tasks Completed</CardTitle>
-        <CardDescription>Assigned vs completed tasks per week</CardDescription>
+    <Card className="border-border/80 bg-card shadow-xs">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <BarChart3 className="size-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Task Volume Trend
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              Assigned vs completed tasks by week
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="Assigned" fill="#e5e7eb" />
-            <Bar dataKey="Completed" fill="#3b82f6" />
-          </BarChart>
-        </ResponsiveContainer>
+      <CardContent className="pt-2">
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(150,150,150,0.15)" />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11, fill: "currentColor" }}
+                stroke="rgba(150,150,150,0.3)"
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "currentColor" }}
+                stroke="rgba(150,150,150,0.3)"
+                allowDecimals={false}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend
+                wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
+                iconType="circle"
+              />
+              <Bar dataKey="Assigned" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Completed" fill="#0d47a1" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-interface PriorityDistributionProps {
-  distribution: Record<string, number>;
-}
-
-const COLORS = {
-  high: "#ef4444",
-  medium: "#f59e0b",
-  low: "#10b981",
+const PRIORITY_COLORS: Record<string, string> = {
+  high: "#dc2626",
+  medium: "#d97706",
+  low: "#16a34a",
 };
 
 export function PriorityDistributionChart({
   distribution,
-}: PriorityDistributionProps) {
-  if (!distribution || Object.keys(distribution).length === 0) {
+}: {
+  distribution: Record<string, number>;
+}) {
+  const hasData = distribution && Object.values(distribution).some((v) => v > 0);
+
+  if (!hasData) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Priority Distribution</CardTitle>
-          <CardDescription>Tasks by priority level</CardDescription>
+      <Card className="border-border/80 bg-card shadow-xs">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold">Priority Distribution</CardTitle>
+          <CardDescription className="text-xs">Tasks broken down by urgency</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64 text-gray-500">
+          <div className="flex h-56 items-center justify-center text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              <span>No priority data available</span>
+              <AlertCircle className="size-4" />
+              <span>No priority records found for this week</span>
             </div>
           </div>
         </CardContent>
@@ -211,70 +282,84 @@ export function PriorityDistributionChart({
   const chartData = Object.entries(distribution).map(([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1),
     value,
+    key: name.toLowerCase(),
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Priority Distribution</CardTitle>
-        <CardDescription>Breakdown of tasks by priority level</CardDescription>
+    <Card className="border-border/80 bg-card shadow-xs">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <PieChartIcon className="size-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Priority Distribution
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              Breakdown of work by task urgency
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, value }) => `${name}: ${value}`}
-              outerRadius={100}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {chartData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={
-                    COLORS[entry.name.toLowerCase() as keyof typeof COLORS] ||
-                    "#8884d8"
-                  }
-                />
-              ))}
-            </Pie>
-            <Tooltip formatter={(value) => `${value} tasks`} />
-          </PieChart>
-        </ResponsiveContainer>
+      <CardContent className="pt-2">
+        <div className="h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                innerRadius={55}
+                outerRadius={80}
+                paddingAngle={3}
+                dataKey="value"
+              >
+                {chartData.map((entry) => (
+                  <Cell
+                    key={entry.name}
+                    fill={PRIORITY_COLORS[entry.key] || "#0d47a1"}
+                  />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip unit=" tasks" />} />
+              <Legend
+                wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                iconType="circle"
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-interface StatusDistributionProps {
-  distribution: Record<string, number>;
-}
-
-const STATUS_COLORS = {
-  pending: "#6b7280",
-  in_progress: "#f59e0b",
-  completed: "#10b981",
+const STATUS_COLORS: Record<string, string> = {
+  pending: "#d97706",
+  in_progress: "#0d47a1",
+  completed: "#16a34a",
 };
 
 export function StatusDistributionChart({
   distribution,
-}: StatusDistributionProps) {
-  if (!distribution || Object.keys(distribution).length === 0) {
+}: {
+  distribution: Record<string, number>;
+}) {
+  const hasData = distribution && Object.values(distribution).some((v) => v > 0);
+
+  if (!hasData) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Status Distribution</CardTitle>
-          <CardDescription>Tasks by status</CardDescription>
+      <Card className="border-border/80 bg-card shadow-xs">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold">Status Distribution</CardTitle>
+          <CardDescription className="text-xs">Tasks by lifecycle state</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64 text-gray-500">
+          <div className="flex h-56 items-center justify-center text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              <span>No status data available</span>
+              <AlertCircle className="size-4" />
+              <span>No status data recorded for this week</span>
             </div>
           </div>
         </CardContent>
@@ -283,45 +368,56 @@ export function StatusDistributionChart({
   }
 
   const chartData = Object.entries(distribution).map(([name, value]) => ({
-    name: name.replace("_", " ").toUpperCase(),
+    name: name.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     value,
+    key: name.toLowerCase(),
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Status Distribution</CardTitle>
-        <CardDescription>Breakdown of tasks by current status</CardDescription>
+    <Card className="border-border/80 bg-card shadow-xs">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <PieChartIcon className="size-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">
+              Status Distribution
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              Breakdown by active execution phase
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, value }) => `${name}: ${value}`}
-              outerRadius={100}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {chartData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={
-                    STATUS_COLORS[
-                      entry.name
-                        .toLowerCase()
-                        .replace(" ", "_") as keyof typeof STATUS_COLORS
-                    ] || "#8884d8"
-                  }
-                />
-              ))}
-            </Pie>
-            <Tooltip formatter={(value) => `${value} tasks`} />
-          </PieChart>
-        </ResponsiveContainer>
+      <CardContent className="pt-2">
+        <div className="h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                innerRadius={55}
+                outerRadius={80}
+                paddingAngle={3}
+                dataKey="value"
+              >
+                {chartData.map((entry) => (
+                  <Cell
+                    key={entry.name}
+                    fill={STATUS_COLORS[entry.key] || "#0d47a1"}
+                  />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip unit=" tasks" />} />
+              <Legend
+                wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                iconType="circle"
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   );
@@ -340,15 +436,13 @@ export function SummaryCharts({
 }: SummaryChartsProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <div className="h-4 bg-gray-200 rounded w-1/2" />
-          </CardHeader>
-          <CardContent>
-            <div className="h-64 bg-gray-200 rounded" />
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {[1, 2].map((i) => (
+          <Card key={i} className="animate-pulse border-border/80 bg-card p-6">
+            <div className="h-4 w-1/3 rounded bg-muted" />
+            <div className="mt-6 h-56 rounded-lg bg-muted/40" />
+          </Card>
+        ))}
       </div>
     );
   }
@@ -357,7 +451,6 @@ export function SummaryCharts({
     return null;
   }
 
-  // Combine historical and current data for trend chart
   const trendData = [
     ...historicalData,
     {
@@ -367,12 +460,12 @@ export function SummaryCharts({
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <CompletionTrendChart summaries={trendData} />
         <TasksCompletedChart summaries={trendData} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <PriorityDistributionChart
           distribution={summaryData.priority_distribution || {}}
         />

@@ -71,9 +71,9 @@ type ViewFilter = "all" | "today" | "upcoming" | "overdue" | "completed";
 const priorityConfig = {
   high: {
     label: "High",
-    color: "text-red-600 dark:text-red-400",
-    bg: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900/60",
-    dot: "bg-red-500",
+    color: "text-[#dc2626] dark:text-red-400",
+    bg: "bg-[#dc2626]/10 text-[#dc2626] border-[#dc2626]/25 dark:bg-[#dc2626]/15 dark:text-red-300 dark:border-[#dc2626]/30",
+    dot: "bg-[#dc2626]",
   },
   medium: {
     label: "Medium",
@@ -83,9 +83,9 @@ const priorityConfig = {
   },
   low: {
     label: "Low",
-    color: "text-blue-600 dark:text-blue-400",
-    bg: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/60",
-    dot: "bg-blue-500",
+    color: "text-[#0d47a1] dark:text-[#38bdf8]",
+    bg: "bg-[#0d47a1]/10 text-[#0d47a1] border-[#0d47a1]/25 dark:bg-[#0d47a1]/15 dark:text-[#38bdf8] dark:border-[#0d47a1]/30",
+    dot: "bg-[#0d47a1]",
   },
 };
 
@@ -574,10 +574,10 @@ export default function TodosPage() {
         className={cn(
           "inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors",
           isPastDue
-            ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60"
+            ? "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-rose-300 border border-[#dc2626]/25 dark:border-[#dc2626]/30"
             : todo.due_date === todayStr
             ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60"
-            : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+            : "bg-muted text-foreground border border-border"
         )}
       >
         <CalendarIcon className="size-3.5" />
@@ -622,8 +622,8 @@ export default function TodosPage() {
         className={cn(
           "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium transition-colors",
           todo.reminder_sent
-            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60"
-            : "bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/60"
+            ? "bg-[#16a34a]/10 text-[#16a34a] border border-[#16a34a]/25 dark:text-[#4ade80]"
+            : "bg-[#0d47a1]/10 text-[#0d47a1] border border-[#0d47a1]/25 dark:text-[#38bdf8]"
         )}
         title={
           todo.reminder_sent
@@ -634,17 +634,17 @@ export default function TodosPage() {
         <Bell className="size-3.5" />
         <span>{timeStr ? `${timeStr} (${summary})` : summary}</span>
         {todo.reminder_sent ? (
-          <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
+          <span className="text-[10px] uppercase font-bold text-[#16a34a] dark:text-[#4ade80]">
             (Sent)
           </span>
         ) : todo.reminders_sent && todo.reminders_sent.length > 0 ? (
-          <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">
+          <span className="text-[10px] font-semibold text-[#0d47a1] dark:text-[#38bdf8]">
             ({todo.reminders_sent.length}/{offsets.length} sent)
           </span>
         ) : null}
         {todo.send_email_reminder && (
           <span title="Email reminder enabled">
-            <Mail className="size-3 ml-0.5 text-indigo-500" />
+            <Mail className="size-3 ml-0.5 text-[#0d47a1] dark:text-[#38bdf8]" />
           </span>
         )}
       </span>
@@ -661,8 +661,8 @@ export default function TodosPage() {
         className={cn(
           "group relative flex items-start gap-3.5 p-3.5 sm:p-4 rounded-xl border transition-all duration-200 bg-card hover:shadow-md",
           todo.is_completed
-            ? "border-muted/50 bg-muted/20 opacity-75 hover:opacity-100"
-            : "border-border/80 hover:border-border hover:bg-card/90"
+            ? "border-border/50 bg-muted/20 opacity-75 hover:opacity-100"
+            : "border-border hover:border-[#0d47a1]/30 hover:bg-card"
         )}
       >
         {/* Toggle Checkbox Button */}
@@ -672,8 +672,8 @@ export default function TodosPage() {
           className={cn(
             "mt-0.5 flex-shrink-0 size-5 sm:size-6 rounded-full border-2 flex items-center justify-center transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
             todo.is_completed
-              ? "bg-emerald-600 border-emerald-600 text-white"
-              : "border-muted-foreground/40 hover:border-primary hover:bg-primary/10 text-transparent hover:text-primary/70"
+              ? "bg-[#16a34a] border-[#16a34a] text-white"
+              : "border-muted-foreground/40 hover:border-[#0d47a1] hover:bg-[#0d47a1]/10 text-transparent hover:text-[#0d47a1]/70"
           )}
           aria-label={todo.is_completed ? "Mark incomplete" : "Mark complete"}
         >
@@ -724,7 +724,7 @@ export default function TodosPage() {
 
             {todo.completed_at && (
               <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="size-3 text-[#16a34a] dark:text-[#4ade80]" />
                 Completed {format(parseISO(todo.completed_at), "MMM d, h:mm a")}
               </span>
             )}
@@ -778,7 +778,7 @@ export default function TodosPage() {
             className="size-8 p-0 rounded-lg border border-border/80 bg-background/90 hover:bg-muted text-muted-foreground hover:text-foreground shadow-xs transition-colors"
             title="Edit to-do"
           >
-            <Edit3 className="size-3.5 text-blue-600 dark:text-blue-400" />
+            <Edit3 className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
           </Button>
 
           {/* Delete Button */}
@@ -786,7 +786,7 @@ export default function TodosPage() {
             variant="outline"
             size="sm"
             onClick={() => setTodoToDelete(todo)}
-            className="size-8 p-0 rounded-lg border border-rose-200/80 bg-rose-50/60 hover:bg-rose-100 text-rose-600 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-400 dark:hover:bg-rose-900/60 shadow-xs transition-colors"
+            className="size-8 p-0 rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/60 hover:bg-[#dc2626]/10 text-[#dc2626] dark:border-[#dc2626]/30 dark:bg-[#dc2626]/15 dark:text-rose-400 dark:hover:bg-[#dc2626]/15 shadow-xs transition-colors"
             title="Delete to-do"
           >
             <Trash2 className="size-3.5" />
@@ -823,7 +823,7 @@ export default function TodosPage() {
           {stats.overdue > 0 && (
             <Badge
               variant="outline"
-              className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 text-xs font-bold animate-pulse"
+              className="px-2.5 py-1 bg-[#dc2626]/10 dark:bg-[#dc2626]/15 text-[#dc2626] dark:text-rose-300 border-[#dc2626]/25 text-xs font-bold animate-pulse"
             >
               Overdue: <span className="ml-1">{stats.overdue}</span>
             </Badge>
@@ -845,9 +845,9 @@ export default function TodosPage() {
 
       {/* Browser Desktop Notification Opt-in Banner */}
       {hasBrowserNotificationSupport && notificationPermission === "default" && (
-        <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/70 dark:bg-indigo-950/30 dark:border-indigo-900/60 text-indigo-950 dark:text-indigo-200">
+        <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-[#0d47a1]/25 bg-[#0d47a1]/10 text-foreground">
           <div className="flex items-center gap-2.5 text-xs sm:text-sm">
-            <BellRing className="size-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 animate-bounce" />
+            <BellRing className="size-4 text-[#0d47a1] dark:text-[#38bdf8] flex-shrink-0" />
             <span>
               <strong>Enable desktop alerts:</strong> Receive pop-up notifications
               right on your screen when reminders are due, even if you are working
@@ -857,7 +857,7 @@ export default function TodosPage() {
           <Button
             size="sm"
             onClick={requestBrowserNotification}
-            className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-700 text-white flex-shrink-0"
+            className="h-8 px-3 text-xs bg-[#0d47a1] hover:bg-[#0a3880] text-white flex-shrink-0"
           >
             Allow Alerts
           </Button>
@@ -956,12 +956,12 @@ export default function TodosPage() {
                   className={cn(
                     "h-9 px-3 rounded-md border text-xs sm:text-sm font-medium transition-all shadow-xs inline-flex items-center gap-2 select-none ml-auto",
                     newSendEmail
-                      ? "bg-indigo-600 border-indigo-600 text-white font-semibold ring-2 ring-indigo-500/25 shadow-sm"
+                      ? "bg-[#0d47a1] border-[#0d47a1] text-white font-semibold ring-2 ring-[#0d47a1]/25 shadow-sm"
                       : "bg-background border-border text-foreground hover:bg-muted hover:border-border"
                   )}
                   title={newSendEmail ? "Email reminder is enabled" : "Click to enable email reminder"}
                 >
-                  <Mail className={cn("size-4", newSendEmail ? "text-white" : "text-indigo-600 dark:text-indigo-400")} />
+                  <Mail className={cn("size-4", newSendEmail ? "text-white" : "text-[#0d47a1] dark:text-[#38bdf8]")} />
                   <span>Email Reminder</span>
                   <span
                     className={cn(
@@ -980,7 +980,7 @@ export default function TodosPage() {
               <div className="pt-2 border-t border-border/40 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5 font-semibold text-foreground">
-                    <Bell className="size-3.5 text-indigo-500" />
+                    <Bell className="size-3.5 text-[#0d47a1]" />
                     Reminder Alerts (Select one or multiple alert times):
                   </span>
                   {newReminderOffsets.length > 0 ? (
@@ -1015,7 +1015,7 @@ export default function TodosPage() {
                         className={cn(
                           "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border transition-all select-none",
                           isSelected
-                            ? "bg-indigo-600 border-indigo-600 text-white shadow-xs font-semibold"
+                            ? "bg-[#0d47a1] border-[#0d47a1] text-white shadow-xs font-semibold"
                             : "bg-background border-border/80 text-muted-foreground hover:bg-muted hover:text-foreground"
                         )}
                       >
@@ -1061,7 +1061,7 @@ export default function TodosPage() {
       {/* Filter Navigation Bar & Search */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
         {/* View Tabs */}
-        <div className="flex max-w-full items-center overflow-x-auto rounded-lg border border-border bg-muted/60 p-1 dark:border-slate-700 dark:bg-slate-900/60 scrollbar-none">
+        <div className="flex max-w-full items-center overflow-x-auto rounded-lg border border-border bg-muted/60 p-1 scrollbar-none">
           {(
             [
               { id: "all", label: "All", count: stats.total },
@@ -1090,7 +1090,7 @@ export default function TodosPage() {
                   activeView === tab.id
                     ? "bg-primary-foreground/20 text-primary-foreground"
                     : tab.id === "overdue" && stats.overdue > 0
-                    ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 font-extrabold"
+                    ? "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-rose-300 font-extrabold"
                     : "bg-muted text-muted-foreground"
                 )}
               >
@@ -1163,11 +1163,11 @@ export default function TodosPage() {
             (activeView === "all" || activeView === "overdue") && (
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2 px-1">
-                  <AlertTriangle className="size-4 text-rose-600 dark:text-rose-400" />
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-400">
+                  <AlertTriangle className="size-4 text-[#dc2626] dark:text-rose-400" />
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-[#dc2626] dark:text-rose-400">
                     Overdue
                   </h3>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-rose-300">
                     {groupedTodos.overdue.length}
                   </span>
                 </div>
@@ -1192,7 +1192,7 @@ export default function TodosPage() {
                       {groupedTodos.todayOpen.length} open
                     </span>
                     {groupedTodos.todayCompleted.length > 0 && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/15 dark:text-[#4ade80]">
                         {groupedTodos.todayCompleted.length} completed
                       </span>
                     )}
@@ -1205,8 +1205,8 @@ export default function TodosPage() {
                     {groupedTodos.todayOpen.map(renderTodoItem)}
                   </div>
                 ) : groupedTodos.todayCompleted.length > 0 ? (
-                  <div className="p-3.5 rounded-xl border border-dashed border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20 text-center">
-                    <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-1.5">
+                  <div className="p-3.5 rounded-xl border border-dashed border-[#16a34a]/25 bg-[#16a34a]/40 dark:border-[#16a34a]/30 dark:bg-[#16a34a]/15 text-center">
+                    <p className="text-xs font-medium text-[#16a34a] dark:text-[#4ade80] flex items-center justify-center gap-1.5">
                       <Sparkles className="size-3.5" />
                       All to-dos for today are completed! Great job.
                     </p>
@@ -1217,7 +1217,7 @@ export default function TodosPage() {
                 {groupedTodos.todayCompleted.length > 0 && (
                   <div className="pt-2 space-y-2">
                     <div className="flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <CheckCircle2 className="size-3.5 text-[#16a34a] dark:text-[#4ade80]" />
                       <span>Completed Today ({groupedTodos.todayCompleted.length})</span>
                     </div>
                     <div className="space-y-2">
@@ -1233,11 +1233,11 @@ export default function TodosPage() {
             (activeView === "all" || activeView === "upcoming") && (
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2 px-1">
-                  <Clock className="size-4 text-blue-600 dark:text-blue-400" />
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
+                  <Clock className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" />
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-[#0d47a1] dark:text-[#38bdf8]">
                     Upcoming
                   </h3>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/15 dark:text-[#38bdf8]">
                     {groupedTodos.upcoming.length}
                   </span>
                 </div>
@@ -1269,11 +1269,11 @@ export default function TodosPage() {
           {activeView === "completed" && (
             <div className="space-y-2.5">
               <div className="flex items-center gap-2 px-1">
-                <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                <CheckCircle2 className="size-4 text-[#16a34a] dark:text-[#4ade80]" />
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-[#16a34a] dark:text-[#4ade80]">
                   All Completed To-Dos
                 </h3>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/15 dark:text-[#4ade80]">
                   {groupedTodos.allCompleted.length}
                 </span>
               </div>
@@ -1291,7 +1291,7 @@ export default function TodosPage() {
                 onClick={() => setShowCompletedSection((prev) => !prev)}
                 className="flex items-center gap-2 px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
               >
-                <CheckCircle2 className="size-4 text-emerald-600" />
+                <CheckCircle2 className="size-4 text-[#16a34a]" />
                 <span>Older Completed</span>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                   {groupedTodos.otherCompleted.length}
@@ -1329,11 +1329,8 @@ export default function TodosPage() {
         onOpenChange={(open) => !open && setEditingTodo(null)}
       >
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit3 className="size-5 text-primary" />
-              <span>Edit To-Do</span>
-            </DialogTitle>
+          <DialogHeader icon={<Edit3 className="size-4.5" />}>
+            <DialogTitle>Edit To-Do</DialogTitle>
             <DialogDescription>
               Update the details, due time, and reminder options for this item.
             </DialogDescription>
@@ -1412,7 +1409,7 @@ export default function TodosPage() {
             <div>
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <label className="font-semibold text-foreground flex items-center gap-1.5">
-                  <Bell className="size-3.5 text-indigo-500" />
+                  <Bell className="size-3.5 text-[#0d47a1]" />
                   Reminder Alerts (Select multiple)
                 </label>
                 {editReminderOffsets.length > 0 && (
@@ -1442,7 +1439,7 @@ export default function TodosPage() {
                       className={cn(
                         "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border transition-all select-none",
                         isSelected
-                          ? "bg-indigo-600 border-indigo-600 text-white shadow-xs font-semibold"
+                          ? "bg-[#0d47a1] border-[#0d47a1] text-white shadow-xs font-semibold"
                           : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
@@ -1461,7 +1458,7 @@ export default function TodosPage() {
                 className={cn(
                   "w-full h-11 px-3.5 rounded-lg border text-xs sm:text-sm font-medium transition-all shadow-xs inline-flex items-center justify-between select-none",
                   editSendEmail
-                    ? "bg-indigo-600 border-indigo-600 text-white font-semibold ring-2 ring-indigo-500/25 shadow-sm"
+                    ? "bg-[#0d47a1] border-[#0d47a1] text-white font-semibold ring-2 ring-[#0d47a1]/25 shadow-sm"
                     : "bg-background border-border text-foreground hover:bg-muted hover:border-border"
                 )}
               >
@@ -1471,7 +1468,7 @@ export default function TodosPage() {
                       "size-7 rounded-md flex items-center justify-center",
                       editSendEmail
                         ? "bg-white/20 text-white"
-                        : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400"
+                        : "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/15 dark:text-indigo-400"
                     )}
                   >
                     <Mail className="size-4" />
@@ -1481,7 +1478,7 @@ export default function TodosPage() {
                     <p
                       className={cn(
                         "text-[11px] leading-tight",
-                        editSendEmail ? "text-indigo-100" : "text-muted-foreground"
+                        editSendEmail ? "text-[#0d47a1]" : "text-muted-foreground"
                       )}
                     >
                       Receive an email when this reminder triggers
@@ -1502,7 +1499,7 @@ export default function TodosPage() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -1517,7 +1514,7 @@ export default function TodosPage() {
               size="sm"
               onClick={handleSaveEdit}
               disabled={isSavingEdit || !editTitle.trim()}
-              className="text-xs font-semibold"
+              className="text-xs font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
             >
               {isSavingEdit ? "Saving..." : "Save Changes"}
             </Button>
@@ -1528,18 +1525,18 @@ export default function TodosPage() {
       {/* Confirm Clear Completed Modal */}
       <Dialog open={isConfirmClearOpen} onOpenChange={setIsConfirmClearOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="size-5" />
-              <span>Clear Completed To-Dos?</span>
-            </DialogTitle>
+          <DialogHeader
+            icon={<Trash2 className="size-4.5" />}
+            iconClassName="bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
+          >
+            <DialogTitle>Clear Completed To-Dos?</DialogTitle>
             <DialogDescription>
               This will permanently delete all {stats.completed} completed to-dos
               from your personal list.
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 pt-2">
+          <DialogFooter className="sm:justify-end gap-2">
             <Button
               type="button"
               variant="outline"
@@ -1569,11 +1566,11 @@ export default function TodosPage() {
         onOpenChange={(open) => !open && setTodoToDelete(null)}
       >
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="size-5" />
-              <span>Delete To-Do?</span>
-            </DialogTitle>
+          <DialogHeader
+            icon={<Trash2 className="size-4.5" />}
+            iconClassName="bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
+          >
+            <DialogTitle>Delete To-Do?</DialogTitle>
             <DialogDescription className="space-y-2 pt-1 text-xs sm:text-sm">
               <span className="block text-muted-foreground">
                 Are you sure you want to permanently delete this to-do?
@@ -1589,7 +1586,7 @@ export default function TodosPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 pt-2">
+          <DialogFooter className="pt-3 border-t border-border/60 sm:justify-end gap-2">
             <Button
               type="button"
               variant="outline"

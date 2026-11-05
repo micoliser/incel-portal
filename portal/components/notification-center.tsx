@@ -1,8 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Bell, BellRing, CheckCheck, Loader2, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  Bell,
+  BellRing,
+  Check,
+  CheckCheck,
+  CheckSquare2,
+  Clock,
+  FileText,
+  Loader2,
+  MessageSquare,
+  Package,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -19,6 +36,7 @@ import {
   type NotificationItem,
   upsertPushSubscription,
 } from "@/lib/api/notifications";
+import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 30000;
 const PAGE_SIZE = 20;
@@ -39,9 +57,23 @@ function getTodayKey() {
   return `${year}-${month}-${day}`;
 }
 
+function getNotificationIcon(type: string, title: string) {
+  const t = `${type || ""} ${title || ""}`.toLowerCase();
+  if (t.includes("task") || t.includes("schedule")) return CheckSquare2;
+  if (t.includes("comment") || t.includes("mention") || t.includes("chat"))
+    return MessageSquare;
+  if (t.includes("summary") || t.includes("report")) return FileText;
+  if (t.includes("asset") || t.includes("inventory") || t.includes("equipment"))
+    return Package;
+  if (t.includes("alert") || t.includes("warning") || t.includes("urgent"))
+    return AlertCircle;
+  return Bell;
+}
+
 export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -50,6 +82,7 @@ export function NotificationCenter() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [isClearingAll, setIsClearingAll] = useState(false);
+  const [filterTab, setFilterTab] = useState<"all" | "unread">("all");
 
   const hasUnread = unreadCount > 0;
 
@@ -158,7 +191,7 @@ export function NotificationCenter() {
       }
     };
 
-    fetchUnread();
+    void fetchUnread();
     const interval = window.setInterval(fetchUnread, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
@@ -196,6 +229,10 @@ export function NotificationCenter() {
   }, [open, loadNotificationsPage]);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     let t: number | undefined;
     if (open) {
       setShowSidebar(true);
@@ -208,20 +245,39 @@ export function NotificationCenter() {
   }, [open, showSidebar]);
 
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const bellButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!open) return undefined;
 
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node | null;
-      if (!sidebarRef.current) return;
-      if (target && !sidebarRef.current.contains(target)) {
+      if (
+        target &&
+        !sidebarRef.current?.contains(target) &&
+        !bellButtonRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     };
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   const markOneRead = async (notificationId: string) => {
@@ -318,183 +374,327 @@ export function NotificationCenter() {
     [notifications],
   );
 
+  const displayedNotifications = useMemo(() => {
+    if (filterTab === "unread") {
+      return notifications.filter((item) => !item.is_read);
+    }
+    return notifications;
+  }, [notifications, filterTab]);
+
   return (
     <div className="relative">
       <Button
+        ref={bellButtonRef}
         type="button"
         variant="outline"
         size="icon"
         onClick={() => setOpen((value) => !value)}
         aria-label="Open notifications"
-        className="relative border-border bg-card text-foreground hover:bg-muted"
+        className="relative size-9 rounded-xl border-border/80 bg-card text-foreground shadow-xs transition-colors hover:bg-muted"
       >
         {hasUnread ? (
-          <BellRing className="size-4" aria-hidden="true" />
+          <BellRing className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" aria-hidden="true" />
         ) : (
           <Bell className="size-4" aria-hidden="true" />
         )}
         {hasUnread && (
-          <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
+          <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white shadow-xs">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </Button>
 
-      {showSidebar && (
+      {mounted && showSidebar && typeof document !== "undefined" && createPortal(
         <>
+          {/* Backdrop overlay matching modal blur & dim */}
           <button
             type="button"
             aria-label="Close notifications sidebar"
-            className="fixed inset-0 z-40 bg-transparent transition-opacity"
+            className={cn(
+              "fixed inset-0 z-50 bg-black/60 backdrop-blur-[3px] transition-opacity duration-300",
+              open ? "opacity-100" : "opacity-0 pointer-events-none",
+            )}
             onClick={() => setOpen(false)}
           />
 
+          {/* Slide-over Drawer */}
           <aside
             ref={sidebarRef}
-            className={`fixed right-0 top-0 z-50 h-screen w-[min(96vw,25rem)] border-l border-border bg-card shadow-2xl transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "translate-x-full"}`}
+            className={cn(
+              "fixed right-0 top-0 z-50 flex h-screen w-full sm:w-[420px] max-w-[100vw] flex-col border-l border-border/80 bg-card/95 shadow-2xl backdrop-blur-md transition-transform duration-300 ease-in-out",
+              open ? "translate-x-0" : "translate-x-full",
+            )}
           >
-            <div className="flex h-full flex-col p-4">
-              <div className="mb-3 flex items-start justify-between gap-3 border-b border-border pb-3">
-                <div>
-                  <p className="text-base font-semibold text-foreground">
-                    Notifications
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {unreadItems} unread
-                  </p>
+            {/* Drawer Header */}
+            <div className="flex flex-col border-b border-border/70 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                    <Bell className="size-4.5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-foreground">
+                      Notifications
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {unreadCount > 0
+                        ? `${unreadCount} unread update${unreadCount === 1 ? "" : "s"}`
+                        : "All notifications caught up"}
+                    </p>
+                  </div>
                 </div>
+
                 <Button
                   type="button"
                   size="icon"
                   variant="ghost"
                   onClick={() => setOpen(false)}
                   aria-label="Close notifications"
+                  className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
                   <X className="size-4" aria-hidden="true" />
                 </Button>
               </div>
 
-              <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-border pb-3">
+              {/* Action Toolbar */}
+              <div className="mt-3.5 flex items-center justify-between gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   disabled={isMarkingAllRead || unreadItems === 0}
                   onClick={handleMarkAllRead}
+                  className="h-8 gap-1.5 rounded-lg border-border/80 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
                 >
                   {isMarkingAllRead ? (
                     <Loader2
-                      className="mr-1 size-3 animate-spin"
+                      className="size-3.5 animate-spin"
                       aria-hidden="true"
                     />
                   ) : (
-                    <CheckCheck className="mr-1 size-3" aria-hidden="true" />
+                    <CheckCheck className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" aria-hidden="true" />
                   )}
                   Mark all read
                 </Button>
+
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   disabled={isClearingAll || notifications.length === 0}
                   onClick={handleClearAll}
+                  className="h-8 gap-1.5 rounded-lg border-border/80 text-xs font-medium text-muted-foreground hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                 >
                   {isClearingAll ? (
                     <Loader2
-                      className="mr-1 size-3 animate-spin"
+                      className="size-3.5 animate-spin"
                       aria-hidden="true"
                     />
                   ) : (
-                    <Trash2 className="mr-1 size-3" aria-hidden="true" />
+                    <Trash2 className="size-3.5" aria-hidden="true" />
                   )}
                   Clear all
                 </Button>
               </div>
+            </div>
 
+            {/* Blue Modal Tabs: All vs Unread */}
+            <div className="px-4 pt-3 sm:px-5">
+              <div className="flex items-center gap-2 rounded-lg border border-border p-1 mb-3">
+                <Button
+                  type="button"
+                  variant={filterTab === "all" ? "default" : "ghost"}
+                  onClick={() => setFilterTab("all")}
+                  className={cn(
+                    "flex-1 rounded-md font-semibold text-xs transition-colors h-8 gap-1.5",
+                    filterTab === "all"
+                      ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  All
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.2 text-[10px] font-medium tabular-nums",
+                      filterTab === "all"
+                        ? "bg-white/20 text-white"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {notifications.length}
+                  </span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant={filterTab === "unread" ? "default" : "ghost"}
+                  onClick={() => setFilterTab("unread")}
+                  className={cn(
+                    "flex-1 rounded-md font-semibold text-xs transition-colors h-8 gap-1.5",
+                    filterTab === "unread"
+                      ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Unread
+                  {unreadCount > 0 && (
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums",
+                        filterTab === "unread"
+                          ? "bg-white text-[#0d47a1]"
+                          : "bg-destructive text-white"
+                      )}
+                    >
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* List Body */}
+            <div className="flex-1 overflow-y-auto px-4 pb-4 sm:px-5">
               {loading ? (
-                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                  <Loader2
-                    className="mr-2 size-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                  Loading notifications...
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                  <Loader2 className="size-6 animate-spin text-[#0d47a1] dark:text-[#38bdf8]" />
+                  <span>Loading notifications...</span>
                 </div>
-              ) : notifications.length === 0 ? (
-                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                  No notifications yet.
+              ) : displayedNotifications.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+                  <div className="flex size-14 items-center justify-center rounded-2xl bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8] mb-3">
+                    <Sparkles className="size-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">
+                    {filterTab === "unread"
+                      ? "No unread notifications"
+                      : "No notifications yet"}
+                  </p>
+                  <p className="mt-1 max-w-[240px] text-xs text-muted-foreground">
+                    {filterTab === "unread"
+                      ? "You are all caught up with your updates."
+                      : "When you receive task updates, reports, or mentions, they will appear here."}
+                  </p>
                 </div>
               ) : (
                 <div
-                  className="flex-1 space-y-2 overflow-auto pr-1"
+                  className="space-y-2.5 pt-1"
                   onScroll={handleListScroll}
                 >
-                  {notifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`rounded-lg border p-3 ${
-                        notification.is_read
-                          ? "border-border bg-muted/30"
-                          : "border-primary/30 bg-primary/5"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-foreground">
-                            {notification.title}
-                          </p>
-                          {notification.body ? (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {notification.body}
-                            </p>
-                          ) : null}
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            {formatDistanceToNow(
-                              new Date(notification.created_at),
-                              {
-                                addSuffix: true,
-                              },
-                            )}
-                          </p>
-                        </div>
-                      </div>
+                  {displayedNotifications.map((notification) => {
+                    const IconComponent = getNotificationIcon(
+                      notification.notification_type,
+                      notification.title,
+                    );
 
-                      <div className="mt-3 flex items-center gap-2">
-                        {!notification.is_read && (
+                    return (
+                      <div
+                        key={notification.id}
+                        className={cn(
+                          "group relative flex flex-col rounded-xl border p-3.5 transition-all duration-200",
+                          notification.is_read
+                            ? "border-border/70 bg-card hover:bg-muted/30"
+                            : "border-[#0d47a1]/30 bg-[#0d47a1]/[0.04] dark:bg-[#0d47a1]/10 dark:border-[#0d47a1]/35 shadow-xs"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Type Icon Badge */}
+                          <div
+                            className={cn(
+                              "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                              notification.is_read
+                                ? "bg-muted text-muted-foreground"
+                                : "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]"
+                            )}
+                          >
+                            <IconComponent className="size-4" />
+                          </div>
+
+                          {/* Content */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p
+                                className={cn(
+                                  "text-xs sm:text-sm font-semibold leading-snug break-words",
+                                  notification.is_read
+                                    ? "text-foreground"
+                                    : "text-foreground font-bold"
+                                )}
+                              >
+                                {notification.title}
+                              </p>
+                              {!notification.is_read && (
+                                <span className="mt-1 size-2 shrink-0 rounded-full bg-[#0d47a1] dark:bg-[#38bdf8]" />
+                              )}
+                            </div>
+
+                            {notification.body ? (
+                              <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                                {notification.body}
+                              </p>
+                            ) : null}
+
+                            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                              <Clock className="size-3" />
+                              <span>
+                                {formatDistanceToNow(
+                                  new Date(notification.created_at),
+                                  {
+                                    addSuffix: true,
+                                  },
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Item Action Footer */}
+                        <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            {!notification.is_read && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => void markOneRead(notification.id)}
+                                className="h-7 rounded-md px-2 text-[11px] font-medium text-foreground hover:bg-muted gap-1"
+                              >
+                                <Check className="size-3 text-[#0d47a1] dark:text-[#38bdf8]" />
+                                Mark read
+                              </Button>
+                            )}
+
+                            {notification.link_url && (
+                              <Link
+                                href={notification.link_url}
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-[#0d47a1] hover:underline dark:text-[#38bdf8]"
+                                onClick={() => {
+                                  if (!notification.is_read) {
+                                    void markOneRead(notification.id);
+                                  }
+                                  setOpen(false);
+                                }}
+                              >
+                                <span>Open</span>
+                                <ArrowUpRight className="size-3" />
+                              </Link>
+                            )}
+                          </div>
+
                           <Button
                             type="button"
-                            size="sm"
+                            size="icon"
                             variant="ghost"
-                            onClick={() => void markOneRead(notification.id)}
+                            className="size-7 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => void handleClearOne(notification.id)}
+                            title="Clear notification"
                           >
-                            Read
+                            <Trash2 className="size-3.5" />
                           </Button>
-                        )}
-                        {notification.link_url ? (
-                          <Link
-                            href={notification.link_url}
-                            className="text-xs font-medium text-primary hover:underline"
-                            onClick={() => {
-                              if (!notification.is_read) {
-                                void markOneRead(notification.id);
-                              }
-                              setOpen(false);
-                            }}
-                          >
-                            Open
-                          </Link>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="ml-auto text-destructive hover:text-destructive"
-                          onClick={() => void handleClearOne(notification.id)}
-                        >
-                          Clear
-                        </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {loadingMore ? (
                     <div className="flex items-center justify-center py-3 text-xs text-muted-foreground">
@@ -509,7 +709,8 @@ export function NotificationCenter() {
               )}
             </div>
           </aside>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );

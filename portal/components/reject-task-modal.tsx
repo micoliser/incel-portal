@@ -11,6 +11,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -59,10 +60,11 @@ export function RejectTaskModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
-            <AlertTriangle className="h-5 w-5" /> Request Revisions
-          </DialogTitle>
+        <DialogHeader
+          icon={<AlertTriangle className="size-4.5" />}
+          iconClassName="bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400 dark:ring-amber-500/30"
+        >
+          <DialogTitle>Request Revisions</DialogTitle>
           <DialogDescription>
             The task will be returned to <strong>In Progress</strong> for{" "}
             <strong>{task.assigned_to.full_name}</strong>. Please explain what
@@ -72,7 +74,7 @@ export function RejectTaskModal({
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {errorMessage && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+            <div className="rounded-md bg-[#dc2626]/10 p-3 text-sm text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-red-300">
               {errorMessage}
             </div>
           )}
@@ -91,7 +93,7 @@ export function RejectTaskModal({
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -108,7 +110,7 @@ export function RejectTaskModal({
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Send Back for Revision
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

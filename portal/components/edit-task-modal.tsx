@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Clock } from "lucide-react";
+import { Loader2, Clock, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { updateTask, type Task } from "@/lib/api/tasks";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -118,7 +119,7 @@ export function EditTaskModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader>
+        <DialogHeader icon={<Pencil className="size-4.5" />}>
           <DialogTitle>Edit Task Details</DialogTitle>
           <DialogDescription>
             Modify the task title, description, priority, or extend the deadline.
@@ -128,7 +129,7 @@ export function EditTaskModal({
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {errorMessage && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+            <div className="rounded-md bg-[#dc2626]/10 p-3 text-sm text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-red-300">
               {errorMessage}
             </div>
           )}
@@ -190,8 +191,8 @@ export function EditTaskModal({
           </div>
 
           {/* Quick extension shortcuts */}
-          <div className="rounded-md border border-slate-200/80 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-slate-900/50">
-            <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+          <div className="rounded-md border border-border/80 bg-muted p-2.5 dark:border-border dark:bg-card/50">
+            <p className="text-xs font-medium text-muted-foreground dark:text-muted-foreground mb-2 flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" /> Quick Deadline Extension:
             </p>
             <div className="flex flex-wrap gap-2">
@@ -241,7 +242,7 @@ export function EditTaskModal({
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-3">
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -250,11 +251,15 @@ export function EditTaskModal({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+            >
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save Changes
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

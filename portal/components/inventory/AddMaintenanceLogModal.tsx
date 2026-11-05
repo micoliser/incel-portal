@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { createMaintenanceLog, updateMaintenanceLog, getAttachmentUploadUrl, MaintenanceLog, MaintenanceLogAttachment } from "@/lib/api/inventory";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,7 +183,7 @@ export function AddMaintenanceLogModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
+        <DialogHeader icon={<Wrench className="size-4.5" />}>
           <DialogTitle>{editLog ? "Edit Maintenance Log" : "Add Maintenance Log"}</DialogTitle>
           <DialogDescription>
             {editLog ? "Update details for this maintenance log." : "Record a new maintenance or repair issue for an asset."}
@@ -272,7 +273,7 @@ export function AddMaintenanceLogModal({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-red-500 hover:text-red-700 hover:bg-red-50 px-2"
+                      className="h-6 text-[#dc2626] hover:text-[#dc2626] hover:bg-[#dc2626]/10 px-2"
                       onClick={() => removeExistingAttachment(att.id)}
                       disabled={isSubmitting || isUploading}
                     >
@@ -297,15 +298,24 @@ export function AddMaintenanceLogModal({
             )}
           </div>
 
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting || isUploading}>
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting || isUploading}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting || isUploading}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || isUploading}
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+            >
               {isSubmitting || isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {isUploading ? "Uploading..." : editLog ? "Save Changes" : "Save Log"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,19 @@
 "use client";
 
 import React from "react";
-import { TrendingUp, TrendingDown, Minus, Target } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  GitCompare,
+  CheckSquare2,
+  Clock,
+  Flame,
+  MessageSquare,
+  Paperclip,
+  Percent,
+} from "lucide-react";
+
 import {
   Card,
   CardContent,
@@ -9,87 +21,90 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { WeeklySummary, ComparisonMetrics } from "@/lib/api/summaries";
 
 interface MetricComparisonProps {
   label: string;
+  icon: React.ComponentType<{ className?: string }>;
   current: number;
   previous: number;
   delta: number | null | undefined;
-  isTrend: boolean;
   format?: "percentage" | "count";
 }
 
-function MetricComparison({
+function MetricComparisonCard({
   label,
+  icon: Icon,
   current,
   previous,
   delta,
-  isTrend,
   format = "count",
 }: MetricComparisonProps) {
-  void isTrend;
-  const formatNumber = (val: number | null | undefined) =>
-    typeof val === "number" && Number.isFinite(val) ? val : null;
+  const isFiniteNumber = (v: number | null | undefined): v is number =>
+    typeof v === "number" && Number.isFinite(v);
 
-  const hasDelta = formatNumber(delta) !== null;
-  const isPositive = hasDelta && (delta as number) > 0;
-  const isNeutral = hasDelta && (delta as number) === 0;
-  const TrendIcon = isPositive ? TrendingUp : TrendingDown;
+  const hasDelta = isFiniteNumber(delta);
+  const isPositive = hasDelta && delta > 0;
+  const isNegative = hasDelta && delta < 0;
+  const isNeutral = hasDelta && delta === 0;
 
-  const displayCurrent =
-    format === "percentage"
-      ? formatNumber(current) !== null
-        ? `${(current as number).toFixed(1)}%`
-        : "—"
-      : formatNumber(current) !== null
-        ? current
-        : "—";
+  const displayCurrent = isFiniteNumber(current)
+    ? format === "percentage"
+      ? `${current.toFixed(1)}%`
+      : current
+    : "—";
 
-  const displayPrevious =
-    format === "percentage"
-      ? formatNumber(previous) !== null
-        ? `${(previous as number).toFixed(1)}%`
-        : "—"
-      : formatNumber(previous) !== null
-        ? previous
-        : "—";
+  const displayPrevious = isFiniteNumber(previous)
+    ? format === "percentage"
+      ? `${previous.toFixed(1)}%`
+      : previous
+    : "—";
 
   const displayDelta = (() => {
-    if (format === "percentage") {
-      const v = formatNumber(delta);
-      return v !== null ? `${v > 0 ? "+" : ""}${v.toFixed(1)}%` : "—";
-    }
-    const v = formatNumber(delta);
-    return v !== null ? `${v > 0 ? "+" : ""}${v}` : "—";
+    if (!hasDelta) return "—";
+    const sign = delta > 0 ? "+" : "";
+    return format === "percentage"
+      ? `${sign}${delta.toFixed(1)}%`
+      : `${sign}${delta}`;
   })();
 
   return (
-    <div className="flex items-start justify-between p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-      <div>
-        <p className="text-sm font-medium text-gray-600">{label}</p>
-        <p className="text-xs text-gray-500 mt-1">
-          Previous: {displayPrevious}
-        </p>
-      </div>
-      <div className="text-right">
-        <p className="text-lg font-semibold text-gray-500">{displayCurrent}</p>
-        <div
-          className={`flex items-center gap-1 mt-1 text-sm font-medium ${
-            isNeutral
-              ? "text-gray-500"
-              : isPositive
-                ? "text-green-600"
-                : "text-red-600"
-          }`}
-        >
-          {isNeutral ? (
-            <Minus className="w-4 h-4" />
-          ) : (
-            <TrendIcon className="w-4 h-4" />
-          )}
-          {displayDelta}
+    <div className="flex flex-col justify-between rounded-xl border border-border/70 bg-card/60 p-3.5 transition-colors hover:border-border hover:bg-card">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Icon className="size-3.5" />
+          </div>
+          <span className="text-xs font-medium text-muted-foreground">{label}</span>
         </div>
+
+        {hasDelta && (
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+              isPositive &&
+                "border border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+              isNegative &&
+                "border border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+              isNeutral && "border border-border bg-muted/70 text-muted-foreground",
+            )}
+          >
+            {isPositive && <TrendingUp className="size-3" />}
+            {isNegative && <TrendingDown className="size-3" />}
+            {isNeutral && <Minus className="size-3" />}
+            <span>{displayDelta}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-baseline justify-between">
+        <p className="text-2xl font-bold tabular-nums text-foreground">
+          {displayCurrent}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Prev: <span className="font-medium tabular-nums">{displayPrevious}</span>
+        </p>
       </div>
     </div>
   );
@@ -116,106 +131,134 @@ export function SummaryComparison({
     return null;
   }
 
-  const trendColor = {
-    up: "text-green-600",
-    down: "text-red-600",
-    flat: "text-gray-600",
+  const trendConfig = {
+    up: {
+      label: "Improving Momentum",
+      description: "Pace and completion increased compared to the previous week.",
+      badgeClass:
+        "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+      icon: TrendingUp,
+    },
+    down: {
+      label: "Lower Output",
+      description: "Pace or completion eased compared to the previous week.",
+      badgeClass: "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+      icon: TrendingDown,
+    },
+    flat: {
+      label: "Consistent Velocity",
+      description: "Output matches previous performance levels evenly.",
+      badgeClass: "border-border bg-muted/60 text-muted-foreground",
+      icon: Minus,
+    },
   }[comparison.trend];
 
-  const trendLabel = {
-    up: "📈 Improving",
-    down: "📉 Declining",
-    flat: "➡️ Steady",
-  }[comparison.trend];
+  const TrendIcon = trendConfig.icon;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="w-5 h-5" />
-            Week-over-Week Comparison
-          </CardTitle>
-          <CardDescription>
-            {comparison.previous_week_start &&
-              `Compared to week of ${comparison.previous_week_start}`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Trend indicator */}
-          <div className={`p-4 rounded-lg ${trendColor}`}>
-            <p className="font-semibold text-sm">{trendLabel}</p>
-            {comparison.velocity_change_percent !== undefined && (
-              <p className="text-sm opacity-90">
-                Velocity: {comparison.velocity_change_percent > 0 ? "+" : ""}
-                {Number.isFinite(comparison.velocity_change_percent)
-                  ? `${comparison.velocity_change_percent.toFixed(1)}%`
-                  : "—"}
-              </p>
-            )}
+    <Card className="border-border/80 bg-card shadow-xs">
+      <CardHeader className="pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-[#0d47a1]/10 text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:bg-[#0d47a1]/20 dark:text-[#38bdf8] dark:ring-[#0d47a1]/30">
+              <GitCompare className="size-5" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-semibold tracking-tight text-foreground">
+                Week-over-Week Comparison
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground sm:text-sm">
+                {comparison.previous_week_start
+                  ? `Benchmarked against the week of ${comparison.previous_week_start}`
+                  : "Benchmark against prior recorded week"}
+              </CardDescription>
+            </div>
           </div>
 
-          {/* Key metrics grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <MetricComparison
-              label="Completion Rate"
-              current={current.completion_rate_percent || 0}
-              previous={
-                current.completion_rate_percent -
-                  comparison.delta_completion_rate || 0
-              }
-              delta={comparison.delta_completion_rate}
-              isTrend={true}
-              format="percentage"
-            />
-            <MetricComparison
-              label="Tasks Completed"
-              current={current.tasks_completed || 0}
-              previous={
-                current.tasks_completed - comparison.delta_tasks_completed || 0
-              }
-              delta={comparison.delta_tasks_completed}
-              isTrend={false}
-            />
-            <MetricComparison
-              label="On-Time Completion"
-              current={current.on_time_completion_rate_percent || 0}
-              previous={
-                current.on_time_completion_rate_percent -
-                  comparison.delta_on_time_completion_rate || 0
-              }
-              delta={comparison.delta_on_time_completion_rate}
-              isTrend={true}
-              format="percentage"
-            />
-            <MetricComparison
-              label="High Priority Completed"
-              current={current.high_priority_completed || 0}
-              previous={
-                current.high_priority_completed -
-                  comparison.delta_high_priority_completed || 0
-              }
-              delta={comparison.delta_high_priority_completed}
-              isTrend={false}
-            />
-            <MetricComparison
-              label="Comments"
-              current={current.comments_added || 0}
-              previous={current.comments_added - comparison.delta_comments || 0}
-              delta={comparison.delta_comments}
-              isTrend={false}
-            />
-            <MetricComparison
-              label="Files Attached"
-              current={current.files_attached || 0}
-              previous={current.files_attached - comparison.delta_files || 0}
-              delta={comparison.delta_files}
-              isTrend={false}
-            />
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold",
+              trendConfig.badgeClass,
+            )}
+          >
+            <TrendIcon className="size-4" />
+            <span>{trendConfig.label}</span>
+            {comparison.velocity_change_percent !== undefined &&
+              Number.isFinite(comparison.velocity_change_percent) && (
+                <span className="tabular-nums font-bold">
+                  ({comparison.velocity_change_percent > 0 ? "+" : ""}
+                  {comparison.velocity_change_percent.toFixed(1)}% velocity)
+                </span>
+              )}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MetricComparisonCard
+            label="Completion Rate"
+            icon={Percent}
+            current={current.completion_rate_percent || 0}
+            previous={
+              (current.completion_rate_percent || 0) -
+              (comparison.delta_completion_rate || 0)
+            }
+            delta={comparison.delta_completion_rate}
+            format="percentage"
+          />
+          <MetricComparisonCard
+            label="Tasks Completed"
+            icon={CheckSquare2}
+            current={current.tasks_completed || 0}
+            previous={
+              (current.tasks_completed || 0) -
+              (comparison.delta_tasks_completed || 0)
+            }
+            delta={comparison.delta_tasks_completed}
+          />
+          <MetricComparisonCard
+            label="On-Time Rate"
+            icon={Clock}
+            current={current.on_time_completion_rate_percent || 0}
+            previous={
+              (current.on_time_completion_rate_percent || 0) -
+              (comparison.delta_on_time_completion_rate || 0)
+            }
+            delta={comparison.delta_on_time_completion_rate}
+            format="percentage"
+          />
+          <MetricComparisonCard
+            label="High Priority Tasks"
+            icon={Flame}
+            current={current.high_priority_completed || 0}
+            previous={
+              (current.high_priority_completed || 0) -
+              (comparison.delta_high_priority_completed || 0)
+            }
+            delta={comparison.delta_high_priority_completed}
+          />
+          <MetricComparisonCard
+            label="Comments Added"
+            icon={MessageSquare}
+            current={current.comments_added || 0}
+            previous={
+              (current.comments_added || 0) - (comparison.delta_comments || 0)
+            }
+            delta={comparison.delta_comments}
+          />
+          <MetricComparisonCard
+            label="Files Attached"
+            icon={Paperclip}
+            current={current.files_attached || 0}
+            previous={
+              (current.files_attached || 0) - (comparison.delta_files || 0)
+            }
+            delta={comparison.delta_files}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

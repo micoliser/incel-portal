@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Image from "next/image";
-import { format } from "date-fns";
+import { format, isPast } from "date-fns";
 import {
   ArrowLeft,
   Loader2,
@@ -19,6 +18,13 @@ import {
   Link2,
   ExternalLink,
   X,
+  FileText,
+  Calendar,
+  Repeat,
+  Send,
+  Paperclip,
+  MessageSquare,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -45,15 +51,65 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
-const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
-  in_progress: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-  under_review: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
-  completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+function getInitials(name?: string | null): string {
+  if (!name) return "U";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+const statusConfig: Record<
+  string,
+  { label: string; badgeClass: string; dotClass: string; description: string }
+> = {
+  pending: {
+    label: "Pending",
+    badgeClass: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    dotClass: "bg-amber-500",
+    description: "Task is pending and waiting to be started.",
+  },
+  in_progress: {
+    label: "In Progress",
+    badgeClass: "border-[#0d47a1]/25 bg-[#0d47a1]/10 text-[#0d47a1] dark:text-[#38bdf8]",
+    dotClass: "bg-[#0d47a1] dark:bg-[#38bdf8]",
+    description: "Work is actively in progress by the assignee.",
+  },
+  under_review: {
+    label: "Under Review",
+    badgeClass: "border-purple-500/25 bg-purple-500/10 text-purple-700 dark:text-purple-300",
+    dotClass: "bg-purple-500",
+    description: "Submitted for approval. Awaiting review from assigner.",
+  },
+  completed: {
+    label: "Completed",
+    badgeClass: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    dotClass: "bg-emerald-500",
+    description: "All requirements met and finalized.",
+  },
+};
+
+const priorityConfig: Record<
+  string,
+  { label: string; badgeClass: string }
+> = {
+  low: {
+    label: "Low",
+    badgeClass: "border-border/70 bg-muted/50 text-muted-foreground",
+  },
+  medium: {
+    label: "Medium",
+    badgeClass: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  },
+  high: {
+    label: "High",
+    badgeClass: "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-400 font-semibold",
+  },
 };
 
 const priorityIcons: Record<string, React.ReactNode> = {
@@ -62,16 +118,7 @@ const priorityIcons: Record<string, React.ReactNode> = {
   high: <AlertCircle className="h-4 w-4" />,
 };
 
-const priorityColors: Record<string, string> = {
-  low: "text-gray-500",
-  medium: "text-orange-500",
-  high: "text-red-500",
-};
-
 const COMMENT_MAX_LENGTH = 500;
-
-const backButtonClassName =
-  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
 
 function formatStatusLabel(status: string) {
   return status
@@ -325,352 +372,258 @@ export default function TaskDetailPage() {
   const isAssignee = currentUserId === task.assigned_to.id;
   const canComment = true;
   const hasCompletedTimelineItem = Boolean(task.completed_at);
+  const statusInfo = statusConfig[task.status] || {
+    label: formatStatusLabel(task.status),
+    badgeClass: "border-border bg-muted text-muted-foreground",
+    dotClass: "bg-muted-foreground",
+    description: "Current task status.",
+  };
+  const priorityInfo = priorityConfig[task.priority] || {
+    label: task.priority,
+    badgeClass: "border-border bg-muted text-muted-foreground",
+  };
+  const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+  const isOverdue =
+    deadlineDate && isPast(deadlineDate) && task.status !== "completed";
 
   return (
-    <div className="space-y-8">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.back()}
-        className={backButtonClassName}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Tasks
-      </Button>
+    <div className="space-y-6">
+      {/* Top Bar: Back button and Edit action */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.back()}
+          className="group inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs sm:text-sm font-medium text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft className="size-4 transition-transform duration-200 group-hover:-translate-x-0.5" />
+          Back to Tasks
+        </Button>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
-          <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div className="text-red-800">{error}</div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold">{task.title}</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">{task.description}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {isAssigner && task.status !== "completed" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditModalOpen(true)}
-                className="flex items-center gap-1.5"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit Task
-              </Button>
-            )}
-            <span
-              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${statusColors[task.status] || "bg-gray-100 text-gray-800"}`}
+        <div className="flex items-center gap-2.5">
+          {isAssigner && task.status !== "completed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditModalOpen(true)}
+              className="flex items-center gap-1.5 text-xs sm:text-sm"
             >
-              {formatStatusLabel(task.status)}
-            </span>
-          </div>
+              <Pencil className="size-3.5" />
+              Edit Task
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Task Details */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">Task Information</h3>
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm text-gray-600">Assigned By</p>
-              <p className="font-medium">{task.assigned_by.full_name}</p>
-              <p className="text-xs text-gray-500">{task.assigned_by.email}</p>
+      {error && (
+        <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4 flex items-center gap-3 text-sm text-red-600 dark:text-red-400">
+          <AlertCircle className="size-5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Main Two-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left / Main Column: Task Details + Activity Stream (8 cols) */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Main Task Header Card */}
+          <Card className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-5">
+            {/* Metadata Tags Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/70 pb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold tracking-tight",
+                    statusInfo.badgeClass,
+                  )}
+                >
+                  <span className={cn("size-2 rounded-full", statusInfo.dotClass)} />
+                  {statusInfo.label}
+                </span>
+
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium capitalize",
+                    priorityInfo.badgeClass,
+                  )}
+                >
+                  {priorityIcons[task.priority]}
+                  {priorityInfo.label} Priority
+                </span>
+
+                {task.recurrence_schedule && (
+                  <Link
+                    href={`/tasks/recurring/${task.recurrence_schedule}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[#0d47a1]/25 bg-[#0d47a1]/10 px-2.5 py-1 text-xs font-medium text-[#0d47a1] dark:text-[#38bdf8] transition-colors hover:bg-[#0d47a1]/20"
+                  >
+                    <Repeat className="size-3.5" />
+                    Recurring Task
+                  </Link>
+                )}
+              </div>
+
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Calendar className="size-3.5" />
+                Created {format(new Date(task.created_at), "MMM d, yyyy")}
+              </div>
             </div>
+
+            {/* Task Title */}
             <div>
-              <p className="text-sm text-gray-600">Assigned To</p>
-              <p className="font-medium">{task.assigned_to.full_name}</p>
-              <p className="text-xs text-gray-500">{task.assigned_to.email}</p>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground leading-snug">
+                {task.title}
+              </h1>
             </div>
+
+            {/* Description Section */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Description
+              </h3>
+              <div className="rounded-xl border border-border/60 bg-muted/25 p-4 sm:p-5 text-sm sm:text-base leading-relaxed text-foreground whitespace-pre-wrap">
+                {task.description ? (
+                  task.description
+                ) : (
+                  <span className="italic text-muted-foreground text-sm">
+                    No description provided for this task.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Recurrence Banner if created from recurring schedule */}
             {task.recurrence_schedule ? (
-              <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                <p className="font-semibold">Recurring schedule</p>
-                <p className="mt-1">
-                  This task is created from a recurring schedule.
-                </p>
+              <div className="rounded-xl border border-border/80 bg-[#0d47a1]/5 p-4 text-xs sm:text-sm text-foreground space-y-1.5 dark:bg-[#0d47a1]/10">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-[#0d47a1] dark:text-[#38bdf8] flex items-center gap-1.5">
+                    <Repeat className="size-4" /> Recurring Schedule Source
+                  </span>
+                  <Link
+                    href={`/tasks/recurring/${task.recurrence_schedule}`}
+                    className="font-medium text-[#0d47a1] dark:text-[#38bdf8] hover:underline flex items-center gap-1"
+                  >
+                    View schedule details
+                    <ExternalLink className="size-3" />
+                  </Link>
+                </div>
                 {task.recurrence_scheduled_for ? (
-                  <p className="mt-1 text-xs text-blue-700">
-                    Scheduled for{" "}
-                    {format(
-                      new Date(task.recurrence_scheduled_for),
-                      "MMM dd, yyyy HH:mm",
-                    )}
+                  <p className="text-muted-foreground text-xs">
+                    Scheduled execution timestamp:{" "}
+                    <span className="font-medium text-foreground">
+                      {format(new Date(task.recurrence_scheduled_for), "MMM dd, yyyy HH:mm")}
+                    </span>
                   </p>
                 ) : null}
-                <Link
-                  href={`/tasks/recurring/${task.recurrence_schedule}`}
-                  className="mt-2 inline-block text-xs font-semibold text-blue-700 hover:text-blue-800"
-                >
-                  View recurring task details
-                </Link>
               </div>
             ) : null}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-600">Priority</p>
-                <p
-                  className={`font-medium capitalize flex items-center gap-2 ${priorityColors[task.priority]}`}
-                >
-                  {priorityIcons[task.priority]} {task.priority}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Created</p>
-                <p className="font-medium text-sm">
-                  {format(new Date(task.created_at), "MMM dd, yyyy HH:mm")}
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
+          </Card>
 
-        {/* Status Control */}
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">Status</h3>
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-4">
-              {task.status === "completed" ? (
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-              ) : task.status === "under_review" ? (
-                <Clock className="h-5 w-5 text-purple-600" />
-              ) : task.status === "in_progress" ? (
-                <Clock className="h-5 w-5 text-blue-600" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              )}
-              <span className="font-semibold capitalize">
-                {formatStatusLabel(task.status)}
+          {/* Activity & Collaboration Hub */}
+          <Card className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-6">
+            <div className="flex items-center justify-between border-b border-border/70 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                  <MessageSquare className="size-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground">
+                    Activity & Discussion
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Collaboration updates, attachments, and status timeline
+                  </p>
+                </div>
+              </div>
+
+              <span className="rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-muted-foreground">
+                {activities.length} update{activities.length === 1 ? "" : "s"}
               </span>
             </div>
 
-            {task.deadline && (
-              <div className="text-sm">
-                <p className="text-gray-600 dark:text-gray-400">Deadline</p>
-                <p className="font-medium">
-                  {format(new Date(task.deadline), "MMM dd, yyyy HH:mm")}
-                </p>
-              </div>
-            )}
-
-            {task.completed_at && (
-              <div className="text-sm">
-                <p className="text-gray-600 dark:text-gray-400">Completed</p>
-                <p className="font-medium">
-                  {format(new Date(task.completed_at), "MMM dd, yyyy HH:mm")}
-                </p>
-              </div>
-            )}
-
-            {/* Assignee Actions */}
-            {isAssignee && task.status !== "completed" && task.status !== "under_review" && (
-              <div className="flex gap-2 flex-wrap pt-4 border-t">
-                {task.status === "pending" && (
-                  <Button
-                    onClick={() => handleStatusChange("in_progress")}
-                    disabled={updating}
-                    variant="outline"
-                    size="sm"
-                  >
-                    {updating && (
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                    )}
-                    Start Task (In Progress)
-                  </Button>
-                )}
-                {task.status === "in_progress" && (
-                  <Button
-                    onClick={() => setSubmitConfirmOpen(true)}
-                    disabled={updating}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
-                    size="sm"
-                  >
-                    {updating && (
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                    )}
-                    <Check className="h-3.5 w-3.5 mr-1" />
-                    Submit for Approval
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {/* Assignee Waiting Banner */}
-            {isAssignee && task.status === "under_review" && (
-              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs text-purple-800 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-300 border-t pt-4">
-                <p className="font-semibold flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" /> Submitted for Approval
-                </p>
-                <p className="mt-1">
-                  Awaiting review and approval from {task.assigned_by.full_name}. You will be notified once reviewed.
-                </p>
-              </div>
-            )}
-
-            {/* Assigner Approval Actions when under_review */}
-            {isAssigner && task.status === "under_review" && (
-              <div className="space-y-3 pt-4 border-t">
-                <div>
-                  <p className="text-xs font-semibold text-purple-800 dark:text-purple-300">
-                    Review Submission
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                    {task.assigned_to.full_name} submitted this task for your final approval.
-                  </p>
+            {/* Inline Comment Composer */}
+            <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-3.5">
+              <div className="flex items-start gap-3">
+                <div className="hidden sm:flex size-8 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-xs font-bold text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]">
+                  Me
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => setApproveConfirmOpen(true)}
-                    disabled={isApproving}
-                    className="bg-green-600 hover:bg-green-700 text-white flex-1"
-                  >
-                    {isApproving ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <Check className="h-3.5 w-3.5 mr-1" />
-                    )}
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsRejectModalOpen(true)}
-                    disabled={isApproving}
-                    className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40 flex-1"
-                  >
-                    <XCircle className="h-3.5 w-3.5 mr-1" />
-                    Request Changes
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {!isAssignee && !isAssigner && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 border-t pt-4">
-                <p className="font-semibold flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5" /> Management Oversight
-                </p>
-                <p className="mt-1">
-                  You are viewing this task with managerial oversight. You can review all details, timeline activities, and post comments or guidance.
-                </p>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">Add Comment</h3>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <textarea
-                value={comment}
-                onChange={(event) => {
-                  setComment(event.target.value);
-                  if (commentError) setCommentError(null);
-                }}
-                placeholder="Write a comment for this task..."
-                disabled={!canComment || isPostingComment}
-                maxLength={COMMENT_MAX_LENGTH}
-                rows={4}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-            <div className="space-y-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                disabled={!canComment || isPostingComment}
-                onChange={(event) => {
-                  const files = Array.from(event.target.files || []);
-                  const maxFiles = 10;
-                  // Append newly selected files to existing selection
-                  const combined = [...selectedAttachments, ...files];
-                  if (combined.length > maxFiles) {
-                    setSelectedAttachments(combined.slice(0, maxFiles));
-                    toast.error(
-                      `Maximum ${maxFiles} files allowed; extra files were ignored.`,
-                    );
-                  } else {
-                    setSelectedAttachments(combined);
-                  }
-                  // Reset the native input so selecting the same file again will fire onChange
-                  // and so users can add files in multiple clicks.
-                  try {
-                    // Clear the value in a safe way
-                    event.target.value = "";
-                  } catch {
-                    /* ignore */
-                  }
-                  if (commentError) setCommentError(null);
-                }}
-                className="hidden"
-              />
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 text-xs h-9"
-                    onClick={() => fileInputRef.current?.click()}
+                <div className="flex-1 space-y-2.5 min-w-0">
+                  <textarea
+                    value={comment}
+                    onChange={(event) => {
+                      setComment(event.target.value);
+                      if (commentError) setCommentError(null);
+                    }}
+                    placeholder="Share an update, notes, or feedback on this task..."
                     disabled={!canComment || isPostingComment}
-                  >
-                    Attach File(s)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 text-xs h-9 flex items-center gap-1.5"
-                    onClick={() => setIsAddingLink((prev) => !prev)}
-                    disabled={!canComment || isPostingComment}
-                  >
-                    <Link2 className="h-3.5 w-3.5" />
-                    Attach Link
-                  </Button>
-                </div>
+                    maxLength={COMMENT_MAX_LENGTH}
+                    rows={3}
+                    className="w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-sm shadow-2xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#0d47a1] disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-muted-foreground/70"
+                  />
 
-                {isAddingLink && (
-                  <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2.5 dark:bg-slate-900/40">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                        <Link2 className="h-3.5 w-3.5 text-blue-500" /> Attach Link
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsAddingLink(false);
-                          setLinkUrl("");
-                          setLinkTitle("");
-                          setLinkError(null);
-                        }}
-                        className="text-muted-foreground hover:text-foreground text-xs"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      <Input
-                        placeholder="https://drive.google.com/... or any URL"
-                        value={linkUrl}
-                        onChange={(e) => {
-                          setLinkUrl(e.target.value);
-                          if (linkError) setLinkError(null);
-                        }}
-                        className="text-xs h-8"
-                        autoFocus
-                      />
-                      <Input
-                        placeholder="Title or label (e.g. Project Video, Specs Doc)"
-                        value={linkTitle}
-                        onChange={(e) => setLinkTitle(e.target.value)}
-                        className="text-xs h-8"
-                      />
+                  {/* Hidden file input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    disabled={!canComment || isPostingComment}
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files || []);
+                      const maxFiles = 10;
+                      const combined = [...selectedAttachments, ...files];
+                      if (combined.length > maxFiles) {
+                        setSelectedAttachments(combined.slice(0, maxFiles));
+                        toast.error(`Maximum ${maxFiles} files allowed.`);
+                      } else {
+                        setSelectedAttachments(combined);
+                      }
+                      try {
+                        event.target.value = "";
+                      } catch {
+                        /* ignore */
+                      }
+                      if (commentError) setCommentError(null);
+                    }}
+                    className="hidden"
+                  />
+
+                  {/* Add link form popdown */}
+                  {isAddingLink && (
+                    <div className="rounded-lg border border-border bg-card p-3 space-y-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                          <Link2 className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" /> Attach Link
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingLink(false);
+                            setLinkUrl("");
+                            setLinkTitle("");
+                            setLinkError(null);
+                          }}
+                          className="text-muted-foreground hover:text-foreground text-xs"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Input
+                          placeholder="https://drive.google.com/... or URL"
+                          value={linkUrl}
+                          onChange={(e) => {
+                            setLinkUrl(e.target.value);
+                            if (linkError) setLinkError(null);
+                          }}
+                          className="text-xs h-8"
+                          autoFocus
+                        />
+                        <Input
+                          placeholder="Link title (e.g. Design Spec)"
+                          value={linkTitle}
+                          onChange={(e) => setLinkTitle(e.target.value)}
+                          className="text-xs h-8"
+                        />
+                      </div>
                       {linkError && <p className="text-xs text-destructive">{linkError}</p>}
                       <div className="flex justify-end gap-2 pt-1">
                         <Button
@@ -690,231 +643,512 @@ export default function TaskDetailPage() {
                         <Button
                           type="button"
                           size="sm"
-                          className="h-7 text-xs px-3"
+                          className="h-7 text-xs px-3 bg-[#0d47a1] hover:bg-[#0a3880] text-white"
                           onClick={handleAddLink}
                         >
                           Add Link
                         </Button>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {attachedLinks.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {attachedLinks.map((item, idx) => (
-                      <div
-                        key={`${item.url}-${idx}`}
-                        className="flex items-center gap-2 rounded-md border border-dashed border-blue-400 bg-blue-50/60 px-2.5 py-1 text-xs text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                      >
-                        <Link2 className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
-                        <span className="max-w-[200px] truncate font-medium" title={item.url}>
-                          {item.title}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setAttachedLinks((prev) =>
-                              prev.filter((_, i) => i !== idx),
-                            )
-                          }
-                          className="text-muted-foreground hover:text-destructive"
+                  {/* Attached links chips */}
+                  {attachedLinks.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {attachedLinks.map((item, idx) => (
+                        <div
+                          key={`${item.url}-${idx}`}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-[#0d47a1]/20 bg-[#0d47a1]/10 px-2.5 py-1 text-xs text-[#0d47a1] dark:text-[#38bdf8]"
                         >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {selectedAttachments.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedAttachments.map((file, idx) => (
-                      <div
-                        key={`${file.name}-${file.size}-${idx}`}
-                        className="flex items-center justify-between rounded-md border border-dashed px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
-                      >
-                        <div>
-                          <p className="font-medium">{file.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {(file.size / 1024).toFixed(1)} KB
-                          </p>
+                          <Link2 className="size-3.5 shrink-0" />
+                          <span className="max-w-[180px] truncate font-medium" title={item.url}>
+                            {item.title}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttachedLinks((prev) =>
+                                prev.filter((_, i) => i !== idx),
+                              )
+                            }
+                            className="text-muted-foreground hover:text-destructive ml-0.5"
+                          >
+                            <X className="size-3.5" />
+                          </button>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setSelectedAttachments(
-                              selectedAttachments.filter((_, i) => i !== idx),
-                            )
-                          }
-                          disabled={isPostingComment}
-                          className="text-red-600 hover:bg-red-600 hover:text-white"
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Selected attachments chips */}
+                  {selectedAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {selectedAttachments.map((file, idx) => (
+                        <div
+                          key={`${file.name}-${file.size}-${idx}`}
+                          className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground"
                         >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
+                          <Paperclip className="size-3.5 text-muted-foreground" />
+                          <span className="max-w-[180px] truncate font-medium">
+                            {file.name}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            ({(file.size / 1024).toFixed(0)} KB)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedAttachments(
+                                selectedAttachments.filter((_, i) => i !== idx),
+                              )
+                            }
+                            disabled={isPostingComment}
+                            className="text-muted-foreground hover:text-destructive ml-0.5"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {commentError && (
+                    <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                      {commentError}
+                    </p>
+                  )}
+
+                  {/* Bottom composer toolbar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-border/50">
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={!canComment || isPostingComment}
+                        className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <Paperclip className="size-3.5" />
+                        Attach Files
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsAddingLink((prev) => !prev)}
+                        disabled={!canComment || isPostingComment}
+                        className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <Link2 className="size-3.5" />
+                        Attach Link
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-muted-foreground tabular-nums">
+                        {comment.length}/{COMMENT_MAX_LENGTH}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleAddComment}
+                        disabled={
+                          !canComment ||
+                          isPostingComment ||
+                          isUploadingAttachment ||
+                          (!comment.trim() &&
+                            selectedAttachments.length === 0 &&
+                            attachedLinks.length === 0)
+                        }
+                        className="h-8 px-3.5 text-xs font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white"
+                      >
+                        {isPostingComment || isUploadingAttachment ? (
+                          <>
+                            <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                            {isUploadingAttachment ? "Uploading..." : "Posting..."}
+                          </>
+                        ) : (
+                          <>
+                            <Send className="size-3.5 mr-1.5" />
+                            Post Comment
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
-            <p className="text-xs text-gray-500 text-right">
-              {comment.length}/{COMMENT_MAX_LENGTH}
-            </p>
-            {commentError && (
-              <p className="text-sm text-red-600">{commentError}</p>
-            )}
-            {!canComment && (
-              <p className="text-sm text-gray-600">
-                Only the assigner and assignee can add comments.
-              </p>
-            )}
-            <Button
-              type="button"
-              onClick={handleAddComment}
-              disabled={
-                !canComment || isPostingComment || isUploadingAttachment
-              }
-              className="w-full"
-            >
-              {(isPostingComment || isUploadingAttachment) && (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+
+            {/* Timeline Stream */}
+            <div className="space-y-4 pt-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Timeline History
+              </h3>
+
+              {activities.length === 0 && !hasCompletedTimelineItem ? (
+                <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  No activity recorded for this task yet.
+                </div>
+              ) : (
+                <div className="relative pl-6 space-y-6 before:absolute before:bottom-3 before:left-3 before:top-3 before:w-px before:bg-border/80">
+                  {/* If task is completed, render completion header node */}
+                  {hasCompletedTimelineItem && (
+                    <div className="relative flex items-start gap-3">
+                      <div className="absolute -left-6 flex size-6 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 ring-4 ring-background dark:text-emerald-400">
+                        <CheckCircle2 className="size-4" />
+                      </div>
+                      <div className="flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-300">
+                        <p className="font-semibold text-sm">
+                          Task Completed & Finalized
+                        </p>
+                        <p className="mt-0.5 text-emerald-700/80 dark:text-emerald-400/80">
+                          {format(
+                            new Date(task.completed_at as string),
+                            "EEEE, MMMM d, yyyy · HH:mm",
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Render activities */}
+                  {activities.map((activity) => {
+                    const isComment = activity.activity_type === "comment";
+
+                    if (isComment) {
+                      return (
+                        <div key={activity.id} className="relative flex items-start gap-3">
+                          <div className="absolute -left-6 flex size-6 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[#0d47a1] ring-4 ring-background dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]">
+                            <MessageSquare className="size-3.5" />
+                          </div>
+                          <div className="flex-1 rounded-xl border border-border bg-card p-4 shadow-2xs space-y-3">
+                            <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex size-6 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[10px] font-bold text-[#0d47a1] dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]">
+                                  {getInitials(activity.user.full_name)}
+                                </div>
+                                <span className="font-semibold text-xs sm:text-sm text-foreground">
+                                  {activity.user.full_name}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-muted-foreground">
+                                {format(new Date(activity.created_at), "MMM d, yyyy · HH:mm")}
+                              </span>
+                            </div>
+
+                            {activity.comment && (
+                              <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                                {activity.comment}
+                              </p>
+                            )}
+
+                            {/* Attached Links */}
+                            {activity.links && activity.links.length > 0 && (
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                {activity.links.map((linkItem, idx) => (
+                                  <a
+                                    key={`${linkItem.url}-${idx}`}
+                                    href={linkItem.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                                  >
+                                    <ExternalLink className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
+                                    <span className="max-w-[220px] truncate" title={linkItem.url}>
+                                      {linkItem.title || linkItem.url}
+                                    </span>
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Attached Files */}
+                            {activity.attachments && activity.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-2.5 pt-1">
+                                {activity.attachments.map((attachment) => (
+                                  <AttachmentCard key={attachment.id} attachment={attachment} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // System event (status change, created, edited)
+                    const isStatusChange = activity.activity_type === "status_change";
+                    const isEdited = activity.activity_type === "task_edited";
+
+                    return (
+                      <div key={activity.id} className="relative flex items-center gap-3">
+                        <div className="absolute -left-6 flex size-6 items-center justify-center rounded-full bg-muted text-muted-foreground ring-4 ring-background">
+                          {isStatusChange ? (
+                            <CheckCircle2 className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
+                          ) : isEdited ? (
+                            <Pencil className="size-3 text-amber-600" />
+                          ) : (
+                            <Plus className="size-3.5 text-muted-foreground" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 rounded-lg border border-border/70 bg-muted/30 px-3.5 py-2 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-foreground">
+                              {activity.user.full_name}
+                            </span>
+                            {isStatusChange ? (
+                              <span>
+                                changed status from{" "}
+                                <span className="font-medium text-foreground capitalize">
+                                  {activity.old_value?.replace("_", " ")}
+                                </span>{" "}
+                                to{" "}
+                                <span className="font-semibold text-[#0d47a1] dark:text-[#38bdf8] capitalize">
+                                  {activity.new_value?.replace("_", " ")}
+                                </span>
+                              </span>
+                            ) : isEdited ? (
+                              <span>updated task details</span>
+                            ) : (
+                              <span>created this task</span>
+                            )}
+                          </div>
+
+                          <span className="text-[11px] text-muted-foreground">
+                            {format(new Date(activity.created_at), "MMM d, HH:mm")}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-              {isUploadingAttachment ? "Uploading..." : "Post Comment"}
-            </Button>
-          </div>
-        </Card>
-      </div>
+            </div>
+          </Card>
+        </div>
 
-      {/* Activity Timeline */}
-      <div className="space-y-6">
-        <h3 className="text-center text-lg font-semibold">Activity Timeline</h3>
-        {activities.length === 0 ? (
-          <div className="text-center text-gray-600 py-8">No activity yet</div>
-        ) : (
-          <div className="mx-auto max-w-3xl py-2">
-            <div>
-              {hasCompletedTimelineItem && (
-                <div className="relative mx-auto flex w-full max-w-2xl gap-4 pb-8">
-                  <div className="relative flex w-8 justify-center">
-                    <div className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white dark:bg-slate-950">
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    </div>
+        {/* Right / Inspector Sidebar (4 cols) */}
+        <div className="lg:col-span-4 space-y-5">
+          {/* Status & Actions Inspector Card */}
+          <Card className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-border/70 pb-3">
+              <h3 className="font-bold text-sm text-foreground">
+                Task Status & Actions
+              </h3>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                  statusInfo.badgeClass,
+                )}
+              >
+                <span className={cn("size-1.5 rounded-full", statusInfo.dotClass)} />
+                {statusInfo.label}
+              </span>
+            </div>
 
-                    {activities.length > 0 && (
-                      <div className="absolute bottom-[-1.75rem] left-1/2 top-7 w-[6px] -translate-x-1/2 bg-[radial-gradient(circle,theme(colors.gray.400)_2px,transparent_2.2px)] bg-[length:6px_14px] bg-repeat-y" />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {statusInfo.description}
+            </p>
+
+            {/* Contextual Actions */}
+            {isAssignee && task.status !== "completed" && task.status !== "under_review" && (
+              <div className="pt-2 border-t border-border/60 space-y-2">
+                {task.status === "pending" && (
+                  <Button
+                    onClick={() => handleStatusChange("in_progress")}
+                    disabled={updating}
+                    className="w-full bg-[#0d47a1] hover:bg-[#0a3880] text-white font-medium"
+                    size="sm"
+                  >
+                    {updating ? (
+                      <Loader2 className="size-3.5 mr-2 animate-spin" />
+                    ) : (
+                      <Clock className="size-3.5 mr-2" />
                     )}
-                  </div>
+                    Start Task (In Progress)
+                  </Button>
+                )}
+                {task.status === "in_progress" && (
+                  <Button
+                    onClick={() => setSubmitConfirmOpen(true)}
+                    disabled={updating}
+                    className="w-full bg-[#0d47a1] hover:bg-[#0a3880] text-white font-medium"
+                    size="sm"
+                  >
+                    {updating ? (
+                      <Loader2 className="size-3.5 mr-2 animate-spin" />
+                    ) : (
+                      <Check className="size-3.5 mr-2" />
+                    )}
+                    Submit for Approval
+                  </Button>
+                )}
+              </div>
+            )}
 
+            {/* Under Review Notice for Assignee */}
+            {isAssignee && task.status === "under_review" && (
+              <div className="rounded-xl border border-purple-500/25 bg-purple-500/10 p-3.5 text-xs text-purple-800 dark:text-purple-300 space-y-1">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <Clock className="size-3.5" /> Awaiting Review
+                </p>
+                <p className="text-purple-700 dark:text-purple-400">
+                  You submitted this task for review. {task.assigned_by.full_name} will approve or request changes.
+                </p>
+              </div>
+            )}
+
+            {/* Review & Approval Actions for Assigner */}
+            {isAssigner && task.status === "under_review" && (
+              <div className="pt-3 border-t border-border/60 space-y-3">
+                <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-800 dark:text-amber-300">
+                  <p className="font-semibold">Review Submission</p>
+                  <p className="mt-0.5 text-amber-700/90 dark:text-amber-400">
+                    {task.assigned_to.full_name} has submitted this task for your final review.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setApproveConfirmOpen(true)}
+                    disabled={isApproving}
+                    className="flex-1 bg-[#16a34a] hover:bg-[#15803d] text-white font-semibold"
+                  >
+                    {isApproving ? (
+                      <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Check className="size-3.5 mr-1.5" />
+                    )}
+                    Approve
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsRejectModalOpen(true)}
+                    disabled={isApproving}
+                    className="flex-1 border-red-500/30 text-red-600 hover:bg-red-500/10 dark:text-red-400"
+                  >
+                    <XCircle className="size-3.5 mr-1.5" />
+                    Request Changes
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Oversight notice for third-party managers */}
+            {!isAssignee && !isAssigner && (
+              <div className="rounded-xl border border-[#0d47a1]/25 bg-[#0d47a1]/10 p-3.5 text-xs text-[#0d47a1] dark:text-[#38bdf8] space-y-1">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <Shield className="size-3.5" /> Managerial Oversight
+                </p>
+                <p className="text-muted-foreground">
+                  You are viewing this task with organizational oversight. You may post feedback and review the timeline.
+                </p>
+              </div>
+            )}
+          </Card>
+
+          {/* Assignment & People Card */}
+          <Card className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+            <h3 className="font-bold text-sm text-foreground border-b border-border/70 pb-3">
+              Assignment & People
+            </h3>
+
+            <div className="space-y-4">
+              {/* Assignee */}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Assignee
+                </p>
+                <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-xs font-bold text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]">
+                    {getInitials(task.assigned_to.full_name)}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium text-green-700 dark:text-green-400">
-                        Task Completed
-                      </p>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {format(
-                        new Date(task.completed_at as string),
-                        "MMM dd, yyyy HH:mm",
-                      )}
+                    <p className="font-semibold text-xs text-foreground truncate">
+                      {task.assigned_to.full_name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {task.assigned_to.email}
                     </p>
                   </div>
                 </div>
-              )}
+              </div>
 
-              {activities.map((activity, index) => {
-                const isLast = index === activities.length - 1;
-
-                return (
-                  <div
-                    key={activity.id}
-                    className="relative mx-auto flex w-full max-w-2xl gap-4 pb-8 last:pb-0"
-                  >
-                    <div className="relative flex w-8 justify-center">
-                      <div className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white dark:bg-slate-950">
-                        {activity.activity_type === "status_change" ? (
-                          <CheckCircle2 className="h-5 w-5 text-blue-600" />
-                        ) : activity.activity_type === "created" ? (
-                          <IconPlus className="h-5 w-5 text-gray-600" />
-                        ) : activity.activity_type === "task_edited" ? (
-                          <Pencil className="h-4 w-4 text-amber-600" />
-                        ) : (
-                          <Clock className="h-5 w-5 text-gray-600" />
-                        )}
-                      </div>
-
-                      {!isLast && (
-                        <div className="absolute bottom-[-1.75rem] left-1/2 top-7 w-[6px] -translate-x-1/2 bg-[radial-gradient(circle,theme(colors.gray.400)_2px,transparent_2.2px)] bg-[length:6px_14px] bg-repeat-y" />
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">{activity.user.full_name}</p>
-                        <p className="text-sm text-gray-600 capitalize">
-                          {activity.activity_type.replace("_", " ")}
-                        </p>
-                      </div>
-                      {activity.activity_type === "status_change" && (
-                        <p className="mt-1 text-sm text-gray-600">
-                          Changed from{" "}
-                          <span className="font-medium capitalize">
-                            {activity.old_value}
-                          </span>{" "}
-                          to{" "}
-                          <span className="font-medium capitalize">
-                            {activity.new_value}
-                          </span>
-                        </p>
-                      )}
-                      {activity.comment && (
-                        <p className="mt-1 text-sm italic text-gray-700 dark:text-gray-300">
-                          {activity.comment}
-                        </p>
-                      )}
-                      {activity.links && activity.links.length > 0 && (
-                        <div className="mt-2.5 flex flex-wrap gap-2">
-                          {activity.links.map((linkItem, idx) => (
-                            <a
-                              key={`${linkItem.url}-${idx}`}
-                              href={linkItem.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground dark:bg-slate-800/80 dark:border-slate-700"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                              <span className="max-w-[250px] truncate" title={linkItem.url}>
-                                {linkItem.title || linkItem.url}
-                              </span>
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                      {activity.attachments.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {activity.attachments.map((attachment) => (
-                            <AttachmentLink
-                              key={attachment.id}
-                              attachment={attachment}
-                            />
-                          ))}
-                        </div>
-                      )}
-                      <p className="mt-1 text-xs text-gray-500">
-                        {format(
-                          new Date(activity.created_at),
-                          "MMM dd, yyyy HH:mm",
-                        )}
-                      </p>
-                    </div>
+              {/* Assigner */}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Assigner
+                </p>
+                <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground ring-1 ring-border">
+                    {getInitials(task.assigned_by.full_name)}
                   </div>
-                );
-              })}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-xs text-foreground truncate">
+                      {task.assigned_by.full_name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {task.assigned_by.email}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+
+            {/* Dates & Schedule */}
+            <div className="space-y-3 pt-3 border-t border-border/70">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Dates & Deadlines
+              </h4>
+
+              <div className="space-y-2 text-xs">
+                {task.deadline && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Clock className="size-3.5" /> Deadline:
+                    </span>
+                    <span
+                      className={cn(
+                        "font-medium",
+                        isOverdue
+                          ? "text-red-600 dark:text-red-400 font-semibold"
+                          : "text-foreground",
+                      )}
+                    >
+                      {format(new Date(task.deadline), "MMM dd, yyyy HH:mm")}
+                      {isOverdue && " (Overdue)"}
+                    </span>
+                  </div>
+                )}
+
+                {task.completed_at && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <CheckCircle2 className="size-3.5 text-[#16a34a]" /> Completed:
+                    </span>
+                    <span className="font-medium text-foreground">
+                      {format(new Date(task.completed_at), "MMM dd, yyyy HH:mm")}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
+                    <Calendar className="size-3.5" /> Created:
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {format(new Date(task.created_at), "MMM dd, yyyy HH:mm")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
       </div>
 
       {task && (
@@ -935,15 +1169,13 @@ export default function TaskDetailPage() {
           {/* Submit for Approval Confirmation Dialog */}
           <Dialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
             <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-400">
-                  <Check className="h-5 w-5" /> Submit Task for Approval
-                </DialogTitle>
+              <DialogHeader icon={<Check className="size-4.5" />}>
+                <DialogTitle>Submit Task for Approval</DialogTitle>
                 <DialogDescription>
                   Are you sure you want to submit <strong>{task.title}</strong> for review? Your assigner ({task.assigned_by.full_name}) will review your work to finalize or request revisions.
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex justify-end gap-3 pt-4">
+              <DialogFooter className="sm:justify-end gap-2.5">
                 <Button
                   type="button"
                   variant="outline"
@@ -954,7 +1186,7 @@ export default function TaskDetailPage() {
                 </Button>
                 <Button
                   type="button"
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  className="bg-[#0d47a1] hover:bg-[#0a3880] text-white"
                   onClick={async () => {
                     setSubmitConfirmOpen(false);
                     await handleStatusChange("under_review");
@@ -963,29 +1195,30 @@ export default function TaskDetailPage() {
                 >
                   {updating ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-2 size-4 animate-spin" />
                       Submitting...
                     </>
                   ) : (
                     "Submit for Approval"
                   )}
                 </Button>
-              </div>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
 
           {/* Approve Confirmation Dialog */}
           <Dialog open={approveConfirmOpen} onOpenChange={setApproveConfirmOpen}>
             <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                  <CheckCircle2 className="h-5 w-5" /> Approve Task Completion
-                </DialogTitle>
+              <DialogHeader
+                icon={<CheckCircle2 className="size-4.5" />}
+                iconClassName="bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400"
+              >
+                <DialogTitle>Approve Task Completion</DialogTitle>
                 <DialogDescription>
                   Are you sure you want to approve and finalize <strong>{task.title}</strong>? This will mark the task as <strong>Completed</strong> and notify {task.assigned_to.full_name}.
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex justify-end gap-3 pt-4">
+              <DialogFooter className="sm:justify-end gap-2.5">
                 <Button
                   type="button"
                   variant="outline"
@@ -996,7 +1229,7 @@ export default function TaskDetailPage() {
                 </Button>
                 <Button
                   type="button"
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="bg-[#16a34a] hover:bg-[#15803d] text-white"
                   onClick={async () => {
                     setApproveConfirmOpen(false);
                     await handleApprove();
@@ -1005,14 +1238,14 @@ export default function TaskDetailPage() {
                 >
                   {isApproving ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-2 size-4 animate-spin" />
                       Approving...
                     </>
                   ) : (
                     "Confirm Approval"
                   )}
                 </Button>
-              </div>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </>
@@ -1021,60 +1254,37 @@ export default function TaskDetailPage() {
   );
 }
 
-function AttachmentLink({ attachment }: { attachment: TaskAttachment }) {
+function AttachmentCard({ attachment }: { attachment: TaskAttachment }) {
   return (
-    <div className="flex w-40 flex-col items-center text-center sm:w-44">
-      <div className="flex w-full items-center justify-center">
-        <Image
-          src="/file.png"
-          loading="eager"
-          alt=""
-          width={100}
-          height={100}
-          className="h-18 w-18"
-        />
-      </div>
-
-      <p className="mt-3 w-full break-words text-sm font-medium leading-5 text-foreground">
-        {attachment.file_name}
-      </p>
-
-      <p className="mt-1 text-xs text-muted-foreground">
-        {(attachment.size / 1024).toFixed(1)} KB
-      </p>
-
-      <div className="mt-3 flex items-center justify-center gap-2">
-        {attachment.download_url ? (
-          <a
-            href={attachment.download_url}
-            download={attachment.file_name}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-blue-100 hover:text-blue-700"
-            aria-label={`Download ${attachment.file_name}`}
-            title="Download"
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-2.5 transition-colors hover:bg-muted/70 min-w-[200px] max-w-xs">
+      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+          <FileText className="size-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p
+            className="truncate text-xs font-medium text-foreground"
+            title={attachment.file_name}
           >
-            <Download className="h-5 w-5" />
-          </a>
-        ) : null}
+            {attachment.file_name}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {(attachment.size / 1024).toFixed(1)} KB
+          </p>
+        </div>
       </div>
+      {attachment.download_url ? (
+        <a
+          href={attachment.download_url}
+          download={attachment.file_name}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="Download attachment"
+        >
+          <Download className="size-3.5" aria-hidden="true" />
+        </a>
+      ) : null}
     </div>
-  );
-}
-
-function IconPlus({ className }: { className: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 4v16m8-8H4"
-      />
-    </svg>
   );
 }

@@ -30,7 +30,7 @@ import { extractApiErrorMessage } from "@/lib/api-errors";
 import { reportsAPI, type DailyReportSubreportDetail } from "@/lib/api/reports";
 
 const backButtonClassName =
-  "rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm backdrop-blur transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white";
+  "rounded-full border border-border/80 bg-white/80 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-border hover:bg-muted hover:text-foreground dark:border-border/70 dark:bg-card/70 dark:text-foreground dark:hover:border-border dark:hover:bg-muted dark:hover:text-white";
 
 function CommentCard({
   comment,
@@ -38,7 +38,7 @@ function CommentCard({
   comment: DailyReportSubreportDetail["comments"][number];
 }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-white/90 p-4 shadow-sm dark:bg-slate-950/60">
+    <div className="rounded-2xl border border-border/60 bg-white/90 p-4 shadow-sm dark:bg-card/60">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="font-semibold text-foreground">
@@ -51,7 +51,7 @@ function CommentCard({
           </p>
         </div>
       </div>
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground dark:text-foreground">
         {comment.body}
       </p>
     </div>
@@ -184,7 +184,7 @@ export default function SubreportDetailPage() {
       </Button>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
           <CardHeader className="border-b border-border/60">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -205,8 +205,8 @@ export default function SubreportDetailPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 p-4 sm:p-6">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-slate-900/40">
-              <div className="mt-3 grid gap-3 text-sm text-slate-700 dark:text-slate-200 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-card/40">
+              <div className="mt-3 grid gap-3 text-sm text-foreground dark:text-foreground sm:grid-cols-2">
                 <div>
                   <p className="text-muted-foreground">Created by</p>
                   <p className="font-medium">
@@ -258,7 +258,7 @@ export default function SubreportDetailPage() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader>
               <CardTitle className="text-lg">Add comment</CardTitle>
               <CardDescription>
@@ -282,7 +282,7 @@ export default function SubreportDetailPage() {
                   </div>
 
                   {actionError ? (
-                    <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                    <div className="flex gap-3 rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-4 text-sm text-[#dc2626] dark:border-[#dc2626]/30 dark:bg-[#dc2626]/15 dark:text-red-200">
                       <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                       <span>{actionError}</span>
                     </div>
@@ -314,7 +314,7 @@ export default function SubreportDetailPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Clock className="h-5 w-5 text-primary" />

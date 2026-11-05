@@ -1,18 +1,20 @@
 "use client";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowRight,
   Check,
   CheckCircle2,
   Eye,
   EyeOff,
   KeyRound,
   Loader2,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { confirmPasswordReset, validatePasswordResetToken } from "@/lib/api/auth";
+import { AuthCenteredShell } from "@/components/auth/AuthCenteredShell";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -136,263 +139,287 @@ function ResetPasswordForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background [background-image:radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_52%)] px-6 py-10 dark:[background-image:radial-gradient(circle_at_top,rgba(96,165,250,0.12),transparent_56%)]">
-      <div className="w-full max-w-md space-y-6">
-        <div className="flex items-center justify-center gap-2">
-          <Image src="/logo2.png" alt="Incel Group" width={48} height={48} />
-          <div className="inline-flex items-center rounded-full font-semibold text-lg text-primary shadow-sm backdrop-blur">
-            Incel Workspace
+    <AuthCenteredShell>
+      <Card className="border-border bg-card shadow-xl rounded-2xl overflow-hidden">
+        <CardHeader className="space-y-3 pb-6">
+          <div className="flex size-11 items-center justify-center rounded-xl border border-[#0d47a1]/20 bg-[#0d47a1]/10 text-[#0d47a1] dark:text-[#38bdf8] shadow-xs">
+            <Lock className="size-5" />
           </div>
-        </div>
-
-        <Card className="border-border bg-card backdrop-blur shadow-sm">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold tracking-tight">
+          <div className="space-y-1">
+            <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
               {isSuccess
                 ? "Password updated"
                 : isValidating
-                  ? "Verifying link..."
+                  ? "Verifying reset link..."
                   : !tokenValid
-                    ? "Link Expired or Invalid"
+                    ? "Invalid reset link"
                     : "Create new password"}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-sm text-muted-foreground leading-relaxed">
               {isSuccess
-                ? "Your password has been updated successfully."
+                ? "Your password has been changed successfully. You can now log in."
                 : isValidating
-                  ? "Please wait while we check your verification link."
+                  ? "Checking the validity of your verification token..."
                   : !tokenValid
                     ? "We could not verify this password reset link."
                     : maskedEmail
-                      ? `Resetting password for ${maskedEmail}`
-                      : "Choose a new strong password for your account."}
+                      ? `Configuring a secure password for ${maskedEmail}`
+                      : "Choose a new strong password with at least 8 characters."}
             </CardDescription>
-          </CardHeader>
+          </div>
+        </CardHeader>
 
-          <CardContent>
-            {isValidating ? (
-              <div className="flex flex-col items-center justify-center py-8 space-y-3">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-xs text-muted-foreground">
-                  Validating security token...
-                </p>
-              </div>
-            ) : !tokenValid ? (
-              <div className="space-y-5">
-                <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-destructive">
-                  <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm space-y-1">
-                    <p className="font-semibold">Reset Link Ineligible</p>
-                    <p className="text-xs text-muted-foreground">
-                      {validationError ||
-                        "This link has expired, was already used, or is invalid."}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2 pt-2">
-                  <Button asChild className="w-full">
-                    <Link href="/forgot-password">
-                      Request a new reset link
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" className="w-full">
-                    <Link href="/">
-                      <ArrowLeft className="mr-2 h-4 w-4" />
-                      Back to Sign in
-                    </Link>
-                  </Button>
+        <CardContent>
+          {isValidating ? (
+            <div className="flex flex-col items-center justify-center py-10 space-y-3">
+              <Loader2 className="size-8 animate-spin text-[#0d47a1]" />
+              <p className="text-xs text-muted-foreground font-medium">
+                Validating security credentials...
+              </p>
+            </div>
+          ) : !tokenValid ? (
+            <div className="space-y-5 animate-in fade-in-50 duration-200">
+              <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-4 text-[#dc2626]">
+                <ShieldAlert className="size-5 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <p className="font-semibold text-sm">Reset link expired or invalid</p>
+                  <p className="leading-relaxed">
+                    {validationError ||
+                      "This link has expired, was already used, or is incomplete. Please request a new reset link."}
+                  </p>
                 </div>
               </div>
-            ) : isSuccess ? (
-              <div className="space-y-5">
-                <div className="flex items-start gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-900 dark:text-emerald-200">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm space-y-1">
-                    <p className="font-semibold">All set!</p>
-                    <p className="text-xs text-muted-foreground">
-                      You can now sign in to Incel Portal using your new password.
-                    </p>
-                  </div>
-                </div>
 
-                <div className="pt-2">
-                  <Button
-                    className="w-full font-medium"
-                    onClick={() => router.push("/")}
+              <div className="space-y-2.5 pt-2">
+                <Button
+                  asChild
+                  className="w-full h-11 rounded-xl font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Link href="/forgot-password">
+                    <span>Request a new link</span>
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="w-full h-11 rounded-xl font-semibold border-border hover:bg-muted text-foreground transition-all cursor-pointer"
+                >
+                  <Link href="/">
+                    <ArrowLeft className="mr-2 size-4" />
+                    Back to Sign in
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : isSuccess ? (
+            <div className="space-y-5 animate-in fade-in-50 duration-200">
+              <div className="flex items-start gap-3 rounded-xl border border-[#16a34a]/30 bg-[#16a34a]/10 p-4 text-[#16a34a] dark:text-[#4ade80]">
+                <CheckCircle2 className="size-5 text-[#16a34a] dark:text-[#4ade80] mt-0.5 shrink-0" />
+                <div className="text-xs space-y-1 text-foreground">
+                  <p className="font-semibold text-sm">Credentials Updated Successfully</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    You can now sign in to Incel Workspace using your newly created password.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  className="w-full h-11 rounded-xl font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white transition-all shadow-sm flex items-center justify-center gap-2 group cursor-pointer"
+                  onClick={() => router.push("/")}
+                >
+                  <span>Proceed to Sign in</span>
+                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+              {submitError ? (
+                <div
+                  role="alert"
+                  className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-[#dc2626] font-medium leading-relaxed animate-in fade-in-50 duration-200"
+                >
+                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                  <div className="flex-1">{submitError}</div>
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <Label htmlFor="newPassword" className="text-xs font-semibold text-foreground">
+                  New Password
+                </Label>
+                <div className="relative">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted-foreground">
+                    <Lock className="size-4" aria-hidden="true" />
+                  </div>
+                  <Input
+                    id="newPassword"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter new password"
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (fieldErrors.newPassword) {
+                        setFieldErrors((prev) => ({
+                          ...prev,
+                          newPassword: undefined,
+                        }));
+                      }
+                    }}
+                    autoComplete="new-password"
+                    disabled={isSubmitting}
+                    className="h-11 pl-10 pr-11 text-sm rounded-xl"
+                    aria-invalid={Boolean(fieldErrors.newPassword)}
+                    aria-describedby={
+                      fieldErrors.newPassword ? "newPassword-error" : undefined
+                    }
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    Proceed to Sign in
-                  </Button>
+                    {showPassword ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </button>
+                </div>
+                {fieldErrors.newPassword ? (
+                  <p id="newPassword-error" className="text-xs text-[#dc2626] font-medium">
+                    {fieldErrors.newPassword}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword" className="text-xs font-semibold text-foreground">
+                  Confirm New Password
+                </Label>
+                <div className="relative">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted-foreground">
+                    <Lock className="size-4" aria-hidden="true" />
+                  </div>
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Repeat new password"
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (fieldErrors.confirmPassword) {
+                        setFieldErrors((prev) => ({
+                          ...prev,
+                          confirmPassword: undefined,
+                        }));
+                      }
+                    }}
+                    autoComplete="new-password"
+                    disabled={isSubmitting}
+                    className="h-11 pl-10 pr-11 text-sm rounded-xl"
+                    aria-invalid={Boolean(fieldErrors.confirmPassword)}
+                    aria-describedby={
+                      fieldErrors.confirmPassword ? "confirmPassword-error" : undefined
+                    }
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </button>
+                </div>
+                {fieldErrors.confirmPassword ? (
+                  <p id="confirmPassword-error" className="text-xs text-[#dc2626] font-medium">
+                    {fieldErrors.confirmPassword}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Password Requirements Checklist */}
+              <div className="rounded-xl border border-border bg-muted/40 p-3.5 space-y-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                  <KeyRound className="size-3.5 text-[#0d47a1]" />
+                  <span>Security Requirements</span>
+                </div>
+                <div className="space-y-1.5 pl-0.5">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center justify-center size-4 rounded-full transition-colors ${
+                        hasMinLength
+                          ? "bg-[#16a34a]/20 text-[#16a34a] dark:text-[#4ade80]"
+                          : "bg-muted-foreground/20 text-muted-foreground"
+                      }`}
+                    >
+                      <Check className="size-2.5 stroke-[2.5]" />
+                    </span>
+                    <span className={hasMinLength ? "text-foreground font-medium" : ""}>
+                      At least 8 characters in length
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center justify-center size-4 rounded-full transition-colors ${
+                        passwordsMatch
+                          ? "bg-[#16a34a]/20 text-[#16a34a] dark:text-[#4ade80]"
+                          : "bg-muted-foreground/20 text-muted-foreground"
+                      }`}
+                    >
+                      <Check className="size-2.5 stroke-[2.5]" />
+                    </span>
+                    <span className={passwordsMatch ? "text-foreground font-medium" : ""}>
+                      Both passwords match
+                    </span>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <form className="space-y-4" onSubmit={handleSubmit} noValidate>
-                {submitError && (
-                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 flex gap-2.5 items-start">
-                    <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-destructive font-medium leading-relaxed">
-                      {submitError}
-                    </p>
-                  </div>
-                )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="newPassword">New Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="newPassword"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter new password"
-                      value={newPassword}
-                      onChange={(e) => {
-                        setNewPassword(e.target.value);
-                        if (fieldErrors.newPassword) {
-                          setFieldErrors((prev) => ({
-                            ...prev,
-                            newPassword: undefined,
-                          }));
-                        }
-                      }}
-                      autoComplete="new-password"
-                      className="pr-10"
-                      disabled={isSubmitting}
-                      aria-invalid={Boolean(fieldErrors.newPassword)}
-                    />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                  {fieldErrors.newPassword && (
-                    <p className="text-xs text-destructive">
-                      {fieldErrors.newPassword}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Confirm Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      placeholder="Repeat new password"
-                      value={confirmPassword}
-                      onChange={(e) => {
-                        setConfirmPassword(e.target.value);
-                        if (fieldErrors.confirmPassword) {
-                          setFieldErrors((prev) => ({
-                            ...prev,
-                            confirmPassword: undefined,
-                          }));
-                        }
-                      }}
-                      autoComplete="new-password"
-                      className="pr-10"
-                      disabled={isSubmitting}
-                      aria-invalid={Boolean(fieldErrors.confirmPassword)}
-                    />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => setShowConfirmPassword((prev) => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                  {fieldErrors.confirmPassword && (
-                    <p className="text-xs text-destructive">
-                      {fieldErrors.confirmPassword}
-                    </p>
-                  )}
-                </div>
-
-                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 font-medium text-foreground">
-                    <KeyRound className="h-3.5 w-3.5" />
-                    <span>Password Requirements</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded-full ${
-                        hasMinLength
-                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      <Check className="h-2.5 w-2.5" />
-                    </span>
-                    <span
-                      className={
-                        hasMinLength ? "text-foreground font-medium" : ""
-                      }
-                    >
-                      At least 8 characters
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded-full ${
-                        passwordsMatch
-                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      <Check className="h-2.5 w-2.5" />
-                    </span>
-                    <span
-                      className={
-                        passwordsMatch ? "text-foreground font-medium" : ""
-                      }
-                    >
-                      Passwords must match
-                    </span>
-                  </div>
-                </div>
-
+              <div className="pt-2">
                 <Button
                   type="submit"
-                  className="w-full font-medium"
                   disabled={isSubmitting}
+                  className="w-full h-11 rounded-xl font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white transition-all shadow-sm flex items-center justify-center gap-2 group cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Updating password...
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>Updating password...</span>
                     </>
                   ) : (
-                    "Reset Password"
+                    <>
+                      <span>Reset Password</span>
+                      <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                    </>
                   )}
                 </Button>
+              </div>
 
-                <div className="pt-1 text-center">
-                  <Link
-                    href="/"
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                    Back to Sign in
-                  </Link>
-                </div>
-              </form>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+              <div className="pt-1 text-center">
+                <Link
+                  href="/"
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-1 focus:outline-none focus:underline"
+                >
+                  <ArrowLeft className="size-3.5" />
+                  <span>Back to Sign in</span>
+                </Link>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+    </AuthCenteredShell>
   );
 }
 
@@ -401,8 +428,9 @@ export default function ResetPasswordPage() {
     <Suspense
       fallback={
         <main className="flex min-h-screen items-center justify-center bg-background px-6">
-          <div className="rounded-full border border-border bg-card px-5 py-2 text-sm font-medium text-foreground shadow-sm">
-            Loading...
+          <div className="inline-flex items-center gap-3 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground shadow-sm">
+            <span className="size-2 rounded-full bg-[#0d47a1] animate-pulse" />
+            Loading authentication session...
           </div>
         </main>
       }
@@ -411,4 +439,3 @@ export default function ResetPasswordPage() {
     </Suspense>
   );
 }
-

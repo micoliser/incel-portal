@@ -40,9 +40,9 @@ export function MaintenanceLogsList({ itemId, item }: { itemId: string, item?: {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "completed": return <CheckCircle className="h-4 w-4 text-emerald-500 inline-block mr-1" />;
+      case "completed": return <CheckCircle className="h-4 w-4 text-[#16a34a] inline-block mr-1" />;
       case "in_progress": return <Wrench className="h-4 w-4 text-amber-500 inline-block mr-1" />;
-      default: return <AlertCircle className="h-4 w-4 text-blue-500 inline-block mr-1" />;
+      default: return <AlertCircle className="h-4 w-4 text-[#0d47a1] inline-block mr-1" />;
     }
   };
 
@@ -94,8 +94,8 @@ export function MaintenanceLogsList({ itemId, item }: { itemId: string, item?: {
 
                 {log.action_taken && (
                   <div className="space-y-1 sm:col-span-2">
-                    <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Action Taken</p>
-                    <div className="text-sm text-foreground bg-muted/30 rounded-md p-3 border-l-2 border-primary">
+                    <p className="text-xs text-muted-foreground font-semibold">Action Taken</p>
+                    <div className="text-sm text-foreground bg-[#0d47a1]/5 rounded-lg p-3 border border-[#0d47a1]/20">
                       {log.action_taken}
                     </div>
                   </div>
@@ -115,7 +115,7 @@ export function MaintenanceLogsList({ itemId, item }: { itemId: string, item?: {
                     <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Attachments</p>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {log.attachments.map((attachment) => (
-                        <a key={attachment.id} href={attachment.file_url || attachment.object_key} target="_blank" rel="noopener noreferrer" className="bg-muted px-2 py-1 rounded-md text-blue-600 hover:text-blue-800 hover:bg-muted/80 text-xs flex items-center gap-1 transition-colors border border-border">
+                        <a key={attachment.id} href={attachment.file_url || attachment.object_key} target="_blank" rel="noopener noreferrer" className="bg-muted px-2 py-1 rounded-md text-[#0d47a1] hover:text-[#0d47a1] hover:bg-muted/80 text-xs flex items-center gap-1 transition-colors border border-border">
                           <Paperclip className="h-3 w-3" /> {attachment.file_name}
                         </a>
                       ))}

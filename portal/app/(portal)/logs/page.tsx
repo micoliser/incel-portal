@@ -4,6 +4,17 @@ import { extractApiErrorMessage } from "@/lib/api-errors";
 import axios from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import {
+  ShieldCheck,
+  Calendar,
+  Clock,
+  Activity,
+  Search,
+  Globe,
+  RotateCcw,
+  X,
+  ChevronDown,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +29,7 @@ import {
 import { LogsTableSkeleton } from "@/components/skeletons/logs-skeleton";
 import { PageErrorCard } from "@/components/page-error-card";
 import { apiClient } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 type PermissionPayload = {
   is_superuser?: boolean;
@@ -73,6 +85,72 @@ function formatDate(value: string) {
     return value;
   }
   return parsed.toLocaleString();
+}
+
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return { date: value, time: "" };
+  }
+  const date = parsed.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const time = parsed.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  return { date, time };
+}
+
+function getActorInitials(actor?: string | null) {
+  if (!actor || actor.toLowerCase() === "system") {
+    return "SY";
+  }
+  const parts = actor.split(/[._@ -]/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return actor.slice(0, 2).toUpperCase();
+}
+
+function getActionBadge(action: string) {
+  const act = action.toLowerCase();
+  if (act.includes("login") || act.includes("auth")) {
+    return {
+      label: "AUTH",
+      badge: "bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]",
+      dot: "bg-[#16a34a] dark:bg-[#4ade80]",
+    };
+  }
+  if (act.includes("create") || act.includes("add")) {
+    return {
+      label: "CREATE",
+      badge: "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]",
+      dot: "bg-[#0d47a1] dark:bg-[#38bdf8]",
+    };
+  }
+  if (act.includes("update") || act.includes("edit") || act.includes("patch")) {
+    return {
+      label: "UPDATE",
+      badge: "bg-sky-500/10 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300",
+      dot: "bg-sky-500 dark:bg-sky-400",
+    };
+  }
+  if (act.includes("delete") || act.includes("remove") || act.includes("revoke")) {
+    return {
+      label: "DELETE",
+      badge: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400",
+      dot: "bg-[#dc2626] dark:bg-red-400",
+    };
+  }
+  return {
+    label: "SYSTEM",
+    badge: "bg-muted text-muted-foreground dark:bg-muted/40",
+    dot: "bg-muted-foreground",
+  };
 }
 
 function formatMetadata(metadata: unknown) {
@@ -266,6 +344,7 @@ export default function LogsPage() {
   const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>({
     label: "All time",
   });
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const search = new URLSearchParams(searchParams.toString());
@@ -571,6 +650,22 @@ export default function LogsPage() {
   const hasNext = Boolean(logsPayload?.next_page);
   const hasPrevious = Boolean(logsPayload?.previous_page);
 
+  const filteredLogs = useMemo(() => {
+    if (!searchQuery.trim()) return logs;
+    const q = searchQuery.toLowerCase().trim();
+    return logs.filter((log) => {
+      return (
+        (log.actor_username && log.actor_username.toLowerCase().includes(q)) ||
+        (log.message && log.message.toLowerCase().includes(q)) ||
+        (log.action && log.action.toLowerCase().includes(q)) ||
+        (log.action_label && log.action_label.toLowerCase().includes(q)) ||
+        (log.ip_address && log.ip_address.toLowerCase().includes(q)) ||
+        (log.target_label && log.target_label.toLowerCase().includes(q)) ||
+        (log.target_type && log.target_type.toLowerCase().includes(q))
+      );
+    });
+  }, [logs, searchQuery]);
+
   const rangeLabel = useMemo(() => {
     if (totalCount === 0) {
       return `${getFilterLabel(appliedFilters)} · No logs available`;
@@ -605,251 +700,502 @@ export default function LogsPage() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-6">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Audit Logs</CardTitle>
-          <CardDescription>
-            {rangeLabel}. Ordered by newest events first.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <div className="space-y-6 max-w-full">
+      {/* 1. Header & Live Status */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Audit & Activity Logs
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Immutable workspace audit trail tracking authentication, data mutations, and security events.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80] border border-[#16a34a]/20">
+            <span className="size-1.5 rounded-full bg-[#16a34a] animate-pulse" />
+            Audit Logging Active
+          </span>
+        </div>
+      </div>
+
+      {/* 2. Key Audit Metrics */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        {/* Total Events */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Total Logged Events
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+              <ShieldCheck className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {totalCount.toLocaleString()}
+            </span>
+            <span className="text-xs text-muted-foreground">in scope</span>
+          </div>
+        </Card>
+
+        {/* Timeframe Scope */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Timeframe Scope
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+              <Calendar className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span
+              className="text-base sm:text-lg font-bold tracking-tight text-foreground truncate"
+              title={getFilterLabel(appliedFilters)}
+            >
+              {getFilterLabel(appliedFilters)}
+            </span>
+          </div>
+        </Card>
+
+        {/* Current Page View */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Current Page
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400">
+              <Activity className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-foreground">
+              {page}{" "}
+              <span className="text-sm font-normal text-muted-foreground">
+                / {totalPages}
+              </span>
+            </span>
+            <span className="text-xs text-muted-foreground">
+              ({logs.length} on page)
+            </span>
+          </div>
+        </Card>
+
+        {/* Latest Activity */}
+        <Card className="rounded-xl border border-border bg-card p-4 transition-all shadow-xs hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Latest Activity
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+              <Clock className="size-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-base sm:text-lg font-bold tracking-tight text-foreground truncate">
+              {logs[0] ? formatDateTime(logs[0].created_at).time : "—"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {logs[0] ? formatDateTime(logs[0].created_at).date : ""}
+            </span>
+          </div>
+        </Card>
+      </div>
+
+      {/* 3. Filter Controls & Search */}
+      <Card className="rounded-xl border border-border bg-card p-3 sm:p-4 shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Preset Buttons */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 lg:pb-0">
+            <button
+              type="button"
+              onClick={() => applyPresetFilter("all")}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
+                filterMode === "all"
+                  ? "bg-[#0d47a1] text-white shadow-xs"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              All Logs
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPresetFilter("last_1_day")}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
+                filterMode === "last_1_day"
+                  ? "bg-[#0d47a1] text-white shadow-xs"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              Last 24 Hours
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPresetFilter("last_7_days")}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
+                filterMode === "last_7_days"
+                  ? "bg-[#0d47a1] text-white shadow-xs"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              Last 7 Days
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPresetFilter("last_30_days")}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
+                filterMode === "last_30_days"
+                  ? "bg-[#0d47a1] text-white shadow-xs"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              Last 30 Days
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterError(null);
+                setFilterMode("date");
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
+                filterMode === "date"
+                  ? "bg-[#0d47a1] text-white shadow-xs"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              Specific Date
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterError(null);
+                setFilterMode("range");
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
+                filterMode === "range"
+                  ? "bg-[#0d47a1] text-white shadow-xs"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              Date Range
+            </button>
+          </div>
+
+          {/* Quick Page Search */}
+          <div className="relative min-w-[240px] lg:max-w-xs w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search actor, event, IP, code..."
+              className="h-9 pl-9 pr-8 rounded-lg bg-background/50 border-input text-xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Date Inputs if Date or Range is selected */}
+        {(filterMode === "date" || filterMode === "range") && (
           <form
-            className="space-y-4 rounded-lg border border-border bg-muted/20 p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
+            onSubmit={(e) => {
+              e.preventDefault();
               applyFilters();
             }}
+            className="flex flex-wrap items-end gap-3 pt-3 border-t border-border/50"
           >
-            <div className="space-y-2">
-              <Label>Filter period</Label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant={filterMode === "all" ? "default" : "outline"}
-                  onClick={() => applyPresetFilter("all")}
-                >
-                  All logs
-                </Button>
-                <Button
-                  type="button"
-                  variant={filterMode === "last_1_day" ? "default" : "outline"}
-                  onClick={() => applyPresetFilter("last_1_day")}
-                >
-                  Last 1 day
-                </Button>
-                <Button
-                  type="button"
-                  variant={filterMode === "last_7_days" ? "default" : "outline"}
-                  onClick={() => applyPresetFilter("last_7_days")}
-                >
-                  Last 7 days
-                </Button>
-                <Button
-                  type="button"
-                  variant={
-                    filterMode === "last_30_days" ? "default" : "outline"
-                  }
-                  onClick={() => applyPresetFilter("last_30_days")}
-                >
-                  Last 30 days
-                </Button>
-                <Button
-                  type="button"
-                  variant={filterMode === "date" ? "default" : "outline"}
-                  onClick={() => {
-                    setFilterError(null);
-                    setFilterMode("date");
-                  }}
+            {filterMode === "date" ? (
+              <div className="space-y-1">
+                <Label
+                  htmlFor="log-filter-date"
+                  className="text-xs text-muted-foreground"
                 >
                   Select Date
-                </Button>
-                <Button
-                  type="button"
-                  variant={filterMode === "range" ? "default" : "outline"}
-                  onClick={() => {
-                    setFilterError(null);
-                    setFilterMode("range");
-                  }}
-                >
-                  Select Date range
-                </Button>
+                </Label>
+                <Input
+                  id="log-filter-date"
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="h-9 text-xs rounded-lg bg-background/50 border-input w-44"
+                />
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <Label
+                    htmlFor="log-filter-start"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Start Date
+                  </Label>
+                  <Input
+                    id="log-filter-start"
+                    type="date"
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                    className="h-9 text-xs rounded-lg bg-background/50 border-input w-44"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label
+                    htmlFor="log-filter-end"
+                    className="text-xs text-muted-foreground"
+                  >
+                    End Date
+                  </Label>
+                  <Input
+                    id="log-filter-end"
+                    type="date"
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                    className="h-9 text-xs rounded-lg bg-background/50 border-input w-44"
+                  />
+                </div>
+              </>
+            )}
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {filterMode === "date" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="log-filter-date">Date</Label>
-                    <Input
-                      id="log-filter-date"
-                      type="date"
-                      value={selectedDate}
-                      onChange={(event) => setSelectedDate(event.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button type="submit" className="w-24">
-                      Apply
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={clearFilters}
-                      disabled={appliedFilters.label === "All time"}
-                      className="w-24"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                </>
-              ) : null}
-
-              {filterMode === "range" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="log-filter-start">Start date</Label>
-                    <Input
-                      id="log-filter-start"
-                      type="date"
-                      value={rangeStart}
-                      onChange={(event) => setRangeStart(event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="log-filter-end">End date</Label>
-                    <Input
-                      id="log-filter-end"
-                      type="date"
-                      value={rangeEnd}
-                      onChange={(event) => setRangeEnd(event.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button type="submit" className="w-24">
-                      Apply
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={clearFilters}
-                      disabled={appliedFilters.label === "All time"}
-                      className="w-24"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                </>
-              ) : null}
-            </div>
-
-            {filterError ? (
-              <p className="text-sm text-destructive">{filterError}</p>
-            ) : null}
+            <Button
+              type="submit"
+              size="sm"
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white h-9 px-4 rounded-lg text-xs font-semibold"
+            >
+              Apply Filter
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={clearFilters}
+              disabled={appliedFilters.label === "All time"}
+              className="h-9 px-3 rounded-lg text-xs"
+            >
+              <RotateCcw className="mr-1.5 size-3.5" />
+              Reset
+            </Button>
+            {filterError && (
+              <p className="text-xs text-destructive self-center">
+                {filterError}
+              </p>
+            )}
           </form>
+        )}
+      </Card>
 
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[800px] divide-y divide-border text-sm">
-              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+      {/* 4. Logs Data Table */}
+      <Card className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-left text-sm">
+            <thead className="bg-muted/40 text-muted-foreground text-xs uppercase tracking-wider font-semibold border-b border-border">
+              <tr>
+                <th className="px-4 py-3">Timestamp</th>
+                <th className="px-4 py-3">Actor</th>
+                <th className="px-4 py-3">Event / Action</th>
+                <th className="px-4 py-3">IP Address</th>
+                <th className="px-4 py-3">Metadata</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filteredLogs.length === 0 ? (
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Timestamp</th>
-                  <th className="px-3 py-2 font-semibold">Actor</th>
-                  <th className="px-3 py-2 font-semibold">Event</th>
-                  <th className="px-3 py-2 font-semibold">IP Address</th>
-                  <th className="px-3 py-2 font-semibold">Details</th>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-12 text-center text-muted-foreground"
+                  >
+                    <ShieldCheck className="size-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-medium text-foreground">
+                      No audit logs found
+                    </p>
+                    <p className="text-xs mt-1">
+                      Try adjusting the filter period or search query.
+                    </p>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-border bg-background">
-                {logs.length === 0 ? (
-                  <tr>
-                    <td
-                      className="px-3 py-6 text-center text-muted-foreground"
-                      colSpan={5}
+              ) : (
+                filteredLogs.map((log) => {
+                  const dt = formatDateTime(log.created_at);
+                  const badgeCfg = getActionBadge(log.action);
+                  const initials = getActorInitials(log.actor_username);
+
+                  return (
+                    <tr
+                      key={log.id}
+                      className="hover:bg-muted/30 transition-colors group align-top"
                     >
-                      No audit logs found.
-                    </td>
-                  </tr>
-                ) : (
-                  logs.map((log) => (
-                    <tr key={log.id} className="align-top">
-                      <td className="px-3 py-3 text-muted-foreground">
-                        {formatDate(log.created_at)}
+                      {/* Timestamp */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-foreground">
+                            {dt.date}
+                          </span>
+                          <span className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            {dt.time}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-3 py-3 text-muted-foreground">
-                        {log.actor_username || "system"}
+
+                      {/* Actor */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
+                            {initials}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
+                              {log.actor_username || "system"}
+                            </span>
+                            {log.actor_user && (
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                ID #{log.actor_user}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-3 py-3 text-foreground">
-                        <p className="font-medium text-foreground">
-                          {log.message || log.action_label || log.action}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {log.action_label || log.action}
-                        </p>
+
+                      {/* Event / Action */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-col gap-1 max-w-lg">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                                badgeCfg.badge
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "size-1.5 rounded-full",
+                                  badgeCfg.dot
+                                )}
+                              />
+                              {badgeCfg.label}
+                            </span>
+                            {log.target_type && (
+                              <span className="text-[11px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/50">
+                                {log.target_type}
+                                {log.target_id ? ` #${log.target_id}` : ""}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-semibold text-foreground leading-snug">
+                            {log.message || log.action_label || log.action}
+                          </p>
+                          {log.action_label &&
+                            log.action_label !== log.message && (
+                              <p className="text-[11px] text-muted-foreground font-mono">
+                                {log.action}
+                              </p>
+                            )}
+                        </div>
                       </td>
-                      <td className="px-3 py-3 text-muted-foreground">
-                        {log.ip_address || "-"}
+
+                      {/* IP Address */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        {log.ip_address ? (
+                          <span className="inline-flex items-center gap-1.5 font-mono text-xs px-2 py-0.5 rounded bg-muted/60 text-foreground border border-border/40">
+                            <Globe className="size-3 text-muted-foreground" />
+                            {log.ip_address}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60">
+                            —
+                          </span>
+                        )}
                       </td>
-                      <td className="max-w-[420px] px-3 py-3 text-muted-foreground">
-                        <details className="rounded border border-border bg-muted/30 px-2 py-1 text-xs">
-                          <summary className="cursor-pointer select-none text-muted-foreground">
-                            View technical details
+
+                      {/* Details */}
+                      <td className="px-4 py-3.5 max-w-[300px]">
+                        <details className="group/details rounded-lg border border-border bg-muted/20 px-2.5 py-1.5 text-xs">
+                          <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground font-medium flex items-center justify-between text-[11px]">
+                            <span>View Metadata</span>
+                            <ChevronDown className="size-3 transition-transform group-open/details:rotate-180" />
                           </summary>
-                          <div className="mt-2 space-y-2">
-                            <p>
-                              <span className="font-medium text-foreground">
-                                Log ID:
-                              </span>{" "}
-                              <span title={log.id}>{shortId(log.id)}</span>
-                            </p>
-                            <p>
-                              <span className="font-medium text-foreground">
-                                Action code:
-                              </span>{" "}
-                              {log.action}
-                            </p>
-                            <p>
-                              <span className="font-medium text-foreground">
-                                Target:
-                              </span>{" "}
-                              {log.target_label || log.target_type || "-"}
-                              {log.target_id ? ` (${log.target_id})` : ""}
-                            </p>
-                            <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border bg-muted/40 px-2 py-1">
-                              {formatMetadata(log.metadata_json)}
+                          <div className="mt-2.5 pt-2 border-t border-border/50 space-y-1.5 text-[11px]">
+                            <div className="flex items-center justify-between font-mono text-muted-foreground">
+                              <span>Log ID:</span>
+                              <span className="text-foreground" title={log.id}>
+                                {shortId(log.id)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between font-mono text-muted-foreground">
+                              <span>Action:</span>
+                              <span className="text-foreground">
+                                {log.action}
+                              </span>
+                            </div>
+                            {log.target_label && (
+                              <div className="flex items-center justify-between font-mono text-muted-foreground">
+                                <span>Target:</span>
+                                <span className="text-foreground truncate max-w-[160px]">
+                                  {log.target_label}
+                                </span>
+                              </div>
+                            )}
+                            <div className="mt-1.5">
+                              <span className="font-mono text-muted-foreground block mb-1">
+                                Payload:
+                              </span>
+                              <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-1.5 font-mono text-[10px] text-foreground">
+                                {formatMetadata(log.metadata_json)}
+                              </div>
                             </div>
                           </div>
                         </details>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Page {page} of {totalPages}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => changePage(Math.max(1, page - 1))}
-                disabled={!hasPrevious}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => changePage(page + 1)}
-                disabled={!hasNext}
-              >
-                Next
-              </Button>
-            </div>
+        {/* Pagination Footer */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-border bg-muted/20">
+          <p className="text-xs text-muted-foreground">
+            {rangeLabel}
+            {searchQuery &&
+              ` · Filtered by "${searchQuery}" (${filteredLogs.length} matching)`}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => changePage(Math.max(1, page - 1))}
+              disabled={!hasPrevious}
+              className="h-8 text-xs rounded-lg"
+            >
+              Previous
+            </Button>
+            <span className="text-xs font-semibold px-2">
+              {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => changePage(page + 1)}
+              disabled={!hasNext}
+              className="h-8 text-xs rounded-lg"
+            >
+              Next
+            </Button>
           </div>
-        </CardContent>
+        </div>
       </Card>
     </div>
   );

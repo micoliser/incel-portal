@@ -187,14 +187,14 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '20/minute',
-        'user': '100/minute',
-        'login': '5/minute',
-        'refresh': '20/minute',
-        'admin': '30/minute',
-        'email': '5/hour',
-        'support': '10/minute',
-        'uploads': '10/minute',
+        'anon': '200/minute',
+        'user': '1000/minute',
+        'login': '25/minute',
+        'refresh': '200/minute',
+        'admin': '150/minute',
+        'email': '25/hour',
+        'support': '100/minute',
+        'uploads': '100/minute',
     },
 }
 

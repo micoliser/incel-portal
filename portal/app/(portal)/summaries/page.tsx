@@ -1,5 +1,4 @@
 "use client";
-import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -17,9 +16,18 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
-  Eye,
+  Download,
+  Paperclip,
+  Inbox,
+  Repeat,
+  CheckSquare2,
+  AlertCircle,
+  Loader2,
+  ArrowRight,
+  UserPlus,
+  Sparkles,
 } from "lucide-react";
-import { Loader2 } from "lucide-react";
+import type { AxiosError } from "axios";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -32,12 +40,15 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { PageErrorCard } from "@/components/page-error-card";
 import { DashboardSkeleton } from "@/components/skeletons/dashboard-skeleton";
+import { extractApiErrorMessage } from "@/lib/api-errors";
+import { cn } from "@/lib/utils";
 import {
   summariesAPI,
   WeeklySummary,
@@ -50,7 +61,6 @@ import { MemoizedSummaryComparison } from "./components/SummaryComparison";
 import { MemoizedSummaryCharts } from "./components/SummaryCharts";
 import { MemoizedWeeklyGoalsSnapshot } from "./components/WeeklyGoalsSnapshot";
 import ShareWithUserModal from "./components/ShareWithUserModal";
-import type { AxiosError } from "axios";
 
 function SummariesContent() {
   const searchParams = useSearchParams();
@@ -71,7 +81,6 @@ function SummariesContent() {
   const [shareConfirmOpen, setShareConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
-  const [, setLoadingShareStatus] = useState(false);
   const [shareWithUserOpen, setShareWithUserOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [comparisonMetrics, setComparisonMetrics] =
@@ -85,7 +94,6 @@ function SummariesContent() {
   // Fetch available weeks on mount (only for non-shared view)
   useEffect(() => {
     if (isSharedView) {
-      // For shared view, fetch the shared summary directly
       if (!shareToken) {
         setError("Invalid or missing share token");
         setLoading(false);
@@ -97,9 +105,7 @@ function SummariesContent() {
           setLoading(true);
           const data = await summariesAPI.getSharedSummary(shareToken);
           const sharedSummary = data.summary as SharedWeeklySummary | undefined;
-          // data: { summary, historical? }
           setSummary(sharedSummary || null);
-          // set comparison metrics if present
           if (sharedSummary?.comparison_metrics) {
             setComparisonMetrics(sharedSummary.comparison_metrics);
           }
@@ -121,7 +127,9 @@ function SummariesContent() {
           ) {
             setError(extractApiErrorMessage(err, "Invalid share link"));
           } else {
-            setError(extractApiErrorMessage(err, "Failed to load the shared summary"));
+            setError(
+              extractApiErrorMessage(err, "Failed to load the shared summary"),
+            );
           }
           setSummary(null);
         } finally {
@@ -131,14 +139,12 @@ function SummariesContent() {
 
       fetchSharedSummary();
     } else {
-      // For normal view, fetch available weeks
       const fetchWeeks = async () => {
         try {
           const weeks = await summariesAPI.getAvailableWeeks();
           setAvailableWeeks(weeks);
 
           if (weeks.length > 0) {
-            // Auto-select the most recent week, or prefer URL param if present
             if (summaryId) {
               setSelectedWeek(summaryId);
             } else {
@@ -160,10 +166,8 @@ function SummariesContent() {
   useEffect(() => {
     if (!selectedWeek) return;
 
-    // Load public share status for selected week
     (async () => {
       try {
-        setLoadingShareStatus(true);
         const status = await summariesAPI.getShareStatus(selectedWeek);
         if (status?.shared && status.share_token) {
           setShares((prev) => ({
@@ -179,8 +183,6 @@ function SummariesContent() {
         }
       } catch {
         // ignore
-      } finally {
-        // no-op
       }
     })();
 
@@ -193,19 +195,15 @@ function SummariesContent() {
         setSummary(summaryData);
         setError(null);
 
-        // Fetch Phase 2 data (comparisons, goals, goal progress)
         try {
-          // Fetch comparison metrics if available
           const comparison =
             await summariesAPI.getComparisonMetrics(selectedWeek);
           setComparisonMetrics(comparison);
         } catch {
-          // Comparison may not exist for first week
           setComparisonMetrics(null);
         }
 
         try {
-          // Fetch historical summaries (last 4 weeks) for charts
           const historical = await summariesAPI.getHistoricalSummaries(
             selectedWeek,
             4,
@@ -222,7 +220,12 @@ function SummariesContent() {
           setGoalsForWeek([]);
         }
       } catch (err) {
-        setError(extractApiErrorMessage(err, "Failed to load summary for the selected week"));
+        setError(
+          extractApiErrorMessage(
+            err,
+            "Failed to load summary for the selected week",
+          ),
+        );
         console.error(err);
         setSummary(null);
       } finally {
@@ -239,7 +242,6 @@ function SummariesContent() {
     try {
       setCreatingShare(true);
       const response = await summariesAPI.createShareLink(selectedWeek);
-      // Build frontend-friendly share link that points to the consolidated summaries page
       const frontendPath = `/summaries?token=${response.share_token}`;
       setShares((prev) => ({
         ...prev,
@@ -259,123 +261,149 @@ function SummariesContent() {
     const fullLink = `${window.location.origin}${link}`;
     navigator.clipboard.writeText(fullLink);
     setCopiedToken(link);
-    toast.success("Link copied to clipboard!");
-    setTimeout(() => setCopiedToken(null), 2000);
+    toast.success("Share link copied to clipboard");
+    setTimeout(() => setCopiedToken(null), 2500);
+  };
+
+  const handleExportPDF = async () => {
+    if (!selectedWeek) return;
+    try {
+      setExporting(true);
+      const resp = await summariesAPI.exportSummary(selectedWeek, "pdf");
+      if (resp?.file_url) {
+        const a = document.createElement("a");
+        a.href = resp.file_url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast.success("PDF summary downloaded");
+      } else {
+        toast.error("Export failed: no document generated");
+      }
+    } catch (err) {
+      toast.error(
+        extractApiErrorMessage(err, "Failed to export summary to PDF"),
+      );
+    } finally {
+      setExporting(false);
+    }
   };
 
   const getPriorityBadgeClasses = (priority: string) => {
     if (priority === "high") {
-      return "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200";
+      return "border border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-400";
     }
-
     if (priority === "medium") {
-      return "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200";
+      return "border border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400";
     }
-
-    return "bg-gray-100 text-gray-700 dark:bg-gray-950/60 dark:text-gray-200";
+    return "border border-border bg-muted/60 text-muted-foreground";
   };
 
   const getStatusBadgeClasses = (status: string) => {
     if (status === "completed") {
-      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200";
+      return "border border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
     }
-
     if (status === "in_progress") {
-      return "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200";
+      return "border border-[#0d47a1]/25 bg-[#0d47a1]/10 text-[#0d47a1] dark:text-[#38bdf8]";
     }
-
-    return "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200";
+    return "border border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400";
   };
 
   if (loading && !isSharedView && availableWeeks.length === 0) {
-    return <DashboardSkeleton />;
+    return (
+      <div className="h-full w-full overflow-y-auto p-6 sm:p-8">
+        <DashboardSkeleton />
+      </div>
+    );
   }
 
   if (loading && isSharedView) {
-    return <DashboardSkeleton />;
+    return (
+      <div className="h-full w-full overflow-y-auto p-6 sm:p-8">
+        <DashboardSkeleton />
+      </div>
+    );
   }
 
   if (error && !summary) {
-    if (isSharedView) {
-      return (
+    return (
+      <div className="h-full w-full overflow-y-auto p-6 sm:p-8">
         <PageErrorCard
           title="Cannot Load Summary"
           message={error}
           onRetry={() => window.location.reload()}
         />
-      );
-    }
-    return (
-      <PageErrorCard
-        title="Failed to Load Summary"
-        message={error}
-        onRetry={() => window.location.reload()}
-      />
+      </div>
     );
   }
 
   if (!isSharedView && availableWeeks.length === 0) {
     return (
-      <div className="container mx-auto py-10">
-        <Card className="bg-blue-50 dark:bg-slate-900 border-blue-200 dark:border-blue-900">
-          <CardHeader>
-            <CardTitle className="text-blue-900 dark:text-blue-300">
-              No Summaries Yet
-            </CardTitle>
-            <CardDescription className="text-blue-700 dark:text-blue-400">
-              Weekly summaries are generated every Monday. Check back next week!
-            </CardDescription>
-          </CardHeader>
-        </Card>
+      <div className="h-full w-full overflow-y-auto p-6 sm:p-8">
+        <div className="container mx-auto py-12">
+          <Card className="border-border/80 bg-card p-8 text-center shadow-xs">
+            <Calendar className="mx-auto size-12 text-[#0d47a1] dark:text-[#38bdf8]" />
+            <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+              No Weekly Summaries Available
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Weekly performance summaries are compiled every Monday at midnight. Check back next week to view historical progress!
+            </p>
+          </Card>
+        </div>
       </div>
     );
   }
 
-  const gridTemplateColumns = isSharedView
-    ? "0px minmax(0, 1fr)"
-    : sidebarCollapsed
-      ? "3rem minmax(0, 1fr)"
-      : "16rem minmax(0, 1fr)";
-
   return (
-    <div
-      className="grid h-[calc(100dvh-14rem)] bg-transparent transition-[grid-template-columns] duration-200 ease-out will-change-[grid-template-columns] sm:h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-9rem)]"
-      style={{ gridTemplateColumns }}
-    >
-      {/* Sidebar - Week Navigation (only for non-shared view) */}
+    <div className="flex h-full w-full overflow-hidden">
+      {/* Sidebar - Week Navigation */}
       {!isSharedView && (
         <aside
-          className={`z-20 flex h-[calc(100dvh-14rem)] w-full flex-col overflow-hidden border-r border-t border-sidebar-border bg-sidebar text-sidebar-foreground dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(9,15,26,0.98)_0%,rgba(4,8,15,0.98)_100%)] sm:h-[calc(100dvh-10rem)] lg:h-[calc(100dvh-9rem)]`}
+          className={cn(
+            "z-10 flex h-full shrink-0 flex-col overflow-hidden border-r border-border/80 bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out",
+            sidebarCollapsed ? "w-14" : "w-64 sm:w-72",
+          )}
         >
-          {/* Toggle Button */}
+          {/* Sidebar Header & Toggle */}
           <div
-            className={`flex items-center border-b border-sidebar-border py-3 dark:border-slate-700/70 ${
-              sidebarCollapsed ? "justify-center px-1" : "justify-between px-3"
-            }`}
+            className={cn(
+              "flex h-12 shrink-0 items-center border-b border-border/80",
+              sidebarCollapsed ? "justify-center px-1" : "justify-between px-3.5",
+            )}
           >
             {!sidebarCollapsed && (
-              <span className="text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/60">
-                Weeks
-              </span>
+              <div className="flex items-center gap-2">
+                <Calendar className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" />
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Weekly History
+                </span>
+              </div>
             )}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="ml-auto rounded-lg p-1 transition-transform duration-150 hover:bg-muted dark:hover:bg-slate-700/50"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {sidebarCollapsed ? (
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight className="size-4" />
               ) : (
-                <ChevronLeft className="w-5 h-5" />
+                <ChevronLeft className="size-4" />
               )}
             </button>
           </div>
 
-          {/* Week List - Scrollable */}
-          <div className="flex-1 overflow-y-auto px-2 py-3 pt-3">
-            {availableWeeks.length > 0 ? (
-              <div className="space-y-1">
-                {availableWeeks.map((week) => (
+          {/* Week Items List */}
+          <div className="flex-1 overflow-y-auto p-2">
+            <div className="space-y-1">
+              {availableWeeks.map((week, idx) => {
+                const isSelected = selectedWeek === week.week_start_date;
+                const startDate = parseISO(week.week_start_date);
+                const endDate = parseISO(week.week_end_date);
+
+                return (
                   <button
                     key={week.week_start_date}
                     onClick={() => {
@@ -385,433 +413,384 @@ function SummariesContent() {
                       router.push(url);
                       setSelectedWeek(week.week_start_date);
                     }}
-                    className={`w-full rounded-lg transition-colors ${
-                      selectedWeek === week.week_start_date
-                        ? "bg-accent text-accent-foreground shadow-sm"
+                    className={`w-full rounded-xl transition-all duration-150 ${
+                      isSelected
+                        ? "bg-[#0d47a1] text-white shadow-xs font-semibold"
                         : "text-sidebar-foreground/80 hover:bg-muted hover:text-foreground"
-                    } ${sidebarCollapsed ? "flex items-center justify-center p-2" : "text-left px-3 py-3"}`}
+                    } ${sidebarCollapsed ? "flex items-center justify-center p-2.5" : "text-left px-3 py-2.5"}`}
                     title={
                       sidebarCollapsed
-                        ? `Week ${format(parseISO(week.week_start_date), "dd/MM/yy")} - ${format(parseISO(week.week_end_date), "dd/MM/yy")}`
+                        ? `Week: ${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`
                         : undefined
                     }
                   >
                     {sidebarCollapsed ? (
-                      <Calendar className="w-5 h-5 shrink-0" />
+                      <Calendar className="size-4 shrink-0" />
                     ) : (
-                      <div className="flex items-center space-x-2">
-                        <Calendar className="w-4 h-4 shrink-0" />
-                        <div className="text-sm">
-                          Week{" "}
-                          {format(parseISO(week.week_start_date), "dd/MM/yy")} -{" "}
-                          {format(parseISO(week.week_end_date), "dd/MM/yy")}
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium tabular-nums">
+                            {format(startDate, "MMM d")} – {format(endDate, "MMM d, yyyy")}
+                          </p>
+                          {idx === 0 && (
+                            <span
+                              className={`mt-0.5 inline-block text-[10px] uppercase font-bold tracking-wider ${
+                                isSelected ? "text-white/80" : "text-[#0d47a1] dark:text-[#38bdf8]"
+                              }`}
+                            >
+                              Most Recent
+                            </span>
+                          )}
                         </div>
+                        {isSelected && (
+                          <span className="size-2 rounded-full bg-white ml-2 shrink-0" />
+                        )}
                       </div>
                     )}
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div
-                className={`text-sm text-gray-600 dark:text-slate-400 ${sidebarCollapsed ? "hidden" : "p-4"}`}
-              >
-                No weeks available yet
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
         </aside>
       )}
 
-      {/* Main Content */}
-      <div ref={mainContentRef} className="col-start-2 min-w-0 overflow-y-auto">
-        <div className="space-y-8 p-8">
-          {/* Shared View Header (only shown for shared) */}
-          {isSharedView && summary && (
-            <div className="space-y-2 mb-8">
-              <h1 className="text-4xl font-bold dark:text-white">
-                {summary.user_name}
-                {"'s"} Weekly Summary
-              </h1>
-              <p className="text-gray-600 dark:text-slate-400 flex items-center space-x-2">
-                <Calendar className="w-4 h-4" />
-                <span>
-                  {format(parseISO(summary.week_start_date), "MMMM d")} -{" "}
-                  {format(parseISO(summary.week_end_date), "MMMM d, yyyy")}
-                </span>
-              </p>
-            </div>
-          )}
+      {/* Main Content Pane */}
+      <div
+        ref={mainContentRef}
+        className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden bg-background"
+      >
+        <div className="mx-auto w-full max-w-6xl space-y-8 p-6 sm:p-8 lg:p-10 pb-20">
+          {/* Header Strip */}
+          {summary ? (
+            <div className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-xs font-medium text-foreground">
+                    <Calendar className="size-3.5 text-muted-foreground" />
+                    <span className="tabular-nums">
+                      {format(parseISO(summary.week_start_date), "MMMM d")} –{" "}
+                      {format(parseISO(summary.week_end_date), "MMMM d, yyyy")}
+                    </span>
+                  </span>
+                  {isSharedView && (
+                    <span className="inline-flex items-center rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-300">
+                      Shared Report
+                    </span>
+                  )}
+                </div>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                  {isSharedView
+                    ? `${summary.user_name}'s Weekly Summary`
+                    : summary.summary_message || "Weekly Summary"}
+                </h1>
+              </div>
 
-          {/* Summary Content - Loading, Error, No Week Selected, or Loaded */}
-          {loading && !summary ? (
-            <DashboardSkeleton />
-          ) : error && !summary ? (
-            <PageErrorCard
-              title="Cannot Load Summary"
-              message={error}
-              onRetry={() => window.location.reload()}
-            />
-          ) : !selectedWeek && !isSharedView ? (
-            <Card className="bg-blue-50 dark:bg-slate-900 border-blue-200 dark:border-blue-900">
-              <CardHeader>
-                <CardTitle className="text-blue-900 dark:text-blue-300">
-                  Select a Week
-                </CardTitle>
-                <CardDescription className="text-blue-700 dark:text-blue-400">
-                  Choose a week from the sidebar to view its summary.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          ) : summary ? (
-            <>
-              {/* Summary Message - conditional display */}
-              <h1 className="text-xl text-gray-800 dark:text-slate-200">
-                {summary.summary_message}
-              </h1>
-
-              {/* Export Button */}
+              {/* Action Buttons */}
               {!isSharedView && (
-                <div className="mt-3 mb-4">
+                <div className="flex flex-wrap items-center gap-2.5">
                   <Button
-                    onClick={async () => {
-                      if (!selectedWeek) return;
-                      try {
-                        setExporting(true);
-                        const resp = await summariesAPI.exportSummary(
-                          selectedWeek,
-                          "pdf",
-                        );
-                        if (resp?.file_url) {
-                          // Trigger browser download
-                          const a = document.createElement("a");
-                          a.href = resp.file_url;
-                          a.target = "_blank";
-                          a.rel = "noopener noreferrer";
-                          // If filename desired, browser will use content-disposition
-                          document.body.appendChild(a);
-                          a.click();
-                          a.remove();
-                          toast.success("Export started — downloading PDF");
-                        } else {
-                          toast.error("Export failed: no file returned");
-                        }
-                      } catch (err) {
-                        const error = err as AxiosError<{ detail?: string }>;
-                        if (error.response?.data?.detail) {
-                          toast.error(
-                            `Export failed: ${error.response.data.detail}`,
-                          );
-                        } else {
-                          toast.error(extractApiErrorMessage(err, "Failed to export summary to PDF"));
-                        }
-                      } finally {
-                        setExporting(false);
-                      }
-                    }}
+                    onClick={handleExportPDF}
                     disabled={exporting}
+                    variant="outline"
                     size="sm"
+                    className="h-9 gap-1.5 rounded-lg text-xs"
                   >
                     {exporting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Exporting...
-                      </>
+                      <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      "Export to PDF"
+                      <Download className="size-3.5" />
                     )}
+                    <span>{exporting ? "Exporting..." : "Export PDF"}</span>
                   </Button>
                 </div>
               )}
+            </div>
+          ) : null}
 
-              {/* Main Stats Grid - Same for both views */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-gray-600 dark:text-slate-400">
-                      Tasks Created
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold">
-                      {summary.tasks_created}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">
-                      This week
-                    </p>
-                  </CardContent>
-                </Card>
-                <Dialog
-                  open={revokeConfirmOpen}
-                  onOpenChange={setRevokeConfirmOpen}
-                >
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Revoke Share Link</DialogTitle>
-                      <DialogDescription>
-                        Are you sure you want to revoke the share link? Users
-                        with the previous link will no longer be able to view
-                        this summary.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="flex gap-3 justify-end pt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setRevokeConfirmOpen(false)}
-                        disabled={isRevoking}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={async () => {
-                          if (!selectedWeek) return;
-                          try {
-                            setIsRevoking(true);
-                            const resp =
-                              await summariesAPI.revokeShare(selectedWeek);
-                            if (resp?.revoked) {
-                              setShares((prev) => {
-                                const copy = { ...prev };
-                                delete copy[selectedWeek];
-                                return copy;
-                              });
-                              toast.success("Share link revoked");
-                              setRevokeConfirmOpen(false);
-                            } else {
-                              toast.error("Failed to revoke share");
-                            }
-                          } catch (e) {
-                            console.error(e);
-                            toast.error("Failed to revoke share");
-                          } finally {
-                            setIsRevoking(false);
-                          }
+          {summary ? (
+            <>
+              {/* Primary KPI Metrics Strip */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Card className="border-border/80 bg-card p-5 shadow-xs">
+                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                    <span>Task Completion</span>
+                    <CheckSquare2 className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" />
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <span className="text-3xl font-bold tabular-nums text-foreground">
+                      {summary.tasks_completed}
+                    </span>
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      / {summary.tasks_assigned} assigned
+                    </span>
+                  </div>
+                  <div className="mt-3">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-[#0d47a1] dark:bg-[#38bdf8] transition-all duration-500"
+                        style={{
+                          width: `${Math.min(summary.completion_rate_percent, 100)}%`,
                         }}
-                        disabled={isRevoking}
-                      >
-                        {isRevoking ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Revoking...
-                          </>
-                        ) : (
-                          "Revoke"
-                        )}
-                      </Button>
+                      />
                     </div>
-                  </DialogContent>
-                </Dialog>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-gray-600 dark:text-slate-400">
-                      Tasks Completed
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold">
-                      {summary.tasks_completed}/{summary.tasks_assigned}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">
+                    <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
                       {summary.completion_rate_percent}% completion rate
                     </p>
-                  </CardContent>
+                  </div>
                 </Card>
 
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-gray-600 dark:text-slate-400">
-                      On-Time Rate
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold">
+                <Card className="border-border/80 bg-card p-5 shadow-xs">
+                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                    <span>On-Time Rate</span>
+                    <Clock className="size-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <span className="text-3xl font-bold tabular-nums text-foreground">
                       {summary.on_time_completion_rate_percent}%
+                    </span>
+                  </div>
+                  <div className="mt-3">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500"
+                        style={{
+                          width: `${Math.min(summary.on_time_completion_rate_percent, 100)}%`,
+                        }}
+                      />
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">
+                    <p className="mt-2 text-xs text-muted-foreground">
                       {summary.on_time_completion_rate_percent >= 80
-                        ? "Great work!"
-                        : "Room for improvement"}
+                        ? "Exemplary turnaround time"
+                        : "Focus on deadline milestones"}
                     </p>
-                  </CardContent>
+                  </div>
+                </Card>
+
+                <Card className="border-border/80 bg-card p-5 shadow-xs">
+                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                    <span>Tasks Created</span>
+                    <Sparkles className="size-4 text-amber-500" />
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <span className="text-3xl font-bold tabular-nums text-foreground">
+                      {summary.tasks_created}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      new initiatives
+                    </span>
+                  </div>
+                  <div className="mt-3">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full w-full rounded-full bg-amber-500" />
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Initiated during this reporting cycle
+                    </p>
+                  </div>
                 </Card>
               </div>
 
-              {/* Engagement Metrics - Same for both views */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Engagement</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <MessageSquare className="w-5 h-5 text-blue-500 dark:text-blue-400" />
-                        <span className="text-gray-700 dark:text-slate-300">
-                          Comments Added
+              {/* Engagement & Files Sub-Pages Gateway */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                    Activity & File Exchanges
+                  </h2>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {/* Files Attached (Sent) Card - Direct Link to Subpage */}
+                  <Link
+                    href={
+                      isSharedView && shareToken
+                        ? `/summaries/${summary.id}/files?v=sent&token=${shareToken}`
+                        : `/summaries/${summary.id}/files?v=sent`
+                    }
+                    className="group relative flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4.5 shadow-xs transition-all hover:border-[#0d47a1]/50 hover:shadow-sm"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                          <Paperclip className="size-4.5" />
+                        </div>
+                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                          View
+                          <ArrowRight className="size-3" />
                         </span>
                       </div>
-                      <span className="text-2xl font-bold">
-                        {summary.comments_added}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <FileText className="w-5 h-5 text-green-500 dark:text-green-400" />
-                        <div className="flex items-center gap-1">
-                          <span className="text-gray-700 dark:text-slate-300">
-                            Files Attached
-                          </span>
-                          {summary.id && (
-                            <Link
-                              href={
-                                isSharedView && shareToken
-                                  ? `/summaries/${summary.id}/files?v=sent&token=${shareToken}`
-                                  : `/summaries/${summary.id}/files?v=sent`
-                              }
-                            >
-                              <Eye className="h-4 w-4 text-green-500 dark:text-green-400 cursor-pointer hover:text-green-700 dark:hover:text-green-300" />
-                            </Link>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-2xl font-bold">
+                      <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
                         {summary.files_attached}
-                      </span>
+                      </p>
+                      <p className="text-xs font-semibold text-foreground">
+                        Files Attached
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Documents & assets sent by you
+                      </p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <FileText className="w-5 h-5 text-blue-500 dark:text-blue-400" />
-                        <div className="flex items-center gap-1">
-                          <span className="text-gray-700 dark:text-slate-300">
-                            Files Received
-                          </span>
-                          {summary.id && (
-                            <Link
-                              href={
-                                isSharedView && shareToken
-                                  ? `/summaries/${summary.id}/files?v=received&token=${shareToken}`
-                                  : `/summaries/${summary.id}/files?v=received`
-                              }
-                            >
-                              <Eye className="h-4 w-4 text-blue-500 dark:text-blue-400 cursor-pointer hover:text-blue-700 dark:hover:text-blue-300" />
-                            </Link>
-                          )}
+                  </Link>
+
+                  {/* Files Received Card - Direct Link to Subpage */}
+                  <Link
+                    href={
+                      isSharedView && shareToken
+                        ? `/summaries/${summary.id}/files?v=received&token=${shareToken}`
+                        : `/summaries/${summary.id}/files?v=received`
+                    }
+                    className="group relative flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4.5 shadow-xs transition-all hover:border-[#0d47a1]/50 hover:shadow-sm"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex size-9 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                          <Inbox className="size-4.5" />
                         </div>
+                        <span className="text-xs font-medium text-[#0d47a1] dark:text-[#38bdf8] group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                          View
+                          <ArrowRight className="size-3" />
+                        </span>
                       </div>
-                      <span className="text-2xl font-bold">
+                      <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
                         {summary.files_received}
-                      </span>
+                      </p>
+                      <p className="text-xs font-semibold text-foreground">
+                        Files Received
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Incoming files from collaborators
+                      </p>
                     </div>
+                  </Link>
 
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Clock className="w-5 h-5 text-purple-500 dark:text-purple-400" />
-                        <span className="text-gray-700 dark:text-slate-300">
-                          Active Recurring Schedules
-                        </span>
+                  {/* Comments Added Card */}
+                  <div className="flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4.5 shadow-xs">
+                    <div>
+                      <div className="flex size-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400">
+                        <MessageSquare className="size-4.5" />
                       </div>
-                      <span className="text-2xl font-bold">
-                        {summary.active_recurring_schedules}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <TrendingUp className="w-5 h-5 text-orange-500 dark:text-orange-400" />
-                        <span className="text-gray-700 dark:text-slate-300">
-                          Schedules Created
-                        </span>
-                      </div>
-                      <span className="text-2xl font-bold">
-                        {summary.recurring_schedules_created}
-                      </span>
+                      <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
+                        {summary.comments_added}
+                      </p>
+                      <p className="text-xs font-semibold text-foreground">
+                        Comments Added
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Collaboration updates logged
+                      </p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
 
-              {/* Daily Reports */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Daily Reports</CardTitle>
-                  <CardDescription>
-                    {summary.daily_reports_created} daily report
-                    {summary.daily_reports_created === 1 ? "" : "s"} created
-                    this week.
-                  </CardDescription>
+                  {/* Recurring Schedules Card */}
+                  <div className="flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4.5 shadow-xs">
+                    <div>
+                      <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+                        <Repeat className="size-4.5" />
+                      </div>
+                      <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
+                        {summary.active_recurring_schedules}
+                      </p>
+                      <p className="text-xs font-semibold text-foreground">
+                        Active Schedules
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {summary.recurring_schedules_created} created this week
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Reports Section */}
+              <Card className="border-border/80 bg-card shadow-xs">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        Daily Reports Captured
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        {summary.daily_reports_created} daily update
+                        {summary.daily_reports_created === 1 ? "" : "s"} submitted
+                        this week
+                      </CardDescription>
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-0">
                   {summary.daily_reports?.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="divide-y divide-border/60">
                       {summary.daily_reports.map((dailyReport) => (
                         <div
                           key={`${dailyReport.report_date}-${dailyReport.view_url}`}
-                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 p-4"
+                          className="flex flex-wrap items-center justify-between gap-3 py-3"
                         >
-                          <div className="space-y-1">
-                            <p className="font-semibold text-slate-900 dark:text-slate-100">
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-semibold text-foreground">
                               {format(
                                 parseISO(dailyReport.report_date),
-                                "EEEE, MMM d",
+                                "EEEE, MMMM d, yyyy",
                               )}
                             </p>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-xs text-muted-foreground">
                               {dailyReport.title}
                             </p>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="rounded-full bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-                              {dailyReport.subreport_count} report
+                            <span className="rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-medium tabular-nums text-muted-foreground">
+                              {dailyReport.subreport_count} subreport
                               {dailyReport.subreport_count === 1 ? "" : "s"}
                             </span>
-                            <Button variant="outline" size="sm" asChild>
-                              <Link href={dailyReport.view_url}>Open</Link>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 rounded-lg text-xs"
+                              asChild
+                            >
+                              <Link href={dailyReport.view_url}>
+                                Open Report
+                              </Link>
                             </Button>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      No daily reports were captured for this week.
+                    <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center text-xs text-muted-foreground">
+                      No daily reports were filed during this week cycle.
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Priority Distribution - Same for both views */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Task Breakdown</CardTitle>
-                  <CardDescription>
-                    {isSharedView
-                      ? "Tasks by priority and status"
-                      : "Your tasks by priority and status"}
+              {/* Task Breakdown (Priority & Status) */}
+              <Card className="border-border/80 bg-card shadow-xs">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Task Distribution
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Categorization by priority level and execution lifecycle
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <CardContent className="pt-0">
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <div>
-                      <h3 className="font-semibold text-sm mb-3">
-                        By Priority
-                      </h3>
-                      <div className="space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                        By Priority Level
+                      </p>
+                      <div className="space-y-2.5">
                         {Object.entries(summary.priority_distribution).map(
                           ([priority, count]) => (
                             <div
                               key={priority}
-                              className="flex items-center justify-between gap-3"
+                              className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
                             >
                               <span
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClasses(priority)}`}
+                                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getPriorityBadgeClasses(priority)}`}
                               >
                                 {priority}
                               </span>
-                              <span className="font-semibold text-gray-900 dark:text-slate-100">
+                              <span className="font-bold tabular-nums text-foreground">
                                 {count}
                               </span>
                             </div>
@@ -821,16 +800,18 @@ function SummariesContent() {
                     </div>
 
                     <div>
-                      <h3 className="font-semibold text-sm mb-3">By Status</h3>
-                      <div className="space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                        By Status
+                      </p>
+                      <div className="space-y-2.5">
                         {Object.entries(summary.status_distribution).map(
                           ([status, count]) => (
                             <div
                               key={status}
-                              className="flex items-center justify-between gap-3"
+                              className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
                             >
                               <span
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${getStatusBadgeClasses(status)}`}
+                                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getStatusBadgeClasses(status)}`}
                               >
                                 {status === "in_progress"
                                   ? "In Progress"
@@ -838,7 +819,7 @@ function SummariesContent() {
                                     ? "Completed"
                                     : "Pending"}
                               </span>
-                              <span className="font-semibold text-gray-900 dark:text-slate-100">
+                              <span className="font-bold tabular-nums text-foreground">
                                 {count}
                               </span>
                             </div>
@@ -850,7 +831,7 @@ function SummariesContent() {
                 </CardContent>
               </Card>
 
-              {/* Phase 2: Week-over-Week Comparison */}
+              {/* Week-over-Week Comparison */}
               {comparisonMetrics &&
                 Object.keys(comparisonMetrics).length > 0 && (
                   <MemoizedSummaryComparison
@@ -859,149 +840,105 @@ function SummariesContent() {
                   />
                 )}
 
-              {/* Phase 2: Analytics Charts */}
+              {/* Analytics & Trends Charts */}
               <MemoizedSummaryCharts
                 summaryData={summary}
                 historicalData={historicalSummaries}
               />
 
-              {/* Phase 2: Goal Tracker */}
+              {/* Goal Tracker Snapshot for this week */}
               {!isSharedView && (
                 <MemoizedWeeklyGoalsSnapshot
-                  title="Goals for This Week"
-                  description="Goals you created for this week are displayed here."
+                  title="Weekly Goals Record"
+                  description="Performance against the targets you set for this week."
                   goals={goalsForWeek}
-                  emptyStateTitle="No goals were created for this week"
-                  emptyStateDescription="You did not create goals during this week."
+                  emptyStateTitle="No goals recorded for this week"
+                  emptyStateDescription="Goals established during this week cycle will appear here."
                 />
               )}
 
-              {/* Share Section - only for non-shared view */}
+              {/* Share & Collaboration Section */}
               {!isSharedView && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Share2 className="w-5 h-5" />
-                      <span>Share This Summary</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Create a public link to share your summary with others
-                    </CardDescription>
+                <Card className="border-border/80 bg-card shadow-xs">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex size-9 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                        <Share2 className="size-4.5" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base font-semibold">
+                          Share This Summary
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          Share this weekly summary with colleagues or generate a public link
+                        </CardDescription>
+                      </div>
+                    </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex gap-2">
+                  <CardContent className="space-y-4 pt-1">
+                    <div className="flex items-center gap-2">
                       <Button
                         onClick={() => setShareWithUserOpen(true)}
                         variant="outline"
                         size="sm"
+                        className="h-9 gap-1.5 text-xs"
                       >
+                        <UserPlus className="size-3.5" />
                         Share with user
                       </Button>
                     </div>
-                    <ShareWithUserModal
-                      open={shareWithUserOpen}
-                      onClose={() => setShareWithUserOpen(false)}
-                      weekStartDate={selectedWeek || ""}
-                      onShared={(userId) => {
-                        // optional: show feedback or update UI
-                        console.log("shared with", userId);
-                      }}
-                    />
+
                     {shares[selectedWeek || ""] ? (
-                      <div className="flex space-x-2 items-center">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <input
                           type="text"
                           value={`${window.location.origin}${shares[selectedWeek || ""]}`}
                           readOnly
-                          className="flex-1 px-3 py-2 border rounded-md bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 text-sm"
+                          className="h-9 flex-1 rounded-lg border border-border bg-muted/40 px-3 text-xs text-foreground tabular-nums select-all focus:outline-none"
                         />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            handleCopyLink(shares[selectedWeek || ""])
-                          }
-                        >
-                          {copiedToken === shares[selectedWeek || ""] ? (
-                            <>
-                              <Check className="w-4 h-4 mr-1" />
-                              Copied
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4 mr-1" />
-                              Copy
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setRevokeConfirmOpen(true)}
-                          disabled={isRevoking}
-                        >
-                          {isRevoking ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Revoking...
-                            </>
-                          ) : (
-                            "Revoke"
-                          )}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleCopyLink(shares[selectedWeek || ""])
+                            }
+                            className="h-9 text-xs"
+                          >
+                            {copiedToken === shares[selectedWeek || ""] ? (
+                              <>
+                                <Check className="mr-1.5 size-3.5 text-emerald-600" />
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="mr-1.5 size-3.5" />
+                                Copy Link
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setRevokeConfirmOpen(true)}
+                            disabled={isRevoking}
+                            className="h-9 text-xs"
+                          >
+                            Revoke Link
+                          </Button>
+                        </div>
                       </div>
                     ) : (
-                      <>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <Button
                           onClick={() => setShareConfirmOpen(true)}
                           disabled={creatingShare}
-                          className="w-full"
+                          className="bg-[#0d47a1] text-white hover:bg-[#0a3880] text-xs h-9"
                         >
-                          <Share2 className="w-4 h-4 mr-2" />
-                          {creatingShare ? "Creating..." : "Create Share Link"}
+                          <Share2 className="mr-2 size-3.5" />
+                          {creatingShare ? "Creating Link..." : "Create Public Share Link"}
                         </Button>
-
-                        <Dialog
-                          open={shareConfirmOpen}
-                          onOpenChange={setShareConfirmOpen}
-                        >
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Share Summary Publicly</DialogTitle>
-                              <DialogDescription>
-                                Are you sure you want to share this summary to
-                                public? Everyone with the share link will be
-                                able to view this summary if you confirm
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="flex gap-3 justify-end pt-4">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => setShareConfirmOpen(false)}
-                                disabled={creatingShare}
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                onClick={() => void handleCreateShare()}
-                                disabled={creatingShare}
-                              >
-                                {creatingShare ? (
-                                  <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Creating...
-                                  </>
-                                ) : (
-                                  "Confirm"
-                                )}
-                              </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      </>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -1010,6 +947,110 @@ function SummariesContent() {
           ) : null}
         </div>
       </div>
+
+      {/* Share Modals & Dialogs */}
+      <ShareWithUserModal
+        open={shareWithUserOpen}
+        onClose={() => setShareWithUserOpen(false)}
+        weekStartDate={selectedWeek || ""}
+      />
+
+      <Dialog open={shareConfirmOpen} onOpenChange={setShareConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<Share2 className="size-4.5" />}>
+            <DialogTitle>Create Public Share Link</DialogTitle>
+            <DialogDescription>
+              This creates a view-only share link. Anyone with this link will be able to review this weekly summary report without an account.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShareConfirmOpen(false)}
+              disabled={creatingShare}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleCreateShare()}
+              disabled={creatingShare}
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white"
+            >
+              {creatingShare ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                "Confirm & Create"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={revokeConfirmOpen} onOpenChange={setRevokeConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader
+            icon={<AlertCircle className="size-4.5" />}
+            iconClassName="bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30"
+          >
+            <DialogTitle>Revoke Share Link</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to revoke this share link? Anyone holding the link will immediately lose access to this report.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevokeConfirmOpen(false)}
+              disabled={isRevoking}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={async () => {
+                if (!selectedWeek) return;
+                try {
+                  setIsRevoking(true);
+                  const resp = await summariesAPI.revokeShare(selectedWeek);
+                  if (resp?.revoked) {
+                    setShares((prev) => {
+                      const copy = { ...prev };
+                      delete copy[selectedWeek];
+                      return copy;
+                    });
+                    toast.success("Share link revoked");
+                    setRevokeConfirmOpen(false);
+                  } else {
+                    toast.error("Failed to revoke share link");
+                  }
+                } catch (e) {
+                  console.error(e);
+                  toast.error("Failed to revoke share link");
+                } finally {
+                  setIsRevoking(false);
+                }
+              }}
+              disabled={isRevoking}
+            >
+              {isRevoking ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Revoking...
+                </>
+              ) : (
+                "Revoke Link"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

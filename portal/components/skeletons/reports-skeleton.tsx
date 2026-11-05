@@ -5,7 +5,7 @@ export function ReportsCalendarSkeleton() {
   return (
     <div className="space-y-8 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <Card className="overflow-hidden border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+        <Card className="overflow-hidden border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
           <CardHeader className="space-y-4 border-b border-border/60">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-3">
@@ -83,7 +83,7 @@ export function ReportDaySkeleton() {
       <Skeleton className="h-9 w-24 rounded-md" />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
           <CardHeader className="space-y-4 border-b border-border/60">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
@@ -94,7 +94,7 @@ export function ReportDaySkeleton() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 p-4 sm:p-6">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-slate-900/40">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-card/40">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-3">
                   <Skeleton className="h-3 w-28" />
@@ -134,7 +134,7 @@ export function ReportDaySkeleton() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader className="space-y-3 border-b border-border/60">
               <Skeleton className="h-6 w-36" />
               <Skeleton className="h-4 w-52" />
@@ -146,7 +146,7 @@ export function ReportDaySkeleton() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader className="space-y-3 border-b border-border/60">
               <Skeleton className="h-6 w-24" />
               <Skeleton className="h-4 w-48" />
@@ -172,7 +172,7 @@ export function DailyReportSkeleton() {
       <Skeleton className="h-9 w-32 rounded-md" />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
           <CardHeader className="space-y-4 border-b border-border/60">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
@@ -183,7 +183,7 @@ export function DailyReportSkeleton() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 p-4 sm:p-6">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-slate-900/40">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-card/40">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-3">
                   <Skeleton className="h-3 w-24" />
@@ -215,7 +215,7 @@ export function DailyReportSkeleton() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader className="space-y-3 border-b border-border/60">
               <Skeleton className="h-6 w-28" />
               <Skeleton className="h-4 w-48" />
@@ -227,7 +227,7 @@ export function DailyReportSkeleton() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader className="space-y-3 border-b border-border/60">
               <Skeleton className="h-6 w-24" />
               <Skeleton className="h-4 w-40" />
@@ -257,7 +257,7 @@ export function SubreportSkeleton() {
       <Skeleton className="h-9 w-36 rounded-md" />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+        <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
           <CardHeader className="space-y-4 border-b border-border/60">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
@@ -268,7 +268,7 @@ export function SubreportSkeleton() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 p-4 sm:p-6">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-slate-900/40">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 dark:bg-card/40">
               <div className="grid gap-3 text-sm sm:grid-cols-2">
                 {Array.from({ length: 4 }).map((_, index) => (
                   <div key={index} className="space-y-2">
@@ -283,7 +283,7 @@ export function SubreportSkeleton() {
               {Array.from({ length: 4 }).map((_, index) => (
                 <div
                   key={index}
-                  className="rounded-2xl border border-border/60 bg-white/90 p-4 shadow-sm dark:bg-slate-950/60"
+                  className="rounded-2xl border border-border/60 bg-white/90 p-4 shadow-sm dark:bg-card/60"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2">
@@ -300,7 +300,7 @@ export function SubreportSkeleton() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader className="space-y-3 border-b border-border/60">
               <Skeleton className="h-6 w-32" />
               <Skeleton className="h-4 w-48" />
@@ -312,7 +312,7 @@ export function SubreportSkeleton() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
+          <Card className="border-border/60 bg-white/90 shadow-sm dark:bg-card/60">
             <CardHeader className="space-y-3 border-b border-border/60">
               <Skeleton className="h-6 w-24" />
               <Skeleton className="h-4 w-40" />

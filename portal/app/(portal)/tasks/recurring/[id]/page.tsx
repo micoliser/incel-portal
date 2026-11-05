@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
   endRecurringSchedule,
@@ -22,6 +22,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -137,7 +138,7 @@ export default function RecurringTaskDetailPage() {
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -167,16 +168,16 @@ export default function RecurringTaskDetailPage() {
       ? "Paused"
       : "Active";
   const statusClasses = !schedule.is_active
-    ? "bg-gray-100 text-gray-700"
+    ? "bg-muted text-foreground"
     : schedule.is_paused
       ? "bg-amber-100 text-amber-800"
-      : "bg-emerald-100 text-emerald-800";
+      : "bg-[#16a34a]/10 text-[#16a34a]";
 
   return (
     <div className="space-y-8">
       <button
         onClick={() => router.back()}
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
+        className="flex items-center gap-2 text-[#0d47a1] hover:text-[#0d47a1]"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Tasks
@@ -185,7 +186,7 @@ export default function RecurringTaskDetailPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">{schedule.title}</h1>
-          <p className="mt-2 text-gray-600">
+          <p className="mt-2 text-muted-foreground">
             {schedule.description || "No description"}
           </p>
         </div>
@@ -201,29 +202,29 @@ export default function RecurringTaskDetailPage() {
           <h2 className="mb-4 text-lg font-semibold">Schedule Details</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className="text-sm text-gray-600">Pattern</p>
+              <p className="text-sm text-muted-foreground">Pattern</p>
               <p className="font-medium">{formatScheduleSummary(schedule)}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Run Times</p>
+              <p className="text-sm text-muted-foreground">Run Times</p>
               <p className="font-medium">{schedule.times.join(", ")}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Timezone</p>
+              <p className="text-sm text-muted-foreground">Timezone</p>
               <p className="font-medium">{schedule.timezone}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Priority</p>
+              <p className="text-sm text-muted-foreground">Priority</p>
               <p className="font-medium capitalize">{schedule.priority}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Starts At</p>
+              <p className="text-sm text-muted-foreground">Starts At</p>
               <p className="font-medium">
                 {format(new Date(schedule.start_at), "MMM dd, yyyy HH:mm")}
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Ends At</p>
+              <p className="text-sm text-muted-foreground">Ends At</p>
               <p className="font-medium">
                 {schedule.end_at
                   ? format(new Date(schedule.end_at), "MMM dd, yyyy HH:mm")
@@ -231,7 +232,7 @@ export default function RecurringTaskDetailPage() {
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Next Run</p>
+              <p className="text-sm text-muted-foreground">Next Run</p>
               <p className="font-medium">
                 {schedule.is_paused
                   ? "Paused - resumes from the next calculated run after resume"
@@ -244,14 +245,14 @@ export default function RecurringTaskDetailPage() {
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Deadline Offset</p>
+              <p className="text-sm text-muted-foreground">Deadline Offset</p>
               <p className="font-medium">
                 {schedule.deadline_offset_minutes} minutes
               </p>
             </div>
             {schedule.is_paused ? (
               <div>
-                <p className="text-sm text-gray-600">Paused At</p>
+                <p className="text-sm text-muted-foreground">Paused At</p>
                 <p className="font-medium">
                   {schedule.paused_at
                     ? format(new Date(schedule.paused_at), "MMM dd, yyyy HH:mm")
@@ -262,7 +263,7 @@ export default function RecurringTaskDetailPage() {
           </div>
 
           {!schedule.is_active || schedule.ended_at ? (
-            <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
+            <div className="mt-6 rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground dark:border-border dark:bg-card/40 dark:text-muted-foreground">
               This recurring task schedule has ended and cannot be edited.
             </div>
           ) : null}
@@ -285,43 +286,43 @@ export default function RecurringTaskDetailPage() {
           <h2 className="mb-4 text-lg font-semibold">Assignment</h2>
           <div className="space-y-4 text-sm">
             <div>
-              <p className="text-gray-600">Created By</p>
+              <p className="text-muted-foreground">Created By</p>
               <p className="font-medium">{schedule.assigned_by.full_name}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {schedule.assigned_by.email}
               </p>
             </div>
             <div>
-              <p className="text-gray-600">Assigned To</p>
+              <p className="text-muted-foreground">Assigned To</p>
               <p className="font-medium">{schedule.assigned_to.full_name}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {schedule.assigned_to.email}
               </p>
             </div>
             <div>
-              <p className="text-gray-600">Created</p>
+              <p className="text-muted-foreground">Created</p>
               <p className="font-medium">
                 {format(new Date(schedule.created_at), "MMM dd, yyyy HH:mm")}
               </p>
             </div>
             <div>
-              <p className="text-gray-600">Last Updated</p>
+              <p className="text-muted-foreground">Last Updated</p>
               <p className="font-medium">
                 {format(new Date(schedule.updated_at), "MMM dd, yyyy HH:mm")}
               </p>
             </div>
             {schedule.paused_by ? (
               <div>
-                <p className="text-gray-600">Paused By</p>
+                <p className="text-muted-foreground">Paused By</p>
                 <p className="font-medium">{schedule.paused_by.full_name}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {schedule.paused_by.email}
                 </p>
               </div>
             ) : null}
             {schedule.ended_at ? (
               <div>
-                <p className="text-gray-600">Ended At</p>
+                <p className="text-muted-foreground">Ended At</p>
                 <p className="font-medium">
                   {format(new Date(schedule.ended_at), "MMM dd, yyyy HH:mm")}
                 </p>
@@ -371,15 +372,18 @@ export default function RecurringTaskDetailPage() {
       />
 
       <Dialog open={endConfirmOpen} onOpenChange={setEndConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader
+            icon={<AlertTriangle className="size-4.5" />}
+            iconClassName="bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
+          >
             <DialogTitle>End Recurring Task</DialogTitle>
             <DialogDescription>
               Are you sure you want to end this recurring task? This action
               cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex gap-3 justify-end pt-4">
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -403,7 +407,7 @@ export default function RecurringTaskDetailPage() {
                 "End Task"
               )}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
