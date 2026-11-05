@@ -408,83 +408,100 @@ export default function DashboardPage() {
       : assignedToMeTasksCount;
 
   return (
-    <div className="flex w-full flex-col gap-8">
-      {/* Welcome & Quick Actions Section */}
-      <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <Card className="overflow-hidden">
-          <CardHeader className="space-y-3">
-            <div className="flex items-center gap-2 text-primary">
-              <Sparkles className="size-5" aria-hidden="true" />
-              <span className="text-xs font-semibold uppercase tracking-[0.24em]">
-                Welcome back
+    <div className="flex w-full flex-col gap-6">
+      {/* Workspace Command Banner & Quick Actions */}
+      <section className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
+        <Card className="relative overflow-hidden border-[#0d47a1]/20 bg-gradient-to-br from-[#0d47a1] via-[#0d47a1] to-[#0d47a1] text-white shadow-[0_8px_24px_rgba(13, 71, 161,0.22)]">
+          <div className="pointer-events-none absolute -right-12 -top-12 size-56 rounded-full bg-white/10 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-16 right-16 size-44 rounded-full bg-[#0d47a1]/50 blur-xl" />
+          <CardHeader className="relative z-10 pb-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white backdrop-blur-xs">
+                <Sparkles className="size-3.5" aria-hidden="true" />
+                Active Workspace
+              </span>
+              <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white/95 backdrop-blur-xs">
+                Role: {roleLabel} · {departmentLabel}
               </span>
             </div>
-            <div className="space-y-2">
-              <CardTitle className="text-3xl tracking-tight sm:text-4xl">
-                {fullName}
-              </CardTitle>
-              <CardDescription className="text-base">
-                Role: {roleLabel} · {departmentLabel}
-              </CardDescription>
-            </div>
+            <CardTitle className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              {fullName}
+            </CardTitle>
+            <CardDescription className="text-sm text-white/85">
+              You are signed in and ready to manage your tasks, reports, and internal applications.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-1">
-            <div className="rounded-xl border border-border bg-muted/50 p-4 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                Session
-              </p>
-              <p className="mt-2 text-sm text-foreground">
-                You are signed in and ready to use the portal.
-              </p>
+          <CardContent className="relative z-10 pt-2">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="bg-white text-[#0d47a1] font-semibold hover:bg-white/90 border-0 shadow-xs"
+                onClick={() => router.push("/tasks")}
+              >
+                <ListTodo className="mr-1.5 size-4" aria-hidden="true" />
+                Open Tasks
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={() => router.push("/reports")}
+              >
+                Daily Reports
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={() => router.push("/applications")}
+              >
+                Applications
+              </Button>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Crown className="size-5 text-primary" aria-hidden="true" />
+        <Card className="justify-between">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <Crown className="size-4 text-[#0d47a1]" aria-hidden="true" />
               Quick actions
             </CardTitle>
             <CardDescription>
-              Shortcuts to the most useful portal tasks.
+              Direct shortcuts to your core workflows.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2.5">
             {quickActions.map((action) => (
-              <Button
+              <button
                 key={action.label}
-                variant="outline"
-                className="h-auto w-full justify-between rounded-xl px-4 py-4 text-left"
+                type="button"
                 onClick={() => router.push(action.href)}
+                className="group flex w-full cursor-pointer items-center justify-between rounded-xl border border-border bg-muted/35 px-4 py-3 text-left transition-all duration-150 hover:border-[#0d47a1]/40 hover:bg-[#0d47a1]/5"
               >
-                <>
-                  <span>
-                    <span className="block text-sm font-semibold text-foreground">
-                      {action.label}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {action.description}
-                    </span>
+                <div>
+                  <span className="block text-sm font-semibold text-foreground group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8]">
+                    {action.label}
                   </span>
-                  <ArrowRight className="size-4" aria-hidden="true" />
-                </>
-              </Button>
+                  <span className="block text-xs text-muted-foreground">
+                    {action.description}
+                  </span>
+                </div>
+                <ArrowRight
+                  className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-[#0d47a1]"
+                  aria-hidden="true"
+                />
+              </button>
             ))}
-            {isAdmin ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60">
-                Admins can also create new applications and manage access from
-                the Applications page.
-              </div>
-            ) : null}
           </CardContent>
         </Card>
       </section>
 
       {/* Task Overview Header with View Switcher Tabs */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+          <h2 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
             Task Overview
           </h2>
           <p className="text-xs text-muted-foreground sm:text-sm">
@@ -493,21 +510,21 @@ export default function DashboardPage() {
               : "Tracking tasks assigned to you."}
           </p>
         </div>
-        <div className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card p-1 shadow-sm dark:border-slate-700">
+        <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-card p-1 shadow-xs">
           <Button
             type="button"
             size="sm"
             variant={taskView === "assigned_to" ? "default" : "ghost"}
-            className="h-8 rounded-md text-xs sm:text-sm"
+            className="h-8 rounded-lg text-xs sm:text-sm"
             onClick={() => setTaskView("assigned_to")}
           >
             <ListTodo className="mr-1.5 h-3.5 w-3.5" />
             Assigned to Me
             {assignedToMeTasksCount > 0 && (
               <span
-                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
                   taskView === "assigned_to"
-                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    ? "bg-white/20 text-white"
                     : "bg-muted text-muted-foreground"
                 }`}
               >
@@ -519,16 +536,16 @@ export default function DashboardPage() {
             type="button"
             size="sm"
             variant={taskView === "assigned_by" ? "default" : "ghost"}
-            className="h-8 rounded-md text-xs sm:text-sm"
+            className="h-8 rounded-lg text-xs sm:text-sm"
             onClick={() => setTaskView("assigned_by")}
           >
             <Users className="mr-1.5 h-3.5 w-3.5" />
             Tasks I Assigned
             {assignedByMeTasksCount > 0 && (
               <span
-                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
                   taskView === "assigned_by"
-                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    ? "bg-white/20 text-white"
                     : "bg-muted text-muted-foreground"
                 }`}
               >
@@ -540,24 +557,36 @@ export default function DashboardPage() {
       </div>
 
       {/* 4 Summary KPI Metric Cards */}
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => {
           const Icon = card.icon;
+          const isHighPriorityCard = card.title.toLowerCase().includes("priority");
+          const isCompletedCard = card.title.toLowerCase().includes("completed");
+          const iconContainerClass = isHighPriorityCard
+            ? "bg-[#dc2626]/10 text-[#dc2626] ring-1 ring-[#dc2626]/20"
+            : isCompletedCard
+              ? "bg-[#16a34a]/10 text-[#16a34a] ring-1 ring-[#16a34a]/20"
+              : "bg-[#0d47a1]/10 text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:text-[#38bdf8]";
+
           return (
-            <Card key={card.title}>
-              <CardHeader className="pb-3">
+            <Card key={card.title} className="gap-3 py-4">
+              <CardHeader className="pb-0">
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="text-base font-semibold">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
                     {card.title}
                   </CardTitle>
-                  <Icon className="size-5 text-primary" aria-hidden="true" />
+                  <div className={`flex size-9 items-center justify-center rounded-lg ${iconContainerClass}`}>
+                    <Icon className="size-4" aria-hidden="true" />
+                  </div>
                 </div>
-                <CardDescription>{card.description}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-semibold tracking-tight text-foreground">
+              <CardContent className="space-y-1">
+                <div className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
                   {card.value}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {card.description}
+                </p>
               </CardContent>
             </Card>
           );
@@ -567,21 +596,37 @@ export default function DashboardPage() {
       {/* Main Task List and Workload / Oversight Section */}
       <section className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>
-              {taskView === "assigned_by"
-                ? "Tasks assigned by you"
-                : "Tasks assigned to you"}
-            </CardTitle>
-            <CardDescription>
-              {taskView === "assigned_by"
-                ? `You have assigned ${assignedByMeTasksCount} tasks to others.`
-                : `You have ${assignedToMeTasksCount} tasks assigned to you.`}
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between border-b border-border/70 pb-4">
+            <div className="space-y-1">
+              <CardTitle>
+                {taskView === "assigned_by"
+                  ? "Tasks assigned by you"
+                  : "Tasks assigned to you"}
+              </CardTitle>
+              <CardDescription>
+                {taskView === "assigned_by"
+                  ? `You have assigned ${assignedByMeTasksCount} tasks to others.`
+                  : `You have ${assignedToMeTasksCount} tasks assigned to you.`}
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                router.push(
+                  taskView === "assigned_by"
+                    ? "/tasks?view=created"
+                    : "/tasks?view=assigned",
+                )
+              }
+            >
+              View all
+              <ArrowRight className="ml-1.5 size-3.5" aria-hidden="true" />
+            </Button>
           </CardHeader>
           <CardContent>
             {activeTaskCount === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground">
                 <p>
                   {taskView === "assigned_by"
                     ? "No tasks assigned by you right now."
@@ -589,7 +634,7 @@ export default function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="divide-y divide-border rounded-xl border border-border bg-background/50">
                 {activeTaskList.slice(0, 5).map((task) => {
                   const deadline = task.deadline
                     ? new Date(task.deadline)
@@ -601,11 +646,12 @@ export default function DashboardPage() {
                   return (
                     <div
                       key={task.id}
-                      className="rounded-xl border border-border bg-background p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                      onClick={() => router.push(`/tasks/${task.id}`)}
+                      className="group flex cursor-pointer flex-col gap-2.5 p-4 transition-colors duration-150 first:rounded-t-xl last:rounded-b-xl hover:bg-muted/60"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="font-semibold text-foreground">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-foreground group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8] transition-colors">
                             {task.title}
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
@@ -623,14 +669,14 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
                             task.status === "completed"
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+                              ? "border-[#16a34a]/25 bg-[#16a34a]/10 text-[#16a34a] dark:text-[#4ade80]"
                               : task.status === "under_review"
-                                ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-200"
+                                ? "border-purple-500/25 bg-purple-500/10 text-purple-700 dark:text-purple-300"
                                 : task.status === "in_progress"
-                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200"
-                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+                                  ? "border-[#0d47a1]/25 bg-[#0d47a1]/10 text-[#0d47a1] dark:text-[#38bdf8]"
+                                  : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
                           }`}
                         >
                           {task.status === "in_progress"
@@ -642,14 +688,14 @@ export default function DashboardPage() {
                                 : "Pending"}
                         </span>
                       </div>
-                      <div className="mt-3 flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2">
                         <span
-                          className={`rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide ${
+                          className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
                             task.priority === "high"
-                              ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200"
+                              ? "bg-[#dc2626]/10 text-[#dc2626] dark:text-[#f87171]"
                               : task.priority === "medium"
-                                ? "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
-                                : "bg-gray-100 text-gray-700 dark:bg-gray-950/60 dark:text-gray-200"
+                                ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                : "bg-muted text-muted-foreground"
                           }`}
                         >
                           {task.priority}
@@ -659,7 +705,7 @@ export default function DashboardPage() {
                             <span
                               className={`text-xs font-medium ${
                                 isOverdue
-                                  ? "text-red-600 dark:text-red-400"
+                                  ? "text-[#dc2626] dark:text-[#f87171]"
                                   : isDueSoon
                                     ? "text-amber-600 dark:text-amber-400"
                                     : "text-muted-foreground"
@@ -672,38 +718,22 @@ export default function DashboardPage() {
                             </span>
                           )}
                           <Button
-                            size="sm"
+                            size="icon-xs"
                             variant="ghost"
-                            onClick={() => router.push(`/tasks/${task.id}`)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/tasks/${task.id}`);
+                            }}
                             aria-label="View task"
                             title="View task"
-                            className="p-1 group hover:bg-primary/10 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                           >
-                            <Eye
-                              className="h-4 w-4 text-muted-foreground transition-transform duration-150 ease-in-out group-hover:scale-110 group-hover:text-primary"
-                              aria-hidden="true"
-                            />
+                            <Eye className="size-3.5" aria-hidden="true" />
                           </Button>
                         </div>
                       </div>
                     </div>
                   );
                 })}
-                {activeTaskCount > 5 && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() =>
-                      router.push(
-                        taskView === "assigned_by"
-                          ? "/tasks?view=created"
-                          : "/tasks?view=assigned",
-                      )
-                    }
-                  >
-                    View all {activeTaskCount} tasks
-                  </Button>
-                )}
               </div>
             )}
           </CardContent>
@@ -711,8 +741,8 @@ export default function DashboardPage() {
 
         {/* Workload / Delegation Status Card */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
+          <CardHeader className="border-b border-border/70 pb-4">
+            <CardTitle className="text-base">
               {taskView === "assigned_by"
                 ? "Delegation & oversight"
                 : isAdmin
@@ -730,58 +760,64 @@ export default function DashboardPage() {
           <CardContent className="space-y-4">
             {taskView === "assigned_by" ? (
               <>
-                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-xl border border-border bg-muted/35 p-4">
                   <p className="text-sm font-semibold text-foreground">
                     Delegation breakdown
                   </p>
-                  <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
-                    <li>
-                      • {pluralize(assignedByMePending, "task")} pending start
-                      by assignees
+                  <ul className="mt-2.5 space-y-2 text-sm text-muted-foreground">
+                    <li className="flex items-center justify-between">
+                      <span>Pending start</span>
+                      <span className="font-semibold tabular-nums text-foreground">{assignedByMePending}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedByMeInProgress, "task")} in progress
-                      by team members
+                    <li className="flex items-center justify-between">
+                      <span>In progress</span>
+                      <span className="font-semibold tabular-nums text-[#0d47a1] dark:text-[#38bdf8]">{assignedByMeInProgress}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedByMeUnderReview, "task")} submitted
-                      for your review
+                    <li className="flex items-center justify-between">
+                      <span>Awaiting your review</span>
+                      <span className="font-semibold tabular-nums text-foreground">{assignedByMeUnderReview}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedByMeHighPriority, "high-priority task")}
+                    <li className="flex items-center justify-between">
+                      <span>High priority</span>
+                      <span className="font-semibold tabular-nums text-[#dc2626]">{assignedByMeHighPriority}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedByMeCompleted, "task")} completed
+                    <li className="flex items-center justify-between">
+                      <span>Completed</span>
+                      <span className="font-semibold tabular-nums text-[#16a34a]">{assignedByMeCompleted}</span>
                     </li>
                   </ul>
                 </div>
                 {assignedByMeUnderReview > 0 && (
-                  <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-4 dark:border-purple-900 dark:bg-purple-950/25">
-                    <p className="text-sm font-semibold text-purple-800 dark:text-purple-100">
-                      👀 {pluralize(assignedByMeUnderReview, "task")} waiting
-                      for review
-                    </p>
-                    <p className="mt-1 text-sm text-purple-700 dark:text-purple-200">
-                      Team members have submitted work for your final approval.
-                    </p>
+                  <div className="flex items-start gap-3 rounded-xl border border-[#0d47a1]/30 bg-[#0d47a1]/8 p-3.5">
+                    <Eye className="mt-0.5 size-4 shrink-0 text-[#0d47a1]" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {pluralize(assignedByMeUnderReview, "task")} waiting for review
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Team members have submitted work for your approval.
+                      </p>
+                    </div>
                   </div>
                 )}
                 {assignedByMeOverdueOrDueSoon > 0 && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/25">
-                    <p className="text-sm font-semibold text-amber-800 dark:text-amber-100">
-                      ⚠️ {pluralize(assignedByMeOverdueOrDueSoon, "task")} due
-                      soon or overdue
-                    </p>
-                    <p className="mt-1 text-sm text-amber-700 dark:text-amber-200">
-                      Follow up with assignees to ensure timelines stay on track.
-                    </p>
+                  <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/8 p-3.5">
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-[#dc2626]" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#dc2626] dark:text-[#f87171]">
+                        {pluralize(assignedByMeOverdueOrDueSoon, "task")} due soon or overdue
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Follow up with assignees to keep timelines on track.
+                      </p>
+                    </div>
                   </div>
                 )}
-                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-xl border border-border bg-muted/35 p-4">
                   <p className="text-sm font-semibold text-foreground">
-                    Management Tips
+                    Management tips
                   </p>
-                  <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                  <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
                     <li>• Review submitted tasks promptly to unblock assignees.</li>
                     <li>• Check in on tasks with approaching deadlines.</li>
                     <li>• Provide constructive feedback in task comments.</li>
@@ -790,18 +826,18 @@ export default function DashboardPage() {
               </>
             ) : isAdmin ? (
               <>
-                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-xl border border-border bg-muted/35 p-4">
                   <p className="text-sm font-semibold text-foreground">
                     System snapshot
                   </p>
-                  <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                  <ul className="mt-2.5 space-y-2 text-sm text-muted-foreground">
                     <li>
                       • {pluralize(totalTasks, "task")} in the system (
                       {totalPendingTasks} pending, {totalInProgressTasks} in
                       progress, {totalCompletedTasks} completed)
                     </li>
                     {totalOverdueTasks > 0 && (
-                      <li className="text-amber-600 dark:text-amber-400">
+                      <li className="text-[#dc2626]">
                         • {pluralize(totalOverdueTasks, "overdue task")} across
                         teams
                       </li>
@@ -816,11 +852,11 @@ export default function DashboardPage() {
                     </li>
                   </ul>
                 </div>
-                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-xl border border-border bg-muted/35 p-4">
                   <p className="text-sm font-semibold text-foreground">
                     Action items
                   </p>
-                  <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                  <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
                     <li>• Monitor overdue and high-priority tasks.</li>
                     <li>
                       • Manage application access and maintenance windows.
@@ -831,41 +867,47 @@ export default function DashboardPage() {
               </>
             ) : (
               <>
-                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-xl border border-border bg-muted/35 p-4">
                   <p className="text-sm font-semibold text-foreground">
                     Priority summary
                   </p>
-                  <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
-                    <li>
-                      • You have {pluralize(assignedToMePending, "pending task")}
+                  <ul className="mt-2.5 space-y-2 text-sm text-muted-foreground">
+                    <li className="flex items-center justify-between">
+                      <span>Pending tasks</span>
+                      <span className="font-semibold tabular-nums text-foreground">{assignedToMePending}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedToMeInProgress, "task")} in progress
+                    <li className="flex items-center justify-between">
+                      <span>In progress</span>
+                      <span className="font-semibold tabular-nums text-[#0d47a1] dark:text-[#38bdf8]">{assignedToMeInProgress}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedToMeHighPriority, "high-priority task")}
+                    <li className="flex items-center justify-between">
+                      <span>High priority</span>
+                      <span className="font-semibold tabular-nums text-[#dc2626]">{assignedToMeHighPriority}</span>
                     </li>
-                    <li>
-                      • {pluralize(assignedToMeCompleted, "task")} completed
+                    <li className="flex items-center justify-between">
+                      <span>Completed</span>
+                      <span className="font-semibold tabular-nums text-[#16a34a]">{assignedToMeCompleted}</span>
                     </li>
                   </ul>
                 </div>
                 {assignedToMeOverdueOrDueSoon > 0 && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/25">
-                    <p className="text-sm font-semibold text-amber-800 dark:text-amber-100">
-                      ⚠️ {pluralize(assignedToMeOverdueOrDueSoon, "task")} due
-                      soon or overdue
-                    </p>
-                    <p className="mt-1 text-sm text-amber-700 dark:text-amber-200">
-                      Review and update these before the deadline.
-                    </p>
+                  <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/8 p-3.5">
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-[#dc2626]" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#dc2626] dark:text-[#f87171]">
+                        {pluralize(assignedToMeOverdueOrDueSoon, "task")} due soon or overdue
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Review and update these before the deadline.
+                      </p>
+                    </div>
                   </div>
                 )}
-                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-xl border border-border bg-muted/35 p-4">
                   <p className="text-sm font-semibold text-foreground">
                     Next steps
                   </p>
-                  <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                  <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
                     <li>• Start pending tasks with the highest priority.</li>
                     <li>• Keep deadlines on track and communicate updates.</li>
                     <li>• Check completed tasks for final reviews.</li>
@@ -880,19 +922,19 @@ export default function DashboardPage() {
       {/* Applications Section */}
       <section className="grid gap-6 lg:grid-cols-2">
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle>Recent applications</CardTitle>
             <CardDescription>
               View your most recently accessed applications.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {recentApps && recentApps.length > 0 ? (
                 recentApps.map((application) => (
                   <div
                     key={application.id}
-                    className="rounded-xl border border-border bg-background p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 flex flex-col justify-between"
+                    className="group flex flex-col justify-between rounded-xl border border-border bg-background/60 p-4 transition-all duration-150 hover:border-[#0d47a1]/40 hover:shadow-sm"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3">
@@ -900,7 +942,7 @@ export default function DashboardPage() {
                           <Image
                             src={application.logo_url ?? "/vercel.svg"}
                             alt={`${application.name} logo`}
-                            className="h-10 w-10 rounded-md object-cover bg-muted"
+                            className="h-10 w-10 rounded-lg object-cover bg-muted ring-1 ring-border"
                             width={40}
                             height={40}
                             unoptimized
@@ -915,12 +957,12 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
                             application.can_access === false
-                              ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200"
+                              ? "border-[#dc2626]/25 bg-[#dc2626]/10 text-[#dc2626]"
                               : application.status === "MAINTENANCE"
-                                ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
-                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+                                ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                : "border-[#16a34a]/25 bg-[#16a34a]/10 text-[#16a34a] dark:text-[#4ade80]"
                           }`}
                         >
                           {application.can_access === false
@@ -937,6 +979,7 @@ export default function DashboardPage() {
                     <div className="mt-4 flex items-center gap-2">
                       <Button
                         size="sm"
+                        className="w-full"
                         onClick={async () => {
                           try {
                             const resp = await apiClient.post(
@@ -954,20 +997,20 @@ export default function DashboardPage() {
                           }
                         }}
                       >
-                        Open
+                        Open Application
                       </Button>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/60 sm:col-span-2 lg:col-span-4">
+                <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground sm:col-span-2 lg:col-span-4">
                   <p>
                     You have not opened any applications yet.{" "}
                     <Button
-                      variant="ghost"
+                      variant="link"
                       size="sm"
                       onClick={() => router.push("/applications")}
-                      className="underline"
+                      className="px-1"
                     >
                       Go to Applications
                     </Button>{" "}

@@ -1,10 +1,11 @@
 "use client";
-import { extractApiErrorMessage } from "@/lib/api-errors";
 
+import { extractApiErrorMessage } from "@/lib/api-errors";
 import axios from "axios";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Loader2, AlertCircle, Clock } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,13 +25,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  buildLoginPath,
-  clearStoredTokens,
-} from "@/lib/auth";
+import { buildLoginPath, clearStoredTokens } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
-import Image from "next/image";
-import Link from "next/link";
+import { AuthShell } from "@/components/auth/AuthShell";
 
 type LoginPageClientProps = {
   returnToPath: string | null;
@@ -176,8 +173,9 @@ export default function LoginPageClient({
 
   if (isCheckingAuth) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background [background-image:radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_52%)] px-6 dark:[background-image:radial-gradient(circle_at_top,rgba(96,165,250,0.12),transparent_56%)]">
-        <div className="rounded-full border border-border bg-card px-5 py-2 text-sm font-medium text-foreground shadow-sm">
+      <main className="flex min-h-screen items-center justify-center bg-background px-6">
+        <div className="inline-flex items-center gap-3 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground shadow-sm">
+          <span className="size-2 rounded-full bg-[#0d47a1] animate-pulse" />
           Checking session...
         </div>
       </main>
@@ -185,7 +183,10 @@ export default function LoginPageClient({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background [background-image:radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_52%)] px-6 py-10 dark:[background-image:radial-gradient(circle_at_top,rgba(96,165,250,0.12),transparent_56%)]">
+    <AuthShell
+      headline="Welcome back to your workspace."
+      description="Sign in with your company email to access your department tools, approvals, workflows, and analytics."
+    >
       <Dialog
         open={showInactivityAlert}
         onOpenChange={(open) => {
@@ -194,147 +195,156 @@ export default function LoginPageClient({
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader icon={<Clock className="size-4.5" />}>
             <DialogTitle>Signed out due to inactivity</DialogTitle>
             <DialogDescription>
               For your security, your session timed out while you were away.
               Please sign in again to continue.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button type="button" onClick={dismissInactivityAlert}>
+          <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end">
+            <Button
+              type="button"
+              onClick={dismissInactivityAlert}
+              className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+            >
               Okay
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="flex flex-col justify-center space-y-6 text-foreground">
-          <div className="flex items-center gap-2">
-            <Image src="/logo2.png" alt="Incel Group" width={50} height={50} />
-            <div className="inline-flex w-fit items-center rounded-full font-medium text-primary shadow-sm backdrop-blur">
-              Incel Workspace
-            </div>
-          </div>
-          <div className="space-y-4">
-            <h1 className="max-w-xl text-5xl font-semibold tracking-tight text-foreground sm:text-6xl">
-              Welcome back to the Portal.
-            </h1>
-            <p className="max-w-xl text-lg leading-8 text-muted-foreground">
-              Sign in to access your department tools, view internal
-              applications, and manage your work from one central place.
-            </p>
-          </div>
-          <div className="max-w-xl text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
-            <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
-              Secure access
-            </div>
-            <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
-              Department aware
-            </div>
-            <div className="inline-flex w-fit items-center rounded-full border border-border bg-card/85 px-4 py-2 text-sm font-medium text-primary shadow-sm backdrop-blur">
-              Audit logged
-            </div>
-          </div>
-        </section>
+      <Card className="border-border bg-card shadow-xl rounded-2xl overflow-hidden">
+        <CardHeader className="space-y-1.5 pb-6">
+          <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
+            Sign in
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Enter your company credentials to access your account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+            {errorMessage ? (
+              <div
+                role="alert"
+                className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-[#dc2626] font-medium leading-relaxed animate-in fade-in-50 duration-200"
+              >
+                <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                <div className="flex-1">{errorMessage}</div>
+              </div>
+            ) : null}
 
-        <Card className="border-border bg-card backdrop-blur">
-          <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>
-              Use your company email and password to continue.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-5" onSubmit={handleSubmit} noValidate>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-xs font-semibold text-foreground">
+                Company Email Address
+              </Label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted-foreground">
+                  <Mail className="size-4" aria-hidden="true" />
+                </div>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="name@company.com"
+                  placeholder="name@incelgroup.com"
                   value={email}
                   onChange={(event) => handleEmailChange(event.target.value)}
                   autoComplete="email"
+                  autoFocus
+                  disabled={isSubmitting}
+                  className="h-11 pl-10 pr-4 text-sm rounded-xl"
                   aria-invalid={Boolean(fieldErrors.email)}
                   aria-describedby={
                     fieldErrors.email ? "email-error" : undefined
                   }
                 />
-                {fieldErrors.email ? (
-                  <p id="email-error" className="text-sm text-destructive">
-                    {fieldErrors.email}
-                  </p>
-                ) : null}
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  <Link
-                    href="/forgot-password"
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(event) =>
-                      handlePasswordChange(event.target.value)
-                    }
-                    autoComplete="current-password"
-                    className="pr-12"
-                    aria-invalid={Boolean(fieldErrors.password)}
-                    aria-describedby={
-                      fieldErrors.password ? "password-error" : undefined
-                    }
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((value) => !value)}
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    title={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="size-4" aria-hidden="true" />
-                    ) : (
-                      <Eye className="size-4" aria-hidden="true" />
-                    )}
-                  </button>
-                </div>
-                {fieldErrors.password ? (
-                  <p id="password-error" className="text-sm text-destructive">
-                    {fieldErrors.password}
-                  </p>
-                ) : null}
-              </div>
-
-              {errorMessage ? (
-                <div
-                  role="alert"
-                  className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-                >
-                  {errorMessage}
-                </div>
+              {fieldErrors.email ? (
+                <p id="email-error" className="text-xs text-[#dc2626] font-medium">
+                  {fieldErrors.email}
+                </p>
               ) : null}
+            </div>
 
-              <Button className="w-full" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Signing in..." : "Sign in"}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-xs font-semibold text-foreground">
+                  Password
+                </Label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-semibold text-[#0d47a1] hover:text-[#0a3880] dark:text-[#38bdf8] hover:underline transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted-foreground">
+                  <Lock className="size-4" aria-hidden="true" />
+                </div>
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) =>
+                    handlePasswordChange(event.target.value)
+                  }
+                  autoComplete="current-password"
+                  disabled={isSubmitting}
+                  className="h-11 pl-10 pr-11 text-sm rounded-xl"
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby={
+                    fieldErrors.password ? "password-error" : undefined
+                  }
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                  title={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              {fieldErrors.password ? (
+                <p id="password-error" className="text-xs text-[#dc2626] font-medium">
+                  {fieldErrors.password}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="pt-2">
+              <Button
+                className="w-full h-11 rounded-xl font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white transition-all shadow-sm flex items-center justify-center gap-2 group cursor-pointer"
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    <span>Signing in...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign in to Workspace</span>
+                    <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                  </>
+                )}
               </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </AuthShell>
   );
 }

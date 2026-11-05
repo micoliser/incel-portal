@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Crown } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -72,7 +73,7 @@ export function AssignLeaderModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+        <DialogHeader icon={<Crown className="size-4.5" />}>
           <DialogTitle>Assign {leaderLabel}</DialogTitle>
           <DialogDescription>
             Select a user to lead <strong>{entityName}</strong>.
@@ -92,13 +93,13 @@ export function AssignLeaderModal({
           </div>
         </div>
         
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submitAction} disabled={isSubmitting}>
+        <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submitAction} disabled={isSubmitting} className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm">
             {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
             Save changes
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

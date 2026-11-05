@@ -99,13 +99,13 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-8 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <Card className="overflow-hidden border-border/60 bg-white/90 shadow-sm dark:bg-slate-950/60">
-          <CardHeader className="space-y-4 border-b border-border/60">
+    <div className="space-y-8">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <Card className="overflow-hidden border-border bg-card shadow-sm">
+          <CardHeader className="space-y-4 border-b border-border">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-2xl">
+                <CardTitle className="text-2xl font-bold tracking-tight">
                   {format(monthDate, "MMMM yyyy")}
                 </CardTitle>
                 <CardDescription>
@@ -151,7 +151,7 @@ export default function ReportsPage() {
           <CardContent className="p-4 sm:p-6">
             <div className="overflow-x-auto pb-4">
               <div className="min-w-[700px]">
-                <div className="grid grid-cols-7 gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="grid grid-cols-7 gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
                 (label) => (
                   <div key={label} className="px-3 py-2">
@@ -177,35 +177,35 @@ export default function ReportsPage() {
                     type="button"
                     onClick={() => goToDay(date)}
                     className={[
-                      "group relative min-h-28 rounded-2xl border p-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50",
+                      "group relative min-h-28 rounded-xl border p-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50",
                       inMonth
                         ? "hover:-translate-y-0.5 hover:shadow-md"
                         : "opacity-55 saturate-75",
                       inMonth
                         ? hasReports
-                          ? "border-primary/30 bg-muted/30 text-slate-900 dark:border-primary/40 dark:bg-slate-900/50 dark:text-white"
-                          : "border-border/70 bg-white/90 text-slate-900 dark:border-slate-800 dark:bg-slate-950/60 dark:text-white"
-                        : "border-dashed border-border/50 bg-muted/10 text-slate-400 dark:border-slate-800/70 dark:bg-slate-900/20 dark:text-slate-500",
-                      today ? "ring-2 ring-primary/30" : "",
+                          ? "border-[#0d47a1]/35 bg-[#0d47a1]/5 text-foreground"
+                          : "border-border bg-card text-foreground hover:border-[#0d47a1]/30"
+                        : "border-dashed border-border/50 bg-muted/20 text-muted-foreground",
+                      today ? "ring-2 ring-[#0d47a1]/40" : "",
                     ].join(" ")}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span
                         className={[
-                          "inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold",
+                          "inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold tabular-nums",
                           today
-                            ? "bg-primary text-primary-foreground"
+                            ? "bg-[#0d47a1] text-white"
                             : inMonth && hasReports
-                              ? "bg-primary text-primary-foreground"
+                              ? "bg-[#0d47a1] text-white"
                               : inMonth
-                                ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                                : "bg-slate-100/60 text-slate-500 dark:bg-slate-800/60 dark:text-slate-400",
+                                ? "bg-muted text-foreground"
+                                : "bg-muted/60 text-muted-foreground",
                         ].join(" ")}
                       >
                         {format(date, "d")}
                       </span>
                       {report?.has_your_report && (
-                        <span className="rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-primary shadow-sm dark:bg-slate-900/80">
+                        <span className="rounded-md border border-[#16a34a]/25 bg-[#16a34a]/10 px-2 py-0.5 text-[11px] font-semibold text-[#16a34a] dark:text-[#4ade80]">
                           {subreportCount} report
                           {subreportCount === 1 ? "" : "s"}
                         </span>

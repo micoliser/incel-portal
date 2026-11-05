@@ -2,7 +2,18 @@
 
 import axios from "axios";
 import Image from "next/image";
-import { AppWindow, ExternalLink, Loader2, Plus } from "lucide-react";
+import {
+  AppWindow,
+  CheckCircle2,
+  ExternalLink,
+  Layers,
+  Loader2,
+  Lock,
+  Plus,
+  Search,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -30,6 +41,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -41,6 +53,7 @@ import { InfiniteScrollLoader } from "@/components/infinite-scroll-loader";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { processAndValidateFile } from "@/lib/file-utils";
+import { cn } from "@/lib/utils";
 
 type ApplicationRecord = {
   id: string;
@@ -1172,93 +1185,187 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="w-full">
-      <div className="mx-auto mb-4 w-full max-w-2xl">
-        <Input
-          id="applications-search"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Search by name..."
-          className="h-11 rounded-full px-5 text-base"
-        />
-      </div>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 pb-12">
+      {/* Top Header Card */}
+      <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-card p-6 shadow-xs sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                <AppWindow className="size-5" />
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                Enterprise Applications
+              </h1>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Discover and access company systems, department software, and internal portals.
+            </p>
+          </div>
 
-      <div className="mb-2 flex items-center justify-center">
-        <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-          {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} active
-        </span>
-      </div>
-
-      <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-        {hasGlobalAccess ? (
-          <>
+          {isAdmin ? (
             <Button
               type="button"
-              variant={
-                selectedDepartmentFilterIds.length === 0 ? "default" : "outline"
-              }
-              className="rounded-full"
-              onClick={() => setSelectedDepartmentFilterIds([])}
+              onClick={() => {
+                setIsCreateOpen(true);
+                setCreateStep(1);
+                setFormErrors({});
+                setCreateApiError("");
+              }}
+              className="h-10 gap-2 rounded-xl bg-[#0d47a1] px-4 font-semibold text-white shadow-sm hover:bg-[#0a3880]"
             >
-              All Departments
+              <Plus className="size-4" aria-hidden="true" />
+              Create New Application
             </Button>
-            {departments.map((department) => {
-              const isActive = selectedDepartmentFilterIds.includes(
-                department.id,
-              );
-              return (
-                <Button
-                  key={department.id}
-                  type="button"
-                  variant={isActive ? "default" : "outline"}
-                  className="rounded-full"
-                  onClick={() => toggleDepartmentFilter(department.id)}
-                >
-                  {department.name}
-                </Button>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            <Button
-              type="button"
-              variant={userVisibilityFilter === "all" ? "default" : "outline"}
-              className="rounded-full"
-              onClick={() => setUserVisibilityFilter("all")}
-            >
-              All Applications
-            </Button>
-            <Button
-              type="button"
-              variant={
-                userVisibilityFilter === "accessible" ? "default" : "outline"
-              }
-              className="rounded-full"
-              onClick={() => setUserVisibilityFilter("accessible")}
-            >
-              My Accessible
-            </Button>
-          </>
-        )}
-      </div>
-
-      {isAdmin ? (
-        <div className="mb-6 flex justify-end">
-          <Button
-            type="button"
-            onClick={() => {
-              setIsCreateOpen(true);
-              setCreateStep(1);
-              setFormErrors({});
-              setCreateApiError("");
-            }}
-          >
-            <Plus className="mr-2 size-4" aria-hidden="true" />
-            Create New Application
-          </Button>
+          ) : null}
         </div>
-      ) : null}
+
+        {/* Overview Stats Strip */}
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3 border-t border-border/60 pt-5">
+          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+              <Layers className="size-4.5" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Total Applications</p>
+              <p className="text-lg font-bold tabular-nums text-foreground">
+                {applications.length}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <ShieldCheck className="size-4.5" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Active Systems</p>
+              <p className="text-lg font-bold tabular-nums text-foreground">
+                {applications.filter((a) => a.status === "ACTIVE").length}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <CheckCircle2 className="size-4.5" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Accessible to You</p>
+              <p className="text-lg font-bold tabular-nums text-foreground">
+                {applications.filter((a) => a.can_access !== false).length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Search and Filters Toolbar */}
+      <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-md">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="applications-search"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search applications by name..."
+            className="h-10 rounded-xl pl-9 pr-9 text-sm border-border/80 bg-card"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput("")}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {hasGlobalAccess ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  selectedDepartmentFilterIds.length === 0 ? "default" : "outline"
+                }
+                className={cn(
+                  "h-8 rounded-lg text-xs font-medium transition-colors",
+                  selectedDepartmentFilterIds.length === 0
+                    ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                    : "border-border/80 text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setSelectedDepartmentFilterIds([])}
+              >
+                All Departments
+              </Button>
+              {departments.map((department) => {
+                const isActive = selectedDepartmentFilterIds.includes(
+                  department.id,
+                );
+                return (
+                  <Button
+                    key={department.id}
+                    type="button"
+                    size="sm"
+                    variant={isActive ? "default" : "outline"}
+                    className={cn(
+                      "h-8 rounded-lg text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                        : "border-border/80 text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => toggleDepartmentFilter(department.id)}
+                  >
+                    {department.name}
+                  </Button>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant={userVisibilityFilter === "all" ? "default" : "outline"}
+                className={cn(
+                  "h-8 rounded-lg text-xs font-medium transition-colors",
+                  userVisibilityFilter === "all"
+                    ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                    : "border-border/80 text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setUserVisibilityFilter("all")}
+              >
+                All Applications
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  userVisibilityFilter === "accessible" ? "default" : "outline"
+                }
+                className={cn(
+                  "h-8 rounded-lg text-xs font-medium transition-colors",
+                  userVisibilityFilter === "accessible"
+                    ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                    : "border-border/80 text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setUserVisibilityFilter("accessible")}
+              >
+                My Accessible
+              </Button>
+            </>
+          )}
+
+          {activeFilterCount > 0 && (
+            <span className="rounded-full border border-border/80 bg-muted/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
+              {activeFilterCount} active
+            </span>
+          )}
+        </div>
+      </div>
 
       {isCreateOpen ? (
         <Dialog open={isCreateOpen} onOpenChange={(open) => {
@@ -1270,10 +1377,10 @@ export default function ApplicationsPage() {
             setCreateStep(1);
           }
         }}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader icon={<AppWindow className="size-4.5" />}>
               <DialogTitle>Create Application</DialogTitle>
-              <DialogDescription>Create a new application</DialogDescription>
+              <DialogDescription>Add a new enterprise application and configure access controls.</DialogDescription>
             </DialogHeader>
 
             <form
@@ -1290,25 +1397,31 @@ export default function ApplicationsPage() {
                 </div>
               ) : null}
 
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              <div className="flex items-center gap-2 rounded-lg border border-border p-1 mb-2">
+                <button
+                  type="button"
+                  disabled
+                  className={cn(
+                    "flex-1 rounded-md font-semibold text-xs py-1.5 transition-colors text-center",
                     createStep === 1
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                  }`}
+                      ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                      : "text-muted-foreground"
+                  )}
                 >
-                  Step 1: Application Details
-                </span>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  1. Application Details
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className={cn(
+                    "flex-1 rounded-md font-semibold text-xs py-1.5 transition-colors text-center",
                     createStep === 2
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                  }`}
+                      ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                      : "text-muted-foreground"
+                  )}
                 >
-                  Step 2: Access Control
-                </span>
+                  2. Access Control
+                </button>
               </div>
 
               {createStep === 1 ? (
@@ -1364,7 +1477,7 @@ export default function ApplicationsPage() {
                   <div className="space-y-2">
                     <Label htmlFor="logoFile">Logo</Label>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-lg border border-border bg-background p-3 dark:border-slate-700 dark:bg-slate-900">
+                      <div className="rounded-lg border border-border bg-background p-3 dark:border-border dark:bg-card">
                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Selected Preview
                         </p>
@@ -1372,19 +1485,19 @@ export default function ApplicationsPage() {
                           <Image
                             src={createLogoPreviewUrl}
                             alt="Selected logo preview"
-                            className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-slate-700"
+                            className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-border"
                             width={240}
                             height={96}
                             unoptimized
                           />
                         ) : (
-                          <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-slate-700">
+                          <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-border">
                             Upload a logo to preview it here
                           </div>
                         )}
                       </div>
 
-                      <div className="rounded-lg border border-border bg-background p-3 dark:border-slate-700 dark:bg-slate-900">
+                      <div className="rounded-lg border border-border bg-background p-3 dark:border-border dark:bg-card">
                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           File Info
                         </p>
@@ -1402,7 +1515,7 @@ export default function ApplicationsPage() {
                       className={`rounded-xl border border-dashed px-4 py-5 transition-colors ${
                         isLogoDragging
                           ? "border-primary bg-primary/5"
-                          : "border-border bg-background dark:border-slate-700 dark:bg-slate-900"
+                          : "border-border bg-background dark:border-border dark:bg-card"
                       }`}
                       onDragEnter={(event) => {
                         event.preventDefault();
@@ -1430,7 +1543,7 @@ export default function ApplicationsPage() {
                       <button
                         type="button"
                         onClick={openFilePicker}
-                        className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-foreground shadow-sm transition-colors hover:bg-muted/60 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:bg-slate-800/70"
+                        className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-foreground shadow-sm transition-colors hover:bg-muted/60 dark:border-border dark:bg-card/60 dark:hover:bg-muted/70"
                       >
                         <AppWindow
                           className="size-6 text-muted-foreground"
@@ -1532,7 +1645,7 @@ export default function ApplicationsPage() {
                       Departments (Select all departments that should have
                       access to this application)
                     </Label>
-                    <div className="grid gap-2 rounded-md border border-border bg-background p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-3 dark:border-slate-700 dark:bg-slate-900">
+                    <div className="grid gap-2 rounded-md border border-border bg-background p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-3 dark:border-border dark:bg-card">
                       {departments.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
                           No departments available.
@@ -1545,7 +1658,7 @@ export default function ApplicationsPage() {
                           return (
                             <label
                               key={department.id}
-                              className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/70 dark:border-slate-700 dark:hover:bg-slate-800/80"
+                              className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/70 dark:border-border dark:hover:bg-muted/80"
                             >
                               <input
                                 type="checkbox"
@@ -1590,7 +1703,7 @@ export default function ApplicationsPage() {
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-center justify-end gap-3">
+              <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
                 <Button
                   type="button"
                   variant="outline"
@@ -1610,6 +1723,7 @@ export default function ApplicationsPage() {
                     type="button"
                     onClick={handleNextCreateStep}
                     disabled={isSubmitting}
+                    className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
                   >
                     Next
                   </Button>
@@ -1623,7 +1737,11 @@ export default function ApplicationsPage() {
                     >
                       Back
                     </Button>
-                    <Button type="submit" disabled={isSubmitting}>
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+                    >
                       {isSubmitting ? (
                         <>
                           <Loader2
@@ -1640,7 +1758,7 @@ export default function ApplicationsPage() {
                     </Button>
                   </>
                 )}
-              </div>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -1648,31 +1766,39 @@ export default function ApplicationsPage() {
 
       {isManageOpen && manageTarget && manageForm ? (
         <Dialog open={isManageOpen} onOpenChange={closeManageModal}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-gray-500">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader icon={<AppWindow className="size-4.5" />}>
               <DialogTitle>Manage {manageTarget.name}</DialogTitle>
               <DialogDescription>
-                Edit details and manage access controls.
+                Edit application details and manage user access permissions.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="mb-5 flex flex-wrap items-center gap-2">
-              <Button
+            <div className="flex items-center gap-2 rounded-lg border border-border p-1 mb-5">
+              <button
                 type="button"
-                variant={manageTab === "edit" ? "default" : "outline"}
                 onClick={() => setManageTab("edit")}
-                className="h-8 rounded-full px-3 text-xs"
+                className={cn(
+                  "flex-1 rounded-md font-semibold text-xs py-1.5 transition-colors text-center",
+                  manageTab === "edit"
+                    ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                Edit
-              </Button>
-              <Button
+                Application Details
+              </button>
+              <button
                 type="button"
-                variant={manageTab === "access" ? "default" : "outline"}
                 onClick={() => setManageTab("access")}
-                className="h-8 rounded-full px-3 text-xs"
+                className={cn(
+                  "flex-1 rounded-md font-semibold text-xs py-1.5 transition-colors text-center",
+                  manageTab === "access"
+                    ? "bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
                 Access Control
-              </Button>
+              </button>
             </div>
 
             {manageApiError ? (
@@ -1759,7 +1885,7 @@ export default function ApplicationsPage() {
                   <Label htmlFor="manage-logo-file">Change Logo</Label>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg border border-border bg-background p-3 dark:border-slate-700 dark:bg-slate-900">
+                    <div className="rounded-lg border border-border bg-background p-3 dark:border-border dark:bg-card">
                       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Current Logo
                       </p>
@@ -1767,19 +1893,19 @@ export default function ApplicationsPage() {
                         <Image
                           src={manageTarget.logo_url}
                           alt={`${manageTarget.name} current logo`}
-                          className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-slate-700"
+                          className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-border"
                           width={240}
                           height={96}
                           unoptimized
                         />
                       ) : (
-                        <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-slate-700">
+                        <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-border">
                           No current logo
                         </div>
                       )}
                     </div>
 
-                    <div className="rounded-lg border border-border bg-background p-3 dark:border-slate-700 dark:bg-slate-900">
+                    <div className="rounded-lg border border-border bg-background p-3 dark:border-border dark:bg-card">
                       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Replacement Logo
                       </p>
@@ -1787,13 +1913,13 @@ export default function ApplicationsPage() {
                         <Image
                           src={manageLogoPreviewUrl}
                           alt="Replacement logo preview"
-                          className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-slate-700"
+                          className="h-24 w-full rounded-md border border-border object-contain p-2 dark:border-border"
                           width={240}
                           height={96}
                           unoptimized
                         />
                       ) : (
-                        <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-slate-700">
+                        <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground dark:border-border">
                           Upload a new logo to preview
                         </div>
                       )}
@@ -1804,7 +1930,7 @@ export default function ApplicationsPage() {
                     className={`w-full rounded-xl border border-dashed px-4 py-5 transition-colors ${
                       isManageLogoDragging
                         ? "border-primary bg-primary/5"
-                        : "border-border bg-background dark:border-slate-700 dark:bg-slate-900"
+                        : "border-border bg-background dark:border-border dark:bg-card"
                     }`}
                     onDragEnter={(event) => {
                       event.preventDefault();
@@ -1831,7 +1957,7 @@ export default function ApplicationsPage() {
                     <button
                       type="button"
                       onClick={openManageFilePicker}
-                      className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-foreground shadow-sm transition-colors hover:bg-muted/60 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:bg-slate-800/70"
+                      className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-foreground shadow-sm transition-colors hover:bg-muted/60 dark:border-border dark:bg-card/60 dark:hover:bg-muted/70"
                     >
                       <AppWindow
                         className="size-6 text-muted-foreground"
@@ -1894,8 +2020,20 @@ export default function ApplicationsPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={isSavingManage}>
+                <DialogFooter className="pt-4 border-t border-border/60 sm:justify-end gap-2.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeManageModal}
+                    disabled={isSavingManage}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSavingManage}
+                    className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
+                  >
                     {isSavingManage ? (
                       <>
                         <Loader2
@@ -1908,7 +2046,7 @@ export default function ApplicationsPage() {
                       "Save Changes"
                     )}
                   </Button>
-                </div>
+                </DialogFooter>
               </form>
             ) : (
               <div className="grid gap-6">
@@ -1936,6 +2074,7 @@ export default function ApplicationsPage() {
                       type="button"
                       onClick={() => void saveManageChanges("access")}
                       disabled={isSavingManage}
+                      className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
                     >
                       {isSavingManage ? (
                         <>
@@ -1954,7 +2093,7 @@ export default function ApplicationsPage() {
 
                 <div className="space-y-2">
                   <Label>Department Access</Label>
-                  <div className="grid gap-2 rounded-md border border-border bg-background p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-3 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="grid gap-2 rounded-md border border-border bg-background p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-3 dark:border-border dark:bg-card">
                     {departments.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
                         No departments available.
@@ -1967,7 +2106,7 @@ export default function ApplicationsPage() {
                         return (
                           <label
                             key={department.id}
-                            className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/70 dark:border-slate-700 dark:hover:bg-slate-800/80"
+                            className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/70 dark:border-border dark:hover:bg-muted/80"
                           >
                             <input
                               type="checkbox"
@@ -1990,7 +2129,7 @@ export default function ApplicationsPage() {
                   ) : null}
                 </div>
 
-                <div className="rounded-md border border-border bg-background p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-md border border-border bg-background p-4 dark:border-border dark:bg-card">
                   <h3 className="text-sm font-semibold text-foreground">
                     Grant Access
                   </h3>
@@ -2012,7 +2151,7 @@ export default function ApplicationsPage() {
                         placeholder="Search for a user..."
                       />
                       {overrideSelectedUser && !canBeGranted && (
-                        <p className="text-xs text-red-500 mt-1">This user already has access or is inactive.</p>
+                        <p className="text-xs text-[#dc2626] mt-1">This user already has access or is inactive.</p>
                       )}
                     </div>
 
@@ -2060,7 +2199,7 @@ export default function ApplicationsPage() {
 
                 </div>
 
-                <div className="rounded-md border border-border bg-background p-4 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-md border border-border bg-background p-4 dark:border-border dark:bg-card">
                   <h3 className="text-sm font-semibold text-foreground">
                     Remove Access
                   </h3>
@@ -2082,7 +2221,7 @@ export default function ApplicationsPage() {
                         placeholder="Search for a user..."
                       />
                       {denySelectedUser && !canBeDenied && (
-                        <p className="text-xs text-red-500 mt-1">This user does not have removable access.</p>
+                        <p className="text-xs text-[#dc2626] mt-1">This user does not have removable access.</p>
                       )}
                     </div>
 
@@ -2131,19 +2270,33 @@ export default function ApplicationsPage() {
       {isLoading ? (
         <ApplicationsSkeleton />
       ) : applications.length === 0 ? (
-        <div className="flex min-h-[40vh] items-center justify-center px-6 text-center">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-foreground">
-              No Applications Found
-            </h2>
-            <p className="max-w-xl text-sm text-muted-foreground">
-              No applications are available right now. Check back later.
-            </p>
+        <Card className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border-dashed border-border/90 p-8 text-center shadow-xs">
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8] mb-4">
+            <AppWindow className="size-7" />
           </div>
-        </div>
+          <h2 className="text-lg font-semibold text-foreground">No Applications Found</h2>
+          <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
+            No enterprise applications match your current filters or access level.
+          </p>
+          {(searchInput || selectedDepartmentFilterIds.length > 0 || userVisibilityFilter !== "all") && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchInput("");
+                setSelectedDepartmentFilterIds([]);
+                setUserVisibilityFilter("all");
+              }}
+              className="mt-4 rounded-lg text-xs"
+            >
+              Clear Filters
+            </Button>
+          )}
+        </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {applications.map((application) => {
               const hasLogo = Boolean(application.logo_url);
               const canAccess = application.can_access !== false;
@@ -2155,22 +2308,22 @@ export default function ApplicationsPage() {
               return (
                 <Card
                   key={application.id}
-                  className={`group border-border bg-card p-5 shadow-sm transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-1 hover:shadow-md ${
+                  className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[#0d47a1]/40 hover:shadow-md hover:shadow-[#0d47a1]/5 ${
                     isDeniedAnimating
-                      ? "animate-[app-denied-shake_0.18s_ease-in-out_4] border-red-200 bg-red-50/70 dark:border-red-900 dark:bg-red-950/25"
+                      ? "animate-[app-denied-shake_0.18s_ease-in-out_4] border-[#dc2626]/40 bg-[#dc2626]/10"
                       : ""
                   }`}
                 >
                   <div className="flex h-full flex-col gap-4">
-                    <div className="flex items-start gap-4">
-                      <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent text-accent-foreground shadow-sm transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                    <div className="flex items-start gap-3.5">
+                      <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/80 bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8] shadow-xs transition-colors group-hover:bg-[#0d47a1] group-hover:text-white group-hover:border-[#0d47a1]">
                         {hasLogo ? (
                           <Image
                             src={application.logo_url ?? ""}
                             alt={application.name}
                             className="size-full object-contain p-2"
-                            width={56}
-                            height={56}
+                            width={48}
+                            height={48}
                             unoptimized
                           />
                         ) : (
@@ -2179,22 +2332,52 @@ export default function ApplicationsPage() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <h2 className="text-base font-semibold text-foreground">
-                          {application.name}
-                        </h2>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                          {application.description ||
-                            "No description available."}
+                        <div className="flex items-start justify-between gap-2">
+                          <h2 className="font-semibold text-base leading-snug text-foreground">
+                            {application.name}
+                          </h2>
+                          {application.status === "ACTIVE" ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 shrink-0">
+                              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Active
+                            </span>
+                          ) : application.status === "MAINTENANCE" ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 shrink-0">
+                              <span className="size-1.5 rounded-full bg-amber-500" />
+                              Maintenance
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
+                              Inactive
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {application.access_scope === "RESTRICTED" ? (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:text-purple-300">
+                              <Lock className="size-3" />
+                              Restricted
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              All Users
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                          {application.description || "No description available."}
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-auto flex items-center justify-between gap-3">
+                    <div className="mt-auto flex items-center justify-between gap-3 pt-3 border-t border-border/60">
                       {isAdmin ? (
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-8 cursor-pointer rounded-full border-sky-300 bg-sky-100 px-3 text-xs text-sky-800 hover:bg-sky-200 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200 dark:hover:bg-sky-900/70"
+                          className="h-8 cursor-pointer rounded-lg border-border/80 bg-muted/30 px-3 text-xs font-semibold text-foreground hover:bg-muted"
                           onClick={() => openManageModal(application)}
                         >
                           Manage
@@ -2209,10 +2392,10 @@ export default function ApplicationsPage() {
                           handleOpenApplication(event, application)
                         }
                         aria-disabled={isOpening}
-                        className={`inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 self-end rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-colors shadow-xs ${
                           canAccess
-                            ? "border-border bg-background text-foreground hover:bg-muted dark:border-slate-700 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-                            : "border-red-300 bg-red-100/90 text-red-700 hover:bg-red-200 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200 dark:hover:bg-red-900/70"
+                            ? "border-[#0d47a1] bg-[#0d47a1] text-white hover:bg-[#0a3880]"
+                            : "border-[#dc2626]/30 bg-[#dc2626]/10 text-[#dc2626] hover:bg-[#dc2626]/20"
                         } ${isOpening ? "pointer-events-none opacity-70" : ""}`}
                       >
                         Open
