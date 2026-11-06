@@ -386,29 +386,51 @@ def check_due_todo_reminders() -> dict[str, int]:
                             dispatched_offsets.append(o)
 
                 offset_labels = {
-                    'exact': 'at due time',
-                    '5m': '5m before',
-                    '10m': '10m before',
-                    '15m': '15m before',
-                    '30m': '30m before',
-                    '1h': '1h before',
-                    '2h': '2h before',
-                    '1d': '1d before',
+                    'exact': 'due time',
+                    '5m': '5-minute',
+                    '10m': '10-minute',
+                    '15m': '15-minute',
+                    '20m': '20-minute',
+                    '30m': '30-minute',
+                    '1h': '1-hour',
+                    '2h': '2-hour',
+                    '1d': '1-day',
                 }
-                timing_note = f" ({', '.join([offset_labels.get(o, o) for o in dispatched_offsets])})" if dispatched_offsets else ""
+
+                if dispatched_offsets:
+                    reminder_time_label = ', '.join([offset_labels.get(o, o) for o in dispatched_offsets])
+                elif item.due_datetime and item.reminder_at:
+                    diff_seconds = (item.due_datetime - item.reminder_at).total_seconds()
+                    if abs(diff_seconds) < 60:
+                        reminder_time_label = 'due time'
+                    elif diff_seconds > 0:
+                        mins = round(diff_seconds / 60)
+                        if mins < 60:
+                            reminder_time_label = f"{mins}-minute"
+                        elif mins % 60 == 0 and mins < 1440:
+                            reminder_time_label = f"{mins // 60}-hour"
+                        elif mins >= 1440 and mins % 1440 == 0:
+                            reminder_time_label = f"{mins // 1440}-day"
+                        else:
+                            reminder_time_label = f"{mins}-minute"
+                    else:
+                        reminder_time_label = 'scheduled'
+                else:
+                    reminder_time_label = 'scheduled'
 
                 create_notification(
                     recipient=item.user,
                     actor=None,
                     notification_type=Notification.TYPE_TODO_REMINDER,
                     title=f"To-Do Reminder: {item.title}",
-                    body=f"Reminder{timing_note} for your to-do '{item.title}'{time_str}.",
+                    body=f"This is a {reminder_time_label} reminder for your to-do '{item.title}'{time_str}.",
                     link_url="/todos",
                     payload={
                         'todo_id': str(item.id),
                         'title': item.title,
                         'priority': item.priority,
                         'offsets_dispatched': dispatched_offsets,
+                        'reminder_time_label': reminder_time_label,
                         'due_datetime': item.due_datetime.isoformat() if item.due_datetime else None,
                     },
                 )
@@ -416,24 +438,10 @@ def check_due_todo_reminders() -> dict[str, int]:
 
                 if item.send_email_reminder and item.user.email:
                     try:
-                        subject = f"[Reminder{timing_note}] {item.title}"
-                        message = (
-                            f"Hello {item.user.get_full_name() or item.user.username},\n\n"
-                            f"This is a reminder{timing_note} for your to-do item:\n\n"
-                            f"Title: {item.title}\n"
-                            f"Priority: {item.priority.capitalize()}\n"
-                            f"{f'Description: {item.description}' if item.description else ''}\n"
-                            f"{f'Due: {time_str}' if time_str else ''}\n\n"
-                            f"You can view and manage your to-dos here:\n"
-                            f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')}/todos\n\n"
-                            f"— Incel Portal"
-                        )
-                        send_mail(
-                            subject=subject,
-                            message=message,
-                            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@incelgroup.com'),
-                            recipient_list=[item.user.email],
-                            fail_silently=True,
+                        from emails.services.task_emails import TaskEmailManager
+                        TaskEmailManager.send_todo_reminder_email(
+                            todo=item,
+                            reminder_time_label=reminder_time_label,
                         )
                     except Exception as email_err:
                         logger.warning("Could not send email reminder for todo %s: %s", item.id, email_err)

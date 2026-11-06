@@ -179,6 +179,37 @@ class EmailServiceTestCase(TestCase):
         self.assertIn('Incel Portal', from_email)
         self.assertIn('noreply', from_email)
 
+    @override_settings(PORTAL_BASE_URL='https://workspace.incelgroup.com')
+    @patch('emails.services.base_email_service.BaseEmailService._send_sync')
+    def test_todo_reminder_email(self, mock_send):
+        """Test sending todo reminder email."""
+        from tasks.models import TodoItem
+        import datetime
+
+        mock_send.return_value = True
+
+        todo = TodoItem.objects.create(
+            user=self.user,
+            title='Review Q4 financials',
+            description='Check budget variances',
+            due_date=datetime.date(2026, 11, 20),
+            due_time=datetime.time(14, 30),
+            priority='high',
+            send_email_reminder=True,
+        )
+
+        sent = TaskEmailManager.send_todo_reminder_email(todo, reminder_time_label='15-minute')
+        self.assertTrue(sent)
+        mock_send.assert_called_once()
+
+        subject, recipients, template_name, context, reply_to = mock_send.call_args[0]
+        self.assertEqual(subject, '[15-minute Reminder] Review Q4 financials')
+        self.assertEqual(recipients, ['test@example.com'])
+        self.assertEqual(template_name, 'emails/tasks/todo_reminder.html')
+        self.assertEqual(context['reminder_time_label'], '15-minute')
+        self.assertEqual(context['priority_display'], 'High')
+        self.assertEqual(context['todo_url'], 'https://workspace.incelgroup.com/todos')
+
 
 class ManagerEmailNotificationTestCase(TestCase):
     """Test manager notifications for tasks, recurring tasks, and weekly summaries."""

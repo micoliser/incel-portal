@@ -313,7 +313,11 @@ SEND_EMAILS_CELERY = os.getenv('SEND_EMAILS_CELERY', 'True').lower() == 'true'
 EMAIL_SENDER_NAME = os.getenv('EMAIL_SENDER_NAME', 'Incel Portal')
 
 # Portal frontend URL
-PORTAL_BASE_URL = os.getenv('PORTAL_BASE_URL', 'http://localhost:3000').rstrip('/')
+PORTAL_BASE_URL = os.getenv(
+    'PORTAL_BASE_URL',
+    'http://localhost:3000' if DEBUG else 'https://workspace.incelgroup.com'
+).rstrip('/')
+FRONTEND_URL = PORTAL_BASE_URL
 
 # Password reset token timeout (in seconds, e.g. 1 hour = 3600)
 PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))

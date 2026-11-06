@@ -216,6 +216,18 @@ class RecurringTaskEndedEmailService(BaseEmailService):
         return f"Recurring task ended: {task_name}"
 
 
+class TodoReminderEmailService(BaseEmailService):
+    """Send styled email reminder for a to-do item."""
+
+    email_type = EmailType.TODO_REMINDER
+    template_name = "emails/tasks/todo_reminder.html"
+
+    def _get_subject(self, context: Dict[str, Any]) -> str:
+        reminder_time_label = context.get('reminder_time_label', 'Reminder')
+        title = context.get('title', 'To-Do')
+        return f"[{reminder_time_label.capitalize()} Reminder] {title}"
+
+
 class TaskEmailManager:
     """Manager for task-related emails."""
 
@@ -649,3 +661,41 @@ class TaskEmailManager:
         service = RecurringTaskEndedEmailService()
         TaskEmailManager._send_to_recipient(service, assigned_to.email, context, str(schedule.id), 'assignee')
         TaskEmailManager._notify_managers(service, context, assigned_to, assigned_by, str(schedule.id), 'recurring_ended')
+
+    @staticmethod
+    def send_todo_reminder_email(todo: Any, reminder_time_label: str = 'scheduled') -> bool:
+        """
+        Send a styled to-do reminder email to the todo item's owner.
+        """
+        user = getattr(todo, 'user', None)
+        if not user or not getattr(user, 'email', None):
+            logger.warning("Todo %s has no user or user email; skipping reminder email", getattr(todo, 'id', ''))
+            return False
+
+        from django.conf import settings
+        portal_base_url = settings.PORTAL_BASE_URL.rstrip('/')
+
+        due_display = ""
+        due_date = getattr(todo, 'due_date', None)
+        due_time = getattr(todo, 'due_time', None)
+        if due_date and due_time:
+            due_display = f"{due_date.strftime('%b %d, %Y')} at {due_time.strftime('%I:%M %p')}"
+        elif due_date:
+            due_display = due_date.strftime('%b %d, %Y')
+        elif due_time:
+            due_display = due_time.strftime('%I:%M %p')
+
+        context = {
+            'todo_id': str(getattr(todo, 'id', '')),
+            'title': getattr(todo, 'title', ''),
+            'description': getattr(todo, 'description', '') or '',
+            'priority': getattr(todo, 'priority', 'medium'),
+            'priority_display': getattr(todo, 'priority', 'medium').capitalize(),
+            'due_display': due_display,
+            'recipient_name': user.get_full_name() or user.username,
+            'reminder_time_label': reminder_time_label,
+            'todo_url': f"{portal_base_url}/todos",
+        }
+
+        service = TodoReminderEmailService()
+        return service.send([user.email], context)

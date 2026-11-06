@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #1e293b;
+        background-color: #f8fafc;
+        line-height: 1.6;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 600px;
+        margin: 24px auto;
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .header {
+        background-color: #ffffff;
+        padding: 32px 28px 20px;
+        border-bottom: 2px solid #f1f5f9;
+        text-align: center;
+      }
+      .header .badge {
+        display: inline-block;
+        background-color: #0d47a1;
+        color: #ffffff;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      .header h1 {
+        color: #0f172a;
+        margin: 0;
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .content {
+        padding: 28px;
+      }
+      .content p {
+        margin: 0 0 16px;
+        font-size: 15px;
+      }
+      .lead-text {
+        font-size: 15px;
+        color: #334155;
+      }
+      .todo-card {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #0d47a1;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 24px 0;
+      }
+      .todo-title {
+        font-size: 17px;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0 0 12px;
+        word-break: break-word;
+      }
+      .detail-row {
+        margin: 8px 0;
+        font-size: 14px;
+        color: #475569;
+      }
+      .label {
+        font-weight: 600;
+        color: #0f172a;
+        display: inline-block;
+        min-width: 80px;
+      }
+      .priority-badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 9999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .priority-high {
+        background-color: #fee2e2;
+        color: #b91c1c;
+      }
+      .priority-medium {
+        background-color: #fef3c7;
+        color: #b45309;
+      }
+      .priority-low {
+        background-color: #e0f2fe;
+        color: #0369a1;
+      }
+      .description-box {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid #e2e8f0;
+        font-size: 14px;
+        color: #475569;
+        white-space: pre-wrap;
+      }
+      .cta-container {
+        text-align: center;
+        margin: 28px 0 20px;
+      }
+      .cta-button {
+        display: inline-block;
+        background-color: #0d47a1;
+        color: #ffffff !important;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 12px 30px;
+        text-decoration: none;
+        border-radius: 8px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      }
+      .link-fallback {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 20px;
+        word-break: break-all;
+      }
+      .link-fallback a {
+        color: #0d47a1;
+        text-decoration: underline;
+      }
+      .footer {
+        border-top: 1px solid #f1f5f9;
+        padding: 20px 28px;
+        text-align: center;
+        font-size: 12px;
+        color: #94a3b8;
+        background-color: #f8fafc;
+      }
+      .footer p {
+        margin: 4px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <span class="badge">To-Do Reminder</span>
+        <h1>Upcoming To-Do Reminder</h1>
+      </div>
+
+      <div class="content">
+        <p class="lead-text">Hello {{ recipient_name }},</p>
+        <p class="lead-text">
+          This is a {{ reminder_time_label }} reminder for your to-do item:
+        </p>
+
+        <div class="todo-card">
+          <div class="todo-title">{{ title }}</div>
+
+          {% if priority %}
+          <div class="detail-row">
+            <span class="label">Priority:</span>
+            <span class="priority-badge priority-{{ priority|lower }}">{{ priority_display }}</span>
+          </div>
+          {% endif %}
+
+          {% if due_display %}
+          <div class="detail-row">
+            <span class="label">Due:</span>
+            <strong>{{ due_display }}</strong>
+          </div>
+          {% endif %}
+
+          {% if description %}
+          <div class="description-box">
+            <span class="label" style="display: block; margin-bottom: 4px;">Description:</span>
+            {{ description }}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="cta-container">
+          <a href="{{ todo_url }}" class="cta-button" target="_blank" rel="noopener noreferrer">
+            View &amp; Manage To-Dos
+          </a>
+        </div>
+
+        <p class="link-fallback">
+          If the button doesn&apos;t work, copy and paste this link into your browser:<br />
+          <a href="{{ todo_url }}">{{ todo_url }}</a>
+        </p>
+      </div>
+
+      <div class="footer">
+        <p>&copy; 2026 Incel Portal. All rights reserved.</p>
+        <p>This is an automated notification from Incel Portal. Please do not reply directly to this message.</p>
+      </div>
+    </div>
+  </body>
+</html>
+
