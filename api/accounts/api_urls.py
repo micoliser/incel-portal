@@ -15,6 +15,7 @@ urlpatterns = [
     path('me/permissions', views_api.MePermissionsView.as_view(), name='me-permissions'),
     path('me/applications', views_api.MeApplicationsView.as_view(), name='me-applications'),
     path('users', views_api.AuthenticatedUserListView.as_view(), name='users-list'),
+    path('external/users', views_api.ExternalUserListView.as_view(), name='external-users-list'),
     path('admin/users', views_api.AdminUserListView.as_view(), name='admin-users-list'),
     path('admin/users/<int:user_id>', views_api.AdminUserDetailView.as_view(), name='admin-users-detail'),
     path('admin/users/<int:user_id>/role', views_api.AdminUserRoleUpdateView.as_view(), name='admin-users-role'),

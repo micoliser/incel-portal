@@ -39,6 +39,7 @@ from accounts.serializers import (
 from applications.audit import log_audit
 from applications.models import InternalApplication
 from common.access import can_user_access_application
+from common.authentication import HasValidServiceApiKey, ServiceApiKeyAuthentication
 from common.permissions import IsGlobalAccessUser, IsAdminOrGlobalReadOnly, has_admin_access, has_global_access
 from emails.services.user_emails import UserEmailManager
 from organization.models import Department, Role, Unit, Team
@@ -918,3 +919,42 @@ class AdminUserStatusUpdateView(APIView):
         )
 
         return Response(UserWithProfileSerializer(user).data)
+
+
+class ExternalUserListView(APIView):
+    """
+    Endpoint for authorized external applications to query active users.
+    Authentication: Standard Bearer Token (Authorization: Bearer <service_api_key>)
+    Returns an unpaginated array of user objects.
+    Currently restricted to specified developer/testing emails:
+      - samueliwelumo@gmail.com
+      - samueliwelumo@incelgroup.com
+    """
+    authentication_classes = [ServiceApiKeyAuthentication]
+    permission_classes = [HasValidServiceApiKey]
+
+    RESTRICTED_EMAILS = [
+        'samueliwelumo@gmail.com',
+        'samueliwelumo@incelgroup.com',
+    ]
+
+    def get(self, request):
+        email_filter = Q()
+        for email in self.RESTRICTED_EMAILS:
+            email_filter |= Q(email__iexact=email) | Q(username__iexact=email)
+
+        users = (
+            User.objects.select_related(
+                'staff_profile__role',
+                'staff_profile__department',
+                'staff_profile__unit',
+                'staff_profile__team',
+            )
+            .filter(is_active=True)
+            .filter(email_filter)
+            .distinct()
+            .order_by(Lower('username'))
+        )
+
+        serializer = UserWithProfileSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
