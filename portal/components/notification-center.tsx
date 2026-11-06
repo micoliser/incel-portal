@@ -59,7 +59,8 @@ function getTodayKey() {
 
 function getNotificationIcon(type: string, title: string) {
   const t = `${type || ""} ${title || ""}`.toLowerCase();
-  if (t.includes("task") || t.includes("schedule")) return CheckSquare2;
+  if (t.includes("task") || t.includes("schedule") || t.includes("todo") || t.includes("reminder"))
+    return CheckSquare2;
   if (t.includes("comment") || t.includes("mention") || t.includes("chat"))
     return MessageSquare;
   if (t.includes("summary") || t.includes("report")) return FileText;

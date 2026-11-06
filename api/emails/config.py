@@ -29,6 +29,7 @@ class EmailType(Enum):
     SUPPORT_COMMENT_ADDED = "support_comment_added"
     SUPPORT_REQUEST_RESOLVED = "support_request_resolved"
     SUPPORT_REQUEST_CLOSED = "support_request_closed"
+    TODO_REMINDER = "todo_reminder"
 
 
 class EmailConfig:

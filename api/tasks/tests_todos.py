@@ -1,4 +1,5 @@
 import datetime
+from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
@@ -264,4 +265,39 @@ class TodoItemAPITests(TestCase):
         data2 = paginated_p2.json()
         self.assertEqual(len(data2['results']), 5)
         self.assertIsNone(data2['next'])
+
+    @patch('emails.services.task_emails.TodoReminderEmailService.send')
+    def test_todo_reminder_email_dispatch(self, mock_email_send):
+        mock_email_send.return_value = True
+        now = timezone.now()
+        due_time = now + datetime.timedelta(minutes=15)
+
+        todo = TodoItem.objects.create(
+            user=self.user1,
+            title='Call client',
+            description='Discuss renewal contract',
+            due_date=due_time.date(),
+            due_time=due_time.time(),
+            reminder_offsets=['15m'],
+            send_email_reminder=True,
+            priority='high',
+        )
+
+        result = check_due_todo_reminders()
+        self.assertEqual(result['processed'], 1)
+        self.assertEqual(result['notifications_created'], 1)
+
+        # Check mock_email_send was called
+        mock_email_send.assert_called_once()
+        recipients, context = mock_email_send.call_args[0]
+        self.assertEqual(recipients, [self.user1.email])
+        self.assertEqual(context['title'], 'Call client')
+        self.assertEqual(context['priority_display'], 'High')
+        self.assertEqual(context['reminder_time_label'], '15-minute')
+        self.assertIn('/todos', context['todo_url'])
+
+        # Check in-app notification format
+        notif = Notification.objects.filter(recipient=self.user1, notification_type=Notification.TYPE_TODO_REMINDER).first()
+        self.assertIsNotNone(notif)
+        self.assertIn('This is a 15-minute reminder', notif.body)
 
