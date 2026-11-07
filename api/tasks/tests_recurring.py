@@ -461,6 +461,7 @@ class RecurringScheduleWorkerTests(BaseAPITestCase):
             interval=1,
             weekdays=[],
             times=['10:00'],
+            include_weekends=True,
             timezone='UTC',
             deadline_offset_minutes=0,
             start_at=reference - timedelta(days=1),
