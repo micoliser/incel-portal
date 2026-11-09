@@ -261,11 +261,18 @@ export default function ReportsPage() {
                 Open a date to review your report, the department view, and the
                 reports nested underneath each day.
               </p>
-              <Button className="w-full" asChild>
-                <Link href={`/reports/${format(new Date(), "yyyy-MM-dd")}`}>
-                  Open today
-                </Link>
-              </Button>
+              <div className="space-y-2">
+                <Button className="w-full" asChild>
+                  <Link href={`/reports/${format(new Date(), "yyyy-MM-dd")}`}>
+                    Open today
+                  </Link>
+                </Button>
+                <Button className="w-full" variant="outline" asChild>
+                  <Link href="/reports/all">
+                    View all reports
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

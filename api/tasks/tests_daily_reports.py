@@ -486,3 +486,186 @@ class DailyReportsApiTests(BaseAPITestCase):
         
         # The mock should only be called once total
         mock_send.assert_called_once()
+
+    def test_all_reports_department_isolation(self):
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        # Create report for engineering user
+        eng_report = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=eng_report,
+            title='Eng Today',
+            created_by=self.staff_user,
+        )
+
+        # Create report for HR user
+        hr_report = DailyReport.objects.create(
+            user=self.hr_user,
+            department=self.dep_hr,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=hr_report,
+            title='HR Today',
+            created_by=self.hr_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('reports-department-all'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['current_date'], str(today))
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['creator']['id'], self.staff_user.id)
+        self.assertEqual(response.data['results'][0]['department'], self.dep_eng.name)
+
+    def test_all_reports_date_based_pagination(self):
+        today = timezone.localdate()
+        day1 = today
+        day2 = today - timedelta(days=1)
+        day3 = today - timedelta(days=3)
+
+        for d, title in [(day1, 'Day 1'), (day2, 'Day 2'), (day3, 'Day 3')]:
+            rep = DailyReport.objects.create(
+                user=self.staff_user,
+                department=self.dep_eng,
+                report_date=d,
+            )
+            DailyReportSubreport.objects.create(
+                daily_report=rep,
+                title=title,
+                created_by=self.staff_user,
+            )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        # Page 1: most recent date (day1)
+        res1 = self.client.get(reverse('reports-department-all'), {'page': 1})
+        self.assertEqual(res1.status_code, status.HTTP_200_OK)
+        self.assertEqual(res1.data['current_date'], str(day1))
+        self.assertEqual(res1.data['page'], 1)
+        self.assertEqual(res1.data['total_pages'], 3)
+        self.assertEqual(res1.data['total_dates'], 3)
+        self.assertTrue(res1.data['has_next'])
+        self.assertEqual(res1.data['next_page'], 2)
+        self.assertEqual(res1.data['results'][0]['subreports'][0]['title'], 'Day 1')
+
+        # Page 2: next date backwards in time (day2)
+        res2 = self.client.get(reverse('reports-department-all'), {'page': 2})
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        self.assertEqual(res2.data['current_date'], str(day2))
+        self.assertEqual(res2.data['page'], 2)
+        self.assertTrue(res2.data['has_next'])
+        self.assertEqual(res2.data['next_page'], 3)
+        self.assertEqual(res2.data['results'][0]['subreports'][0]['title'], 'Day 2')
+
+        # Page 3: oldest date (day3)
+        res3 = self.client.get(reverse('reports-department-all'), {'page': 3})
+        self.assertEqual(res3.status_code, status.HTTP_200_OK)
+        self.assertEqual(res3.data['current_date'], str(day3))
+        self.assertEqual(res3.data['page'], 3)
+        self.assertFalse(res3.data['has_next'])
+        self.assertIsNone(res3.data['next_page'])
+        self.assertEqual(res3.data['results'][0]['subreports'][0]['title'], 'Day 3')
+
+        # Page 4: beyond available dates
+        res4 = self.client.get(reverse('reports-department-all'), {'page': 4})
+        self.assertEqual(res4.status_code, status.HTTP_200_OK)
+        self.assertIsNone(res4.data['current_date'])
+        self.assertFalse(res4.data['has_next'])
+        self.assertEqual(res4.data['results'], [])
+
+    def test_all_reports_date_filtering(self):
+        today = timezone.localdate()
+        day1 = today
+        day2 = today - timedelta(days=2)
+        day3 = today - timedelta(days=5)
+
+        for d in [day1, day2, day3]:
+            rep = DailyReport.objects.create(
+                user=self.staff_user,
+                department=self.dep_eng,
+                report_date=d,
+            )
+            DailyReportSubreport.objects.create(
+                daily_report=rep,
+                title=f'Report {d}',
+                created_by=self.staff_user,
+            )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        # Single date filter
+        res_single = self.client.get(reverse('reports-department-all'), {'date': str(day2)})
+        self.assertEqual(res_single.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_single.data['total_pages'], 1)
+        self.assertEqual(res_single.data['current_date'], str(day2))
+        self.assertEqual(len(res_single.data['results']), 1)
+
+        # Date range filter
+        res_range = self.client.get(
+            reverse('reports-department-all'),
+            {'date_from': str(day2), 'date_to': str(day1)},
+        )
+        self.assertEqual(res_range.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_range.data['total_pages'], 2)
+        self.assertEqual(res_range.data['current_date'], str(day1))
+
+    def test_all_reports_user_search(self):
+        today = timezone.localdate()
+
+        # Second engineer in engineering
+        eng2 = User.objects.create_user(
+            username='eng2@example.com',
+            email='eng2@example.com',
+            password='Eng2StrongPass123!',
+            first_name='Alice',
+            last_name='Developer',
+        )
+        StaffProfile.objects.create(
+            user=eng2,
+            role=self.role_staff,
+            department=self.dep_eng,
+        )
+
+        r1 = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=r1,
+            title='Staff report',
+            created_by=self.staff_user,
+        )
+
+        r2 = DailyReport.objects.create(
+            user=eng2,
+            department=self.dep_eng,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=r2,
+            title='Alice report',
+            created_by=eng2,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        # Search by email
+        res_email = self.client.get(reverse('reports-department-all'), {'search': 'eng2@example.com'})
+        self.assertEqual(res_email.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_email.data['results']), 1)
+        self.assertEqual(res_email.data['results'][0]['creator']['email'], 'eng2@example.com')
+
+        # Search by first name
+        res_name = self.client.get(reverse('reports-department-all'), {'search': 'Alice'})
+        self.assertEqual(res_name.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_name.data['results']), 1)
+        self.assertEqual(res_name.data['results'][0]['creator']['full_name'], 'Alice Developer')
+
