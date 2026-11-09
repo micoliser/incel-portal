@@ -923,26 +923,16 @@ class AdminUserStatusUpdateView(APIView):
 
 class ExternalUserListView(APIView):
     """
-    Endpoint for authorized external applications to query active users.
+    Endpoint for authorized external applications to query users in the workspace.
     Authentication: Standard Bearer Token (Authorization: Bearer <service_api_key>)
     Returns an unpaginated array of user objects.
-    Currently restricted to specified developer/testing emails:
-      - samueliwelumo@gmail.com
-      - samueliwelumo@incelgroup.com
+    Defaults to active users in the workspace.
+    Supports ?is_active=true|false|all to filter or retrieve all users.
     """
     authentication_classes = [ServiceApiKeyAuthentication]
     permission_classes = [HasValidServiceApiKey]
 
-    RESTRICTED_EMAILS = [
-        'samueliwelumo@gmail.com',
-        'samueliwelumo@incelgroup.com',
-    ]
-
     def get(self, request):
-        email_filter = Q()
-        for email in self.RESTRICTED_EMAILS:
-            email_filter |= Q(email__iexact=email) | Q(username__iexact=email)
-
         users = (
             User.objects.select_related(
                 'staff_profile__role',
@@ -950,11 +940,22 @@ class ExternalUserListView(APIView):
                 'staff_profile__unit',
                 'staff_profile__team',
             )
-            .filter(is_active=True)
-            .filter(email_filter)
             .distinct()
-            .order_by(Lower('username'))
         )
+
+        is_active_param = request.query_params.get('is_active')
+        if is_active_param is not None:
+            val = is_active_param.strip().lower()
+            if val in ('true', '1'):
+                users = users.filter(is_active=True)
+            elif val in ('false', '0'):
+                users = users.filter(is_active=False)
+            elif val == 'all':
+                pass
+        else:
+            users = users.filter(is_active=True)
+
+        users = users.order_by(Lower('username'))
 
         serializer = UserWithProfileSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
