@@ -112,7 +112,7 @@ class ExternalUserAPITests(TestCase):
         response = self.client.get('/api/v1/external/users')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_valid_bearer_token_returns_unpaginated_restricted_users(self):
+    def test_valid_bearer_token_returns_unpaginated_workspace_users(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.raw_key}')
         response = self.client.get('/api/v1/external/users')
 
@@ -121,13 +121,17 @@ class ExternalUserAPITests(TestCase):
 
         # Must be an unpaginated list directly (not a dict with 'results', 'count', etc.)
         self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 3)
 
         returned_emails = {u['email'] for u in data}
-        self.assertEqual(returned_emails, {'samueliwelumo@gmail.com', 'samueliwelumo@incelgroup.com'})
+        self.assertEqual(
+            returned_emails,
+            {'samueliwelumo@gmail.com', 'samueliwelumo@incelgroup.com', 'john.doe@incelgroup.com'},
+        )
 
-        # Verify other active user is excluded
-        self.assertNotIn('john.doe@incelgroup.com', returned_emails)
+        # Inactive user is excluded by default
+        returned_usernames = {u['username'] for u in data}
+        self.assertNotIn('inactive_samuel@gmail.com', returned_usernames)
 
         # Verify serializer fields are complete
         user_item = data[0]
@@ -143,4 +147,25 @@ class ExternalUserAPITests(TestCase):
         # Verify last_used_at was updated
         self.api_key_obj.refresh_from_db()
         self.assertIsNotNone(self.api_key_obj.last_used_at)
+
+    def test_is_active_all_returns_all_users_including_inactive(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.raw_key}')
+        response = self.client.get('/api/v1/external/users?is_active=all')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(len(data), 4)
+
+        returned_usernames = {u['username'] for u in data}
+        self.assertIn('inactive_samuel@gmail.com', returned_usernames)
+
+    def test_is_active_false_returns_only_inactive_users(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.raw_key}')
+        response = self.client.get('/api/v1/external/users?is_active=false')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['username'], 'inactive_samuel@gmail.com')
+        self.assertFalse(data[0]['is_active'])
 
