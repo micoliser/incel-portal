@@ -1870,6 +1870,116 @@ class ReportsDayView(APIView):
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 
 
+class DepartmentReportsAllView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        scope_users = _report_scope_users(request.user)
+        qs = DailyReport.objects.filter(user__in=scope_users)
+
+        if not has_global_access(request.user):
+            department = _get_user_department(request.user)
+            if department is None:
+                qs = qs.none()
+            else:
+                qs = qs.filter(department=department)
+        else:
+            department_id = request.query_params.get('department_id')
+            if department_id:
+                qs = qs.filter(department_id=department_id)
+
+        date_str = request.query_params.get('date')
+        if date_str:
+            try:
+                report_date = _parse_report_date(date_str)
+                qs = qs.filter(report_date=report_date)
+            except Exception as exc:
+                raise ValidationError(f"Invalid date: {exc}")
+
+        date_from_str = request.query_params.get('date_from')
+        if date_from_str:
+            try:
+                date_from = _parse_report_date(date_from_str)
+                qs = qs.filter(report_date__gte=date_from)
+            except Exception as exc:
+                raise ValidationError(f"Invalid date_from: {exc}")
+
+        date_to_str = request.query_params.get('date_to')
+        if date_to_str:
+            try:
+                date_to = _parse_report_date(date_to_str)
+                qs = qs.filter(report_date__lte=date_to)
+            except Exception as exc:
+                raise ValidationError(f"Invalid date_to: {exc}")
+
+        search_query = request.query_params.get('search') or request.query_params.get('user')
+        if search_query:
+            q = search_query.strip()
+            if q:
+                qs = qs.filter(
+                    Q(user__username__icontains=q)
+                    | Q(user__email__icontains=q)
+                    | Q(user__first_name__icontains=q)
+                    | Q(user__last_name__icontains=q)
+                )
+
+        distinct_dates = list(
+            qs.order_by('-report_date')
+            .values_list('report_date', flat=True)
+            .distinct()
+        )
+        total_dates = len(distinct_dates)
+
+        page_str = request.query_params.get('page', '1')
+        try:
+            page = int(page_str)
+        except (TypeError, ValueError):
+            page = 1
+
+        if page < 1:
+            page = 1
+
+        total_reports = qs.count()
+
+        if total_dates == 0 or page > total_dates:
+            return Response({
+                'current_date': None,
+                'page': page,
+                'total_pages': total_dates,
+                'total_dates': total_dates,
+                'total_reports': total_reports,
+                'has_next': False,
+                'next_page': None,
+                'results': [],
+            })
+
+        target_date = distinct_dates[page - 1]
+        reports_for_date = (
+            qs.filter(report_date=target_date)
+            .select_related('user__staff_profile__department', 'department')
+            .prefetch_related(
+                'subreports__comments__author',
+                'subreports__created_by',
+            )
+            .annotate(subreport_count=Count('subreports', distinct=True))
+            .order_by('user__first_name', 'user__last_name', 'user__username')
+        )
+
+        has_next = page < total_dates
+        next_page = page + 1 if has_next else None
+
+        return Response({
+            'current_date': str(target_date),
+            'page': page,
+            'total_pages': total_dates,
+            'total_dates': total_dates,
+            'total_reports': total_reports,
+            'has_next': has_next,
+            'next_page': next_page,
+            'results': DailyReportDetailSerializer(reports_for_date, many=True).data,
+        })
+
+
 class DailyReportDetailView(APIView):
     permission_classes = [IsAuthenticated]
 

@@ -65,7 +65,37 @@ export type ReportsDayResponse = {
 
 export type CreateReportResponse = DailyReportSubreportDetail;
 
+export type DepartmentReportsAllResponse = {
+  current_date: string | null;
+  page: number;
+  total_pages: number;
+  total_dates: number;
+  total_reports: number;
+  has_next: boolean;
+  next_page: number | null;
+  results: DailyReportDetail[];
+};
+
+export type DepartmentReportsAllParams = {
+  page?: number;
+  date?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  department_id?: string;
+};
+
 export const reportsAPI = {
+  async getAll(
+    params?: DepartmentReportsAllParams,
+  ): Promise<DepartmentReportsAllResponse> {
+    const { data } = await apiClient.get<DepartmentReportsAllResponse>(
+      "/reports/all/",
+      { params },
+    );
+    return data;
+  },
+
   async getMonth(month: string): Promise<ReportsMonthResponse> {
     const { data } = await apiClient.get<ReportsMonthResponse>(
       "/reports/month/",

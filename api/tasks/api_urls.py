@@ -10,6 +10,7 @@ from .views_api import (
     SummaryFilesViewSet,
     ReportsMonthCalendarView,
     ReportsDayView,
+    DepartmentReportsAllView,
     DailyReportDetailView,
     DailyReportSubreportCreateView,
     DailyReportSubreportDetailView,
@@ -30,6 +31,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('reports/month/', ReportsMonthCalendarView.as_view(), name='reports-month-calendar'),
     path('reports/day/', ReportsDayView.as_view(), name='reports-day-hub'),
+    path('reports/all/', DepartmentReportsAllView.as_view(), name='reports-department-all'),
     path('reports/daily/<uuid:report_id>/', DailyReportDetailView.as_view(), name='reports-daily-detail'),
     path(
         'reports/daily/<uuid:report_id>/send-email/',
