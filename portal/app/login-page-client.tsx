@@ -125,15 +125,18 @@ export default function LoginPageClient({
       router.replace(returnToPath ?? "/dashboard");
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        // The API's error handler nests extra fields under error.metadata,
+        // and sends them as strings.
         const responseData = error.response?.data as
           | {
-              attempts_remaining?: number;
+              error?: { metadata?: { attempts_remaining?: number | string } };
             }
           | undefined;
         let message = extractApiErrorMessage(error, "Unable to sign in. Please try again.");
 
-        if (responseData?.attempts_remaining !== undefined) {
-          message += ` (${responseData.attempts_remaining} attempts remaining before lockout.)`;
+        const attemptsRemaining = Number(responseData?.error?.metadata?.attempts_remaining);
+        if (Number.isFinite(attemptsRemaining) && attemptsRemaining > 0) {
+          message += ` (${attemptsRemaining} attempts remaining before lockout.)`;
         }
 
         setErrorMessage(message);

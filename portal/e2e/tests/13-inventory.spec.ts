@@ -156,19 +156,39 @@ test.describe("managing inventory as the IT line manager", () => {
     await expect(row.getByRole("cell").first()).toHaveText(/^\d{6}$/);
   });
 
-  // Recorded as it behaves today: on the asset page the person picker loads
-  // from a list that only executives and administrators may read, so for IT
-  // staff it is always empty and an asset cannot be assigned from here.
-  test("finds nobody to assign an asset to from the asset page", async ({ page }) => {
+  test("assigns an asset from its own page; the person sees it under My Assets", async ({ page, browser }) => {
     const name = unique("Spare Charger");
     await createItem(page, name, "SC-" + Date.now());
     await openItem(page, name);
+    const body = main(page);
+
+    await body.getByRole("button", { name: "Assign Item" }).click();
+    const dialog = page.getByRole("dialog", { name: "Assign Item" });
+    await choose(page, dialog.getByRole("combobox"), /Chidi Clerk/, "clerk");
+    await dialog.getByRole("textbox", { name: "Condition Notes (Optional)" }).fill("Boxed, unused");
+    await dialog.getByRole("button", { name: "Assign", exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    await expectSequence(body, "Current Assignee", "Chidi Clerk");
+    await expect(body.getByText("Assigned to Chidi Clerk")).toBeVisible();
+    await expect(body.getByRole("button", { name: "Return Item" })).toBeVisible();
+
+    const clerk = await pageAs(browser, "clerk");
+    await clerk.goto("/my-assets");
+    await expect(clerk.getByRole("main").getByRole("heading", { level: 2, name })).toBeVisible();
+    await expect(clerk.getByRole("main").getByText("Boxed, unused")).toBeVisible();
+    await clerk.context().close();
+  });
+
+  test("does not offer deactivated people when assigning from the asset page", async ({ page }) => {
+    await openItem(page, INVENTORY.available.name);
     await main(page).getByRole("button", { name: "Assign Item" }).click();
     const dialog = page.getByRole("dialog", { name: "Assign Item" });
     await dialog.getByRole("combobox").click();
-    await page.keyboard.type("clerk");
+    await page.keyboard.type("fola");
     await expect(page.getByText("No user found.")).toBeVisible();
-    await expect(page.getByRole("option")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
   });
 
   test("logging a fault puts the asset into maintenance", async ({ page }) => {
@@ -230,18 +250,20 @@ test.describe("assigning inventory", () => {
 test.describe("assigning inventory from the asset page as an administrator", () => {
   test.use({ role: "admin" });
 
-  // KNOWN DEFECT, recorded as it behaves today: the Assign Item dialog on the
-  // asset page always fails, because the request carries an empty department.
-  test("fails with a validation message", async ({ page }) => {
-    await openItem(page, INVENTORY.available.name);
+  test("assigns the asset to the chosen person", async ({ page }) => {
+    const name = unique("Loan Laptop");
+    await createItem(page, name, "LL-" + Date.now());
+    await openItem(page, name);
     await main(page).getByRole("button", { name: "Assign Item" }).click();
     const dialog = page.getByRole("dialog", { name: "Assign Item" });
     await choose(page, dialog.getByRole("combobox"), /Chidi Clerk/, "clerk");
     await dialog.getByRole("button", { name: "Assign", exact: true }).click();
-    await expect(
-      page.getByRole("region", { name: /Notifications/ }).getByText("assigned_to_department: Must be a valid UUID."),
-    ).toBeVisible();
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expectSequence(main(page), "Current Assignee", "None");
+    await expect(dialog).toBeHidden();
+    await expectSequence(main(page), "Current Assignee", "Chidi Clerk");
+
+    await page.goto("/inventory");
+    await main(page).getByRole("textbox", { name: /Search by asset code/ }).fill(name);
+    await expect(itemRow(page, name)).toContainText("Assigned");
+    await expect(itemRow(page, name)).toContainText("Chidi Clerk");
   });
 });

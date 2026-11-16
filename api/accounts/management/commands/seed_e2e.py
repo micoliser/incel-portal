@@ -52,7 +52,11 @@ class Seeder:
         self.now = timezone.now()
         self.today = timezone.localdate()
         self.this_monday = self.today - timedelta(days=self.today.weekday())
-        self.last_monday = self.this_monday - timedelta(days=7)
+        # Weekly summaries are built for the week two weeks back, not last week.
+        # Other seeded records are dated "today" or "yesterday", and on a Monday
+        # yesterday is last week, which would change the summary figures
+        # depending on the day the suite runs.
+        self.summary_monday = self.this_monday - timedelta(days=14)
         self.users: dict[str, User] = {}
         self._task_sequence = 0
 
@@ -255,13 +259,13 @@ class Seeder:
         self.task_other_team = self._task('Reconcile warehouse stock', 'supervisor', 'warehouse', 'in_progress', 'medium', 6)
         self.task_it = self._task('Patch office routers', 'itmanager', 'itstaff', 'pending', 'high', 7)
 
-        # Last week's completed work feeds the weekly summaries.
-        days_into_last_week = (self.today - self.last_monday).days
+        # Completed work in the summarised week (created Mon-Wed, completed Tue-Thu).
+        days_since_summary_week = (self.today - self.summary_monday).days
         for index, title in enumerate(['Clean loading bay', 'Label new shelving', 'Return hire van']):
             self._task(
                 title, 'manager', 'staff', 'completed', 'high' if index == 0 else 'medium', 10,
-                created_days_ago=days_into_last_week - index,
-                completed_days_ago=days_into_last_week - index - 1,
+                created_days_ago=days_since_summary_week - index,
+                completed_days_ago=days_since_summary_week - index - 1,
             )
 
         TaskActivity.objects.create(
@@ -461,10 +465,10 @@ class Seeder:
             calculate_organization_summary, calculate_user_weekly_summary, calculate_weekly_comparison,
         )
 
-        week_before = self.last_monday - timedelta(days=7)
+        week_before = self.summary_monday - timedelta(days=7)
         for user in User.objects.filter(is_active=True):
             previous = None
-            for week_start in (week_before, self.last_monday):
+            for week_start in (week_before, self.summary_monday):
                 week_end = week_start + timedelta(days=6)
                 data = calculate_user_weekly_summary(user, week_start, week_end)
                 summary = WeeklySummary.objects.create(
@@ -476,7 +480,7 @@ class Seeder:
                     summary.save()
                 previous = summary
 
-        for week_start in (week_before, self.last_monday):
+        for week_start in (week_before, self.summary_monday):
             week_end = week_start + timedelta(days=6)
             OrganizationSummaryCache.objects.create(
                 week_start_date=week_start, week_end_date=week_end,

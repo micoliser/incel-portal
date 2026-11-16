@@ -1,6 +1,16 @@
+import type { Page } from "@playwright/test";
+
 import { FORMER_USER, PASSWORD, USERS } from "../support/seed";
 import { expect, test } from "../support/fixtures";
 import { header, main, sidebar } from "../support/ui";
+
+/**
+ * The sign-in error box. Next.js also renders an empty alert for route
+ * announcements, so the box is picked out by its text.
+ */
+function signInError(page: Page) {
+  return page.getByRole("alert").filter({ hasText: "Invalid credentials." });
+}
 
 test.describe("signing in", () => {
   test("shows the sign-in form to a signed-out visitor", async ({ page }) => {
@@ -24,13 +34,26 @@ test.describe("signing in", () => {
     await expect(page.getByText("Password must be at least 8 characters long.")).toBeVisible();
   });
 
-  test("rejects an unknown account", async ({ page }) => {
+  test("rejects an unknown account and says how many attempts are left", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("textbox", { name: "Company Email Address" }).fill(`nobody-${Date.now()}@e2e.test`);
     await page.getByRole("textbox", { name: "Password" }).fill("Wrong-Password-1");
     await page.getByRole("button", { name: "Sign in to Workspace" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "Invalid credentials." })).toBeVisible();
+    await expect(signInError(page)).toHaveText(
+      "Invalid credentials. (9 attempts remaining before lockout.)",
+    );
     await expect(page).toHaveURL("/");
+  });
+
+  test("counts down the attempts left on repeated failures", async ({ page }) => {
+    const email = `nobody-${Date.now()}@e2e.test`;
+    await page.goto("/");
+    await page.getByRole("textbox", { name: "Company Email Address" }).fill(email);
+    await page.getByRole("textbox", { name: "Password" }).fill("Wrong-Password-1");
+    await page.getByRole("button", { name: "Sign in to Workspace" }).click();
+    await expect(signInError(page)).toContainText("(9 attempts remaining before lockout.)");
+    await page.getByRole("button", { name: "Sign in to Workspace" }).click();
+    await expect(signInError(page)).toContainText("(8 attempts remaining before lockout.)");
   });
 
   test("rejects a wrong password, then accepts the right one", async ({ page }) => {
@@ -38,7 +61,9 @@ test.describe("signing in", () => {
     await page.getByRole("textbox", { name: "Company Email Address" }).fill(USERS.warehouse.email);
     await page.getByRole("textbox", { name: "Password" }).fill("Wrong-Password-1");
     await page.getByRole("button", { name: "Sign in to Workspace" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "Invalid credentials." })).toBeVisible();
+    await expect(signInError(page)).toHaveText(
+      /^Invalid credentials\. \(\d attempts remaining before lockout\.\)$/,
+    );
 
     await page.getByRole("textbox", { name: "Password" }).fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in to Workspace" }).click();
@@ -55,10 +80,15 @@ test.describe("signing in", () => {
     await expect(page).toHaveURL("/");
   });
 
-  test("sends a signed-out visitor to the sign-in page", async ({ page }) => {
-    await page.goto("/todos");
-    await expect(page).toHaveURL("/");
+  test("sends a signed-out visitor to sign in and back to the page they asked for", async ({ page }) => {
+    await page.goto("/todos?view=upcoming");
+    await expect(page).toHaveURL("/?next=%2Ftodos%3Fview%3Dupcoming");
     await expect(page.getByRole("button", { name: "Sign in to Workspace" })).toBeVisible();
+
+    await page.getByRole("textbox", { name: "Company Email Address" }).fill(USERS.peer.email);
+    await page.getByRole("textbox", { name: "Password" }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in to Workspace" }).click();
+    await expect(page).toHaveURL("/todos?view=upcoming");
   });
 
   test("returns the user to the page named in the sign-in link", async ({ page }) => {
@@ -97,7 +127,7 @@ test.describe("signed-in session", () => {
     await expect(page.getByRole("button", { name: "Sign in to Workspace" })).toBeVisible();
 
     await page.goto("/tasks");
-    await expect(page).toHaveURL("/");
+    await expect(page).toHaveURL("/?next=%2Ftasks");
     await expect(page.getByRole("button", { name: "Sign in to Workspace" })).toBeVisible();
   });
 });

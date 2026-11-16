@@ -36,6 +36,15 @@ browser that is already installed:
 E2E_CHROMIUM_PATH=/snap/bin/chromium npm run test:e2e
 ```
 
+## In CI
+
+The `e2e-tests` job in `.github/workflows/ci-cd.yml` runs this suite on every
+pull request into `main` and again on every push to `main`, against a Postgres
+service named `incel_portal_e2e` and the browser Playwright installs. Images
+are only built and deployed if it passes.
+When it fails, the HTML report and failure screenshots are attached to the run
+as the `e2e-report` artifact.
+
 ## What the run does
 
 1. `e2e/scripts/api-server.sh` migrates the `incel_portal_e2e` database, wipes
@@ -112,8 +121,8 @@ a failure in those.
 - Scheduled background jobs (recurring task generation, reminders, weekly
   summaries, auto-closing support requests).
 
-## Behaviour recorded as it is today
+## Behaviour that looks wrong
 
-Some tests pin down behaviour that looks like a defect. They are marked
-`KNOWN DEFECT` or `Recorded as it behaves today` in the test file. If a later
-change fixes one of them, that test will fail and should be updated on purpose.
+If a test has to pin down behaviour that looks like a defect, mark it
+`KNOWN DEFECT` in the test file and say why, so a later fix updates it on
+purpose. There are none at present.

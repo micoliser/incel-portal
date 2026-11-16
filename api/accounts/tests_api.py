@@ -438,3 +438,29 @@ class AccountsApiTests(BaseAPITestCase):
         _, kwargs = mock_send_email.call_args
         self.assertEqual(kwargs.get('action'), 'reset')
         self.assertEqual(kwargs.get('temporary_password'), 'N9!vQ2@tLm7#')
+
+    def test_admin_user_update_requires_last_name(self):
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
+        url = reverse('admin-users-detail', kwargs={'user_id': self.staff_user.id})
+        base = {
+            'first_name': self.staff_user.first_name,
+            'email': self.staff_user.email,
+            'department_id': self.dep_eng.id,
+        }
+
+        for last_name in ('', '   '):
+            response = self.client.patch(url, {**base, 'last_name': last_name}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, last_name)
+            self.assertIn('last_name', response.data['error']['details'])
+
+        response = self.client.patch(url, base, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('last_name', response.data['error']['details'])
+
+        self.staff_user.refresh_from_db()
+        self.assertEqual(self.staff_user.last_name, 'Member')
+
+        response = self.client.patch(url, {**base, 'last_name': '  Renamed  '}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.staff_user.refresh_from_db()
+        self.assertEqual(self.staff_user.last_name, 'Renamed')

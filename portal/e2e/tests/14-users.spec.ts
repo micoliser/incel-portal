@@ -127,22 +127,26 @@ test.describe("managing users as an administrator", () => {
     await fresh.context().close();
   });
 
-  test("requires a last name even though the form marks it optional", async ({ page }) => {
+  test("requires a last name when creating a user", async ({ page }) => {
+    const email = `mono.${Date.now()}@e2e.test`;
     await page.goto("/users");
     await main(page).getByRole("button", { name: "Create User" }).click();
     const dialog = page.getByRole("dialog", { name: "Create User" });
+    await expect(dialog.getByText("Last Name *")).toBeVisible();
     await dialog.getByRole("textbox", { name: "First Name *" }).fill("Mono");
-    await dialog.getByRole("textbox", { name: "Work Email *" }).fill(`mono.${Date.now()}@e2e.test`);
+    await dialog.getByRole("textbox", { name: "Work Email *" }).fill(email);
     await dialog.getByRole("textbox", { name: "Password *", exact: true }).fill(PASSWORD);
     await dialog.getByRole("textbox", { name: "Confirm Password *" }).fill(PASSWORD);
     await dialog.getByRole("button", { name: "Create User" }).click();
-    await expect(dialog.getByRole("alert")).toContainText("last_name: This field may not be blank.");
+    await expect(dialog.getByText("Last name is required.")).toBeVisible();
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
+    await expect(userRow(page, email)).toHaveCount(0);
   });
 
-  // KNOWN DEFECT, recorded as it behaves today: the Edit User dialog cannot save.
-  // The portal sends the change with a method the API rejects, so every edit
-  // (including a password reset from this dialog) fails with this message.
-  test("fails to save an edit to a user", async ({ page }) => {
+  test("edits a user's name and department", async ({ page }) => {
     const email = `edit.me.${Date.now()}@e2e.test`;
     await createUser(page, "Eddy", "Editable", email);
     await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
@@ -154,21 +158,67 @@ test.describe("managing users as an administrator", () => {
     await expect(dialog.getByRole("combobox", { name: "Department" })).toHaveText("Finance");
 
     await dialog.getByRole("textbox", { name: "Last Name" }).fill("Edited");
+    await choose(page, dialog.getByRole("combobox", { name: "Department" }), "Human Resources");
     await dialog.getByRole("button", { name: "Save Changes" }).click();
-    await expect(dialog.getByRole("alert")).toHaveText('Method "PUT" not allowed.');
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(userRow(page, email)).toContainText("Eddy Editable");
+    await expect(dialog).toBeHidden();
+    await expect(userRow(page, email)).toContainText("Eddy Edited");
+    await expect(userRow(page, email)).toContainText("Human Resources");
+
+    // The change is saved, not just shown.
+    await page.reload();
+    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
+    await expect(userRow(page, email)).toContainText("Eddy Edited");
+    await expect(userRow(page, email)).toContainText("Human Resources");
   });
 
-  test("offers a password reset inside the edit dialog", async ({ page }) => {
+  test("requires a last name when editing a user", async ({ page }) => {
+    const email = `keep.name.${Date.now()}@e2e.test`;
+    await createUser(page, "Kemi", "Keepname", email);
+    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
+
+    await userRow(page, email).getByRole("button", { name: "Edit user details" }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit User" });
+    await dialog.getByRole("textbox", { name: "Last Name" }).fill("");
+    await dialog.getByRole("button", { name: "Save Changes" }).click();
+    await expect(dialog.getByText("Last name is required.")).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(userRow(page, email)).toContainText("Kemi Keepname");
+  });
+
+  test("resets a user's password from the edit dialog", async ({ page, browser }) => {
+    const email = `reset.me.${Date.now()}@e2e.test`;
+    const newPassword = "Fresh-Start!2027";
+    await createUser(page, "Rita", "Reset", email);
+    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
+
+    await userRow(page, email).getByRole("button", { name: "Edit user details" }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit User" });
+    await expect(dialog.getByRole("textbox", { name: "New Password" })).toHaveCount(0);
+    await dialog.getByRole("checkbox", { name: "Reset User Password" }).check();
+    await dialog.getByRole("textbox", { name: "New Password" }).fill(newPassword);
+    await dialog.getByRole("textbox", { name: "Confirm New" }).fill(newPassword);
+    await dialog.getByRole("button", { name: "Save Changes" }).click();
+    await expect(dialog).toBeHidden();
+
+    const fresh = await signedOutPage(browser);
+    await signIn(fresh, email, PASSWORD);
+    await expect(fresh.getByRole("alert").filter({ hasText: "Invalid credentials." })).toBeVisible();
+    await signIn(fresh, email, newPassword);
+    await expect(fresh).toHaveURL("/dashboard");
+    await fresh.context().close();
+  });
+
+  test("refuses a reset whose confirmation does not match", async ({ page }) => {
     await page.goto("/users");
     await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(USERS.clerk.email);
     await userRow(page, USERS.clerk.email).getByRole("button", { name: "Edit user details" }).click();
     const dialog = page.getByRole("dialog", { name: "Edit User" });
-    await expect(dialog.getByRole("textbox", { name: "New Password" })).toHaveCount(0);
     await dialog.getByRole("checkbox", { name: "Reset User Password" }).check();
-    await expect(dialog.getByRole("textbox", { name: "New Password" })).toBeVisible();
-    await expect(dialog.getByRole("textbox", { name: "Confirm New" })).toBeVisible();
+    await dialog.getByRole("textbox", { name: "New Password" }).fill("Fresh-Start!2027");
+    await dialog.getByRole("textbox", { name: "Confirm New" }).fill("Different-Start!2027");
+    await dialog.getByRole("button", { name: "Save Changes" }).click();
+    await expect(dialog.getByText("Passwords do not match.")).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
   });
 
   test("disables an account, which blocks sign-in, then enables it again", async ({ page, browser }) => {

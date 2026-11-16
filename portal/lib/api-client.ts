@@ -1,9 +1,23 @@
 import axios from "axios";
 
 import {
+  buildLoginPath,
   clearStoredTokens,
   getApiBaseUrl,
 } from "@/lib/auth";
+
+/**
+ * Sends the browser to the sign-in page when the session can no longer be
+ * refreshed, keeping the current page so the user returns to it after signing
+ * in (the same `?next=` the portal layout uses).
+ */
+function redirectToLogin() {
+  if (typeof window === "undefined" || window.location.pathname === "/") {
+    return;
+  }
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  window.location.replace(buildLoginPath(currentPath));
+}
 
 export const apiClient = axios.create({
   baseURL: getApiBaseUrl(),
@@ -76,9 +90,7 @@ apiClient.interceptors.response.use(
       const refreshedAccessToken = await refreshTokenPromise;
       if (!refreshedAccessToken) {
         clearStoredTokens();
-        if (typeof window !== "undefined" && window.location.pathname !== "/") {
-          window.location.replace("/");
-        }
+        redirectToLogin();
         return Promise.reject(error);
       }
 
@@ -86,9 +98,7 @@ apiClient.interceptors.response.use(
       return apiClient.request(originalRequest);
     } catch (refreshError) {
       clearStoredTokens();
-      if (typeof window !== "undefined" && window.location.pathname !== "/") {
-        window.location.replace("/");
-      }
+      redirectToLogin();
       return Promise.reject(refreshError);
     } finally {
       refreshTokenPromise = null;

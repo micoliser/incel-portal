@@ -296,7 +296,7 @@ class AdminCreateUserSerializer(serializers.Serializer):
 
 class UpdateAdminUserSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150, allow_blank=True)
+    last_name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     department_id = serializers.UUIDField(allow_null=True, required=False)
     unit_id = serializers.UUIDField(allow_null=True, required=False)
@@ -313,7 +313,10 @@ class UpdateAdminUserSerializer(serializers.Serializer):
         return value
 
     def validate_last_name(self, value):
-        return value.strip()
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('last_name cannot be blank.')
+        return value
 
     def validate_email(self, value):
         value = value.strip().lower()
