@@ -10,3 +10,7 @@ __pycache__
 db.sqlite3
 *.sqlite3
 node_modules
+
+# End-to-end test data loader: it wipes the database, so keep it out of the
+# production image. The tests run it from the checked-out code, not the image.
+accounts/management/commands/seed_e2e.py
