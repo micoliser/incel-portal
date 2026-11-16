@@ -3,7 +3,7 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -127,8 +127,14 @@ class PushSubscriptionListCreateView(APIView):
 
     def post(self, request):
         raw = request.data
+        if not isinstance(raw, dict):
+            raise ValidationError('Expected a subscription object.')
         subscription_data = raw.get('subscription', raw)
+        if not isinstance(subscription_data, dict):
+            raise ValidationError({'subscription': 'Expected an object.'})
         keys = subscription_data.get('keys', {})
+        if not isinstance(keys, dict):
+            raise ValidationError({'keys': 'Expected an object.'})
 
         payload = {
             'endpoint': subscription_data.get('endpoint', ''),

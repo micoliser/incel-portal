@@ -2,12 +2,11 @@ from rest_framework import permissions, viewsets, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
-from rest_framework import status
 from django.db import transaction
 
 from accounts.models import StaffProfile
 
-from common.permissions import IsGlobalAccessUser, IsAdminOrAuthenticatedReadOnly, IsAdminOrGlobalReadOnly
+from common.permissions import IsAdminOrAuthenticatedReadOnly, IsAdminOrGlobalReadOnly
 from organization.models import Department, Role, Unit, Team
 from organization.serializers import (
     DepartmentSerializer, 

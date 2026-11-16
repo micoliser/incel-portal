@@ -1,7 +1,13 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from organization.models import Department, Role, Unit, Team
+from organization.models import Department, Role, Team, Unit
+
+
+def _profile_field(user, field):
+    """A field from the user's staff profile, or None if they have no profile."""
+    profile = getattr(user, 'staff_profile', None)
+    return getattr(profile, field, None)
 
 
 class _UserBasicSerializer(serializers.ModelSerializer):
@@ -20,7 +26,7 @@ class TeamSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         team_lead = attrs.get('team_lead')
         if team_lead and self.instance:
-            if team_lead.staff_profile.team_id != self.instance.id:
+            if _profile_field(team_lead, 'team_id') != self.instance.id:
                 raise serializers.ValidationError({"team_lead": "The team lead must be a member of this team."})
         elif team_lead and not self.instance:
             raise serializers.ValidationError({"team_lead": "Cannot assign a team lead before the team is created."})
@@ -37,7 +43,7 @@ class UnitSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         supervisor = attrs.get('supervisor')
         if supervisor and self.instance:
-            if supervisor.staff_profile.unit_id != self.instance.id:
+            if _profile_field(supervisor, 'unit_id') != self.instance.id:
                 raise serializers.ValidationError({"supervisor": "The supervisor must be a member of this unit."})
         elif supervisor and not self.instance:
             raise serializers.ValidationError({"supervisor": "Cannot assign a supervisor before the unit is created."})
@@ -54,7 +60,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         line_manager = attrs.get('line_manager')
         if line_manager and self.instance:
-            if line_manager.staff_profile.department_id != self.instance.id:
+            if _profile_field(line_manager, 'department_id') != self.instance.id:
                 raise serializers.ValidationError({"line_manager": "The line manager must be a member of this department."})
         elif line_manager and not self.instance:
             raise serializers.ValidationError({"line_manager": "Cannot assign a line manager before the department is created."})

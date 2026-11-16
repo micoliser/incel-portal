@@ -1,6 +1,8 @@
-from django.core.validators import RegexValidator
 from django.contrib.auth.models import User
+from django.core.validators import RegexValidator
 from rest_framework import serializers
+
+from common.users import display_name
 
 from .models import SupportAttachment, SupportComment, SupportRequest
 from .s3 import generate_support_attachment_download_url
@@ -14,7 +16,7 @@ class UserBasicSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'full_name', 'email']
 
     def get_full_name(self, obj):
-        return obj.get_full_name() or obj.username
+        return display_name(obj)
 
 
 class DepartmentBasicSerializer(serializers.Serializer):
@@ -131,6 +133,9 @@ class SupportRequestDetailSerializer(serializers.ModelSerializer):
             'can_manage', 'can_act',
             'created_at', 'updated_at',
         ]
+        # Output only. Tickets are created with SupportRequestCreateSerializer
+        # and changed through the workflow actions, never by writing this one.
+        read_only_fields = fields
 
     def get_attachment_count(self, obj):
         return obj.attachments.count()

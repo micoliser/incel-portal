@@ -1,10 +1,11 @@
 from django.contrib.auth.models import User
-from rest_framework.test import APITestCase
-from rest_framework import status
 from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from accounts.models import StaffProfile
-from organization.models import Department, Unit, Team, Role
+from organization.models import Department, Role, Team, Unit
+
 
 class AdminUserListViewTests(APITestCase):
     def setUp(self):

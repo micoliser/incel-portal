@@ -1,16 +1,20 @@
-from datetime import date, datetime, timedelta, timezone as datetime_timezone
+from datetime import date, datetime, timedelta
+from datetime import timezone as datetime_timezone
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 
 from common.test_utils import BaseAPITestCase
-from tasks.management.commands import generate_user_summaries
-from tasks.models import Task, WeeklySummary, WeeklySummaryShare
-from tasks.models import DailyReport, DailyReportSubreport
+from tasks.models import (
+    DailyReport,
+    DailyReportSubreport,
+    Task,
+    WeeklySummary,
+    WeeklySummaryShare,
+)
 from tasks.services import calculate_user_weekly_summary
 
 

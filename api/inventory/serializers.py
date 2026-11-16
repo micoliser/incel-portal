@@ -1,8 +1,17 @@
 from rest_framework import serializers
-from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog, MaintenanceLogAttachment
-from .s3 import build_maintenance_attachment_public_url
+
 from accounts.serializers import BasicUserSerializer
 from organization.serializers import DepartmentSerializer
+
+from .models import (
+    InventoryAssignment,
+    InventoryCategory,
+    InventoryItem,
+    InventoryMaintenanceLog,
+    MaintenanceLogAttachment,
+)
+from .s3 import build_maintenance_attachment_public_url
+
 
 class InventoryCategorySerializer(serializers.ModelSerializer):
     class Meta:

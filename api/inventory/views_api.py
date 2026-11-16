@@ -1,35 +1,50 @@
 import csv
-from django.http import HttpResponse
-from rest_framework import viewsets
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound, AuthenticationFailed
-from rest_framework import status, generics
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from common.permissions import IsAdminUser
-from rest_framework.pagination import PageNumberPagination
-from django.utils import timezone
-from django.db.models import Q
-from django.contrib.auth.models import User
-from django.shortcuts import get_object_or_404
 
-from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog
+from django.contrib.auth.models import User
+from django.db.models import Q
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import generics, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from applications.audit import log_audit
+from applications.audit_actions import AuditAction
+from common.params import uuid_param
+from inventory.s3 import (
+    delete_inventory_photo_by_public_url,
+    generate_inventory_photo_upload_url,
+)
+from notifications.models import Notification
+from notifications.services import create_notification
 from organization.models import Department
-from .serializers import (
-    InventoryCategorySerializer,
-    InventoryItemSerializer,
-    InventoryItemCreateUpdateSerializer,
-    InventoryItemAssignSerializer,
-    InventoryItemReturnSerializer,
-    InventoryMaintenanceLogSerializer,
-    InventoryMaintenanceLogWriteSerializer,
-    MaintenanceAttachmentUploadUrlSerializer,
-    InventoryPhotoUploadUrlSerializer,
+
+from .models import (
+    InventoryAssignment,
+    InventoryCategory,
+    InventoryItem,
+    InventoryMaintenanceLog,
 )
 from .permissions import IsITOrAdminOrGlobalReadOnly
-from .s3 import generate_maintenance_attachment_upload_url, MaintenanceAttachmentUploadError
-from applications.audit import log_audit
-from notifications.services import create_notification
+from .s3 import (
+    MaintenanceAttachmentUploadError,
+    generate_maintenance_attachment_upload_url,
+)
+from .serializers import (
+    InventoryCategorySerializer,
+    InventoryItemAssignSerializer,
+    InventoryItemCreateUpdateSerializer,
+    InventoryItemReturnSerializer,
+    InventoryItemSerializer,
+    InventoryMaintenanceLogSerializer,
+    InventoryMaintenanceLogWriteSerializer,
+    InventoryPhotoUploadUrlSerializer,
+    MaintenanceAttachmentUploadUrlSerializer,
+)
 
 
 class InventoryCategoryViewSet(viewsets.ModelViewSet):
@@ -69,9 +84,10 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
                 Q(current_assignee_department__name__icontains=search)
             )
 
-        category_id = self.request.query_params.get('category')
-        if category_id and category_id != 'all':
-            queryset = queryset.filter(category_id=category_id)
+        if self.request.query_params.get('category') != 'all':
+            category_id = uuid_param(self.request.query_params, 'category')
+            if category_id:
+                queryset = queryset.filter(category_id=category_id)
 
         status_filter = self.request.query_params.get('status')
         if status_filter and status_filter != 'all':
@@ -129,7 +145,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         item = serializer.save()
         log_audit(
-            action='inventory.item.created',
+            action=AuditAction.INVENTORY_ITEM_CREATED,
             request=self.request,
             target_type='inventory_item',
             target_id=str(item.id),
@@ -144,14 +160,13 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         
         if previous_photo_url and item.photo_url != previous_photo_url:
             try:
-                from inventory.s3 import delete_inventory_photo_by_public_url, MaintenanceAttachmentUploadError
                 delete_inventory_photo_by_public_url(previous_photo_url)
             except Exception:
                 # We don't want to fail the whole update just because S3 delete failed
                 pass
                 
         log_audit(
-            action='inventory.item.updated',
+            action=AuditAction.INVENTORY_ITEM_UPDATED,
             request=self.request,
             target_type='inventory_item',
             target_id=str(item.id),
@@ -166,13 +181,12 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         
         if photo_url:
             try:
-                from inventory.s3 import delete_inventory_photo_by_public_url
                 delete_inventory_photo_by_public_url(photo_url)
             except Exception:
                 pass
                 
         log_audit(
-            action='inventory.item.deleted',
+            action=AuditAction.INVENTORY_ITEM_DELETED,
             request=self.request,
             target_type='inventory_item',
             target_id=item_id,
@@ -216,7 +230,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         item.save()
 
         # Create Assignment Record
-        assignment = InventoryAssignment.objects.create(
+        InventoryAssignment.objects.create(
             item=item,
             assigned_to=user,
             assigned_to_department=department,
@@ -231,7 +245,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
             metadata['assigned_to_department'] = department.name
 
         log_audit(
-            action='inventory.item.assigned',
+            action=AuditAction.INVENTORY_ITEM_ASSIGNED,
             request=request,
             target_type='inventory_item',
             target_id=str(item.id),
@@ -242,19 +256,19 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
             create_notification(
                 recipient=user,
                 actor=request.user,
-                notification_type='inventory_assigned',
+                notification_type=Notification.TYPE_INVENTORY_ASSIGNED,
                 title='New Inventory Assigned',
                 body=f'You have been assigned: {item.name}',
-                link_url=f'/my-assets'
+                link_url='/my-assets'
             )
         elif department and department.line_manager:
             create_notification(
                 recipient=department.line_manager,
                 actor=request.user,
-                notification_type='inventory_assigned',
+                notification_type=Notification.TYPE_INVENTORY_ASSIGNED,
                 title='New Department Inventory Assigned',
                 body=f'Your department ({department.name}) has been assigned: {item.name}',
-                link_url=f'/my-assets'
+                link_url='/my-assets'
             )
 
         return Response(InventoryItemSerializer(item).data)
@@ -282,7 +296,7 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
         item.save()
 
         log_audit(
-            action='inventory.item.returned',
+            action=AuditAction.INVENTORY_ITEM_RETURNED,
             request=request,
             target_type='inventory_item',
             target_id=str(item.id),
@@ -303,13 +317,12 @@ class InventoryItemViewSet(viewsets.ModelViewSet):
             raise ValidationError('Only image files are allowed.')
 
         try:
-            from inventory.s3 import generate_inventory_photo_upload_url
             url_data = generate_inventory_photo_upload_url(
                 file_name=file_name,
                 content_type=content_type
             )
             return Response(url_data)
-        except Exception as e:
+        except Exception:
             return Response(
                 {'detail': 'Could not generate upload URL. Storage service may be unavailable.'}, 
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
@@ -331,7 +344,7 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = InventoryMaintenanceLog.objects.all().select_related('item__category', 'assigned_to', 'created_by')
         
-        item_id = self.request.query_params.get('item')
+        item_id = uuid_param(self.request.query_params, 'item')
         if item_id:
             queryset = queryset.filter(item_id=item_id)
             
@@ -339,9 +352,10 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
         if status_filter and status_filter != 'all':
             queryset = queryset.filter(status=status_filter)
 
-        category_id = self.request.query_params.get('category')
-        if category_id and category_id != 'all':
-            queryset = queryset.filter(item__category_id=category_id)
+        if self.request.query_params.get('category') != 'all':
+            category_id = uuid_param(self.request.query_params, 'category')
+            if category_id:
+                queryset = queryset.filter(item__category_id=category_id)
 
         search = (self.request.query_params.get('q') or '').strip()
         if search:
@@ -387,15 +401,14 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
         return response
 
     def perform_create(self, serializer):
-        attachments_data = self.request.data.get('attachments', [])
+        attachments_data = serializer.validated_data.get('attachments') or []
         if len(attachments_data) > 5:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError({"attachments": "Maximum of 5 attachments allowed per maintenance log."})
             
         log = serializer.save(created_by=self.request.user)
         self._sync_item_status(log)
         log_audit(
-            action='inventory.maintenance.created',
+            action=AuditAction.INVENTORY_MAINTENANCE_CREATED,
             request=self.request,
             target_type='inventory_maintenance_log',
             target_id=str(log.id),
@@ -403,19 +416,17 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        from rest_framework.exceptions import PermissionDenied
         if serializer.instance.status == 'completed':
             raise PermissionDenied("Cannot edit a maintenance log that is already completed.")
             
-        attachments_data = self.request.data.get('attachments', [])
+        attachments_data = serializer.validated_data.get('attachments') or []
         if len(attachments_data) > 5:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError({"attachments": "Maximum of 5 attachments allowed per maintenance log."})
 
         log = serializer.save()
         self._sync_item_status(log)
         log_audit(
-            action='inventory.maintenance.updated',
+            action=AuditAction.INVENTORY_MAINTENANCE_UPDATED,
             request=self.request,
             target_type='inventory_maintenance_log',
             target_id=str(log.id),
@@ -423,14 +434,13 @@ class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
         )
         
     def perform_destroy(self, instance):
-        from rest_framework.exceptions import PermissionDenied
         if instance.status == 'completed':
             raise PermissionDenied("Cannot delete a maintenance log that is already completed.")
         log_id = str(instance.id)
         item_id = str(instance.item_id)
         instance.delete()
         log_audit(
-            action='inventory.maintenance.deleted',
+            action=AuditAction.INVENTORY_MAINTENANCE_DELETED,
             request=self.request,
             target_type='inventory_maintenance_log',
             target_id=log_id,

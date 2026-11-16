@@ -1,21 +1,22 @@
-from django.urls import path, include, re_path
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
 from .views_api import (
-    GoalsViewSet,
-    RecurringScheduleViewSet,
-    TaskViewSet,
-    TaskDraftViewSet,
-    TodoItemViewSet,
-    WeeklySummaryViewSet,
-    SummaryFilesViewSet,
-    ReportsMonthCalendarView,
-    ReportsDayView,
-    DepartmentReportsAllView,
     DailyReportDetailView,
+    DailyReportSendEmailView,
+    DailyReportSubreportCommentView,
     DailyReportSubreportCreateView,
     DailyReportSubreportDetailView,
-    DailyReportSubreportCommentView,
-    DailyReportSendEmailView,
+    DepartmentReportsAllView,
+    GoalsViewSet,
+    RecurringScheduleViewSet,
+    ReportsDayView,
+    ReportsMonthCalendarView,
+    SummaryFilesViewSet,
+    TaskDraftViewSet,
+    TaskViewSet,
+    TodoItemViewSet,
+    WeeklySummaryViewSet,
 )
 
 router = DefaultRouter()
@@ -52,15 +53,15 @@ urlpatterns = [
         WeeklySummaryViewSet.as_view({'get': 'organization_summary'}),
         name='weekly-summary-organization-summary-underscore',
     ),
-    # Explicit endpoints for Phase 2 summaries (ensure availability even if router action registration changes)
+    # Explicit endpoints for summary comparison and history (ensure availability even if router action registration changes)
     path('summaries/comparison-metrics/', WeeklySummaryViewSet.as_view({'get': 'comparison_metrics'})),
     path('summaries/historical/', WeeklySummaryViewSet.as_view({'get': 'historical'})),
-    # Explicit endpoint for user-to-user sharing (Phase 2)
+    # Explicit endpoints for sharing a summary
     path('summaries/share-with-user/', WeeklySummaryViewSet.as_view({'post': 'share_with_user'})),
     path('summaries/share-status/', WeeklySummaryViewSet.as_view({'get': 'share_status'})),
     path('summaries/revoke-share/', WeeklySummaryViewSet.as_view({'post': 'revoke_share'})),
     path('summaries/user-shares/', WeeklySummaryViewSet.as_view({'get': 'user_shares'})),
     path('summaries/revoke-user-share/', WeeklySummaryViewSet.as_view({'post': 'revoke_user_share'})),
     # Nested route for summary files: GET /summaries/<id>/files/
-    re_path(r'^summaries/(?P<summary_pk>[^/.]+)/files/$', SummaryFilesViewSet.as_view({'get': 'list'}), name='summary-files-list'),
+    path('summaries/<uuid:summary_pk>/files/', SummaryFilesViewSet.as_view({'get': 'list'}), name='summary-files-list'),
 ]

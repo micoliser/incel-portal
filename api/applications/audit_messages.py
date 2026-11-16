@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from applications.models import InternalApplication
 from organization.models import Department, Role
 
+
 def _clean_text(value, fallback='-'):
     if value is None:
         return fallback

@@ -168,6 +168,7 @@ AWS_INVENTORY_PHOTO_S3_PREFIX = os.getenv('AWS_INVENTORY_PHOTO_S3_PREFIX', 'inve
 SUMMARY_PDF_EXPORT_S3_PREFIX = os.getenv('SUMMARY_PDF_EXPORT_S3_PREFIX', 'pdf-exports')
 AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN', '900'))
 AWS_MAINTENANCE_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_MAINTENANCE_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
+AWS_INVENTORY_PHOTO_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_INVENTORY_PHOTO_UPLOAD_URL_EXPIRES_IN', '900'))
 AWS_S3_OBJECT_ACL = os.getenv('AWS_S3_OBJECT_ACL', 'private')
 
 WEB_PUSH_VAPID_PUBLIC_KEY = os.getenv('WEB_PUSH_VAPID_PUBLIC_KEY', '')
@@ -254,10 +255,15 @@ def _env_list(name: str, default: str = ''):
 
 ADMIN_ALLOWED_IPS = _env_list('ADMIN_ALLOWED_IPS', '127.0.0.1')
 
+SUPPORT_ATTACHMENT_S3_PREFIX = os.getenv('SUPPORT_ATTACHMENT_S3_PREFIX', 'support-attachments')
+SUPPORT_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('SUPPORT_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
+SUPPORT_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('SUPPORT_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '60'))
+
 TASK_ATTACHMENT_S3_PREFIX = os.getenv('TASK_ATTACHMENT_S3_PREFIX', 'task-attachments')
 TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
 TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '60'))
 TASK_ATTACHMENT_MAX_SIZE = int(os.getenv('TASK_ATTACHMENT_MAX_SIZE', str(10 * 1024 * 1024)))
+TASK_ATTACHMENT_MAX_FILES = int(os.getenv('TASK_ATTACHMENT_MAX_FILES', '10'))
 TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES = _env_list(
     'TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES',
     'image/png,image/jpeg,image/webp,application/pdf,text/plain,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -309,7 +315,15 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Email feature flags
 EMAIL_ENABLED = os.getenv('EMAIL_ENABLED', 'True').lower() == 'true'
 EMAIL_DEBUG = os.getenv('EMAIL_DEBUG', 'False').lower() == 'true'
-SEND_EMAILS_CELERY = os.getenv('SEND_EMAILS_CELERY', 'True').lower() == 'true'
+if IS_TESTING:
+    # Tests assert on Django's in-memory outbox, so a local .env that disables
+    # email or switches it to log-only must not change what the suite does.
+    EMAIL_ENABLED = True
+    EMAIL_DEBUG = False
+# Emails go through Celery by default. Test runs always send in-process, whatever
+# the environment says, so the suite needs no broker and never queues real mail.
+# A test that needs the Celery path patches EmailConfig.use_celery.
+SEND_EMAILS_CELERY = (not IS_TESTING) and os.getenv('SEND_EMAILS_CELERY', 'True').lower() == 'true'
 EMAIL_SENDER_NAME = os.getenv('EMAIL_SENDER_NAME', 'Incel Portal')
 
 # Portal frontend URL

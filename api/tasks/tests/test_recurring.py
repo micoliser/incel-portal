@@ -7,8 +7,8 @@ from django.utils import timezone
 from rest_framework import status
 
 from applications.models import AuditLog
-from emails.services.task_emails import TaskEmailManager
 from common.test_utils import BaseAPITestCase
+from emails.services.task_emails import TaskEmailManager
 from tasks.models import RecurrenceOccurrence, RecurringSchedule, Task
 from tasks.services import calculate_next_run_at
 from tasks.tasks import generate_recurring_task_occurrences
@@ -82,7 +82,7 @@ class RecurringScheduleApiTests(BaseAPITestCase):
         )
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
-        with patch('tasks.views_api.calculate_next_run_at', return_value=expected_next_run_at) as mock_next_run:
+        with patch('tasks.views_api.recurring.calculate_next_run_at', return_value=expected_next_run_at) as mock_next_run:
             response = self.client.post(
                 reverse('recurring-schedule-list'),
                 payload,
@@ -283,7 +283,7 @@ class RecurringScheduleApiTests(BaseAPITestCase):
         expected_next_run_at = timezone.now() + timedelta(hours=3)
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
-        with patch('tasks.views_api.calculate_next_run_at', return_value=expected_next_run_at) as mock_next_run:
+        with patch('tasks.views_api.recurring.calculate_next_run_at', return_value=expected_next_run_at) as mock_next_run:
             with patch.object(TaskEmailManager, 'send_recurring_task_resumed_emails') as mock_send:
                 response = self.client.post(
                     reverse('recurring-schedule-resume', kwargs={'pk': schedule.id}),

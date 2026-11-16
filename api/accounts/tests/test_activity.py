@@ -1,12 +1,11 @@
 from datetime import timedelta
 
 from django.utils import timezone
-from django.contrib.auth.models import User
 from rest_framework import status
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from common.test_utils import BaseAPITestCase
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
 
 class ActivityTests(BaseAPITestCase):

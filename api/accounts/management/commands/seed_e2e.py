@@ -10,7 +10,6 @@ name ends in ``_e2e``.
 
 from __future__ import annotations
 
-import os
 from datetime import time, timedelta
 
 from django.conf import settings
@@ -36,7 +35,7 @@ class Command(BaseCommand):
             )
 
         # Seeding must never send mail or push, whatever the surrounding env says.
-        os.environ['EMAIL_ENABLED'] = 'False'
+        settings.EMAIL_ENABLED = False
         settings.WEB_PUSH_VAPID_PUBLIC_KEY = ''
         settings.WEB_PUSH_VAPID_PRIVATE_KEY = ''
 
@@ -166,7 +165,11 @@ class Seeder:
     # ------------------------------------------------------------------
 
     def seed_applications(self):
-        from applications.models import ApplicationAccessOverride, InternalApplication, RecentApplication
+        from applications.models import (
+            ApplicationAccessOverride,
+            InternalApplication,
+            RecentApplication,
+        )
 
         A = InternalApplication
         self.app_payroll = A.objects.create(
@@ -411,7 +414,10 @@ class Seeder:
 
     def seed_inventory(self):
         from inventory.models import (
-            InventoryAssignment, InventoryCategory, InventoryItem, InventoryMaintenanceLog,
+            InventoryAssignment,
+            InventoryCategory,
+            InventoryItem,
+            InventoryMaintenanceLog,
         )
 
         laptops = InventoryCategory.objects.create(name='Laptops', description='Portable computers')
@@ -462,7 +468,9 @@ class Seeder:
     def seed_summaries_and_goals(self):
         from tasks.models import OrganizationSummaryCache, UserGoal, WeeklySummary
         from tasks.services import (
-            calculate_organization_summary, calculate_user_weekly_summary, calculate_weekly_comparison,
+            calculate_organization_summary,
+            calculate_user_weekly_summary,
+            calculate_weekly_comparison,
         )
 
         week_before = self.summary_monday - timedelta(days=7)

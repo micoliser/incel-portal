@@ -1,10 +1,22 @@
 from django.contrib import admin
+
 from .models import (
-    RecurrenceOccurrence, RecurringSchedule, Task, TaskActivity,
-    TaskAttachment, WeeklySummary, WeeklySummaryShare, WeeklySummaryUserShare,
-    DailyReport, DailyReportSubreport, DailyReportComment,
-    SummaryExport, UserGoal, OrganizationSummaryCache,
-    TaskDraft, TodoItem
+    DailyReport,
+    DailyReportComment,
+    DailyReportSubreport,
+    OrganizationSummaryCache,
+    RecurrenceOccurrence,
+    RecurringSchedule,
+    SummaryExport,
+    Task,
+    TaskActivity,
+    TaskAttachment,
+    TaskDraft,
+    TodoItem,
+    UserGoal,
+    WeeklySummary,
+    WeeklySummaryShare,
+    WeeklySummaryUserShare,
 )
 
 

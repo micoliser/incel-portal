@@ -9,11 +9,12 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from common.users import display_name
 from emails.services.base_email_service import BaseEmailService
 from notifications.services import create_notification
 from organization.models import Department
 
-from .models import SupportAttachment, SupportComment, SupportRequest
+from .models import SupportComment, SupportRequest
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def _build_email_context(request: SupportRequest) -> dict[str, Any]:
         'priority': request.get_priority_display(),
         'status': request.get_status_display(),
         'description': request.description,
-        'requester_name': request.requester.get_full_name() or request.requester.username,
+        'requester_name': display_name(request.requester),
         'requester_email': request.requester.email or '',
         'department_name': request.department.name if request.department else '',
         'link_url': f'{getattr(settings, "PORTAL_BASE_URL", "")}/support/{request.id}',
@@ -118,7 +119,7 @@ def notify_request_submitted(request: SupportRequest) -> None:
             actor=request.requester,
             notification_type='support_request_submitted',
             title=f'New Support Request: {request.title}',
-            body=f'{request.requester.get_full_name() or request.requester.username} submitted a {request.get_category_display()} request.',
+            body=f'{display_name(request.requester)} submitted a {request.get_category_display()} request.',
             link_url=link_url,
             payload=payload,
         )
@@ -126,7 +127,7 @@ def notify_request_submitted(request: SupportRequest) -> None:
             recipient=manager,
             subject=f'New Support Request: {request.title}',
             template_name='emails/support/request_submitted.html',
-            context={'recipient_name': manager.get_full_name() or manager.username, **email_ctx},
+            context={'recipient_name': display_name(manager), **email_ctx},
         )
 
     # Notify the requester's line manager (view-only)
@@ -136,16 +137,16 @@ def notify_request_submitted(request: SupportRequest) -> None:
             recipient=lm,
             actor=request.requester,
             notification_type='support_request_submitted',
-            title=f'{request.requester.get_full_name() or request.requester.username} submitted a support request',
+            title=f'{display_name(request.requester)} submitted a support request',
             body=f'Your team member submitted: {request.title}',
             link_url=link_url,
             payload=payload,
         )
         _send_support_email(
             recipient=lm,
-            subject=f'{request.requester.get_full_name() or request.requester.username} submitted a support request',
+            subject=f'{display_name(request.requester)} submitted a support request',
             template_name='emails/support/request_submitted.html',
-            context={'recipient_name': lm.get_full_name() or lm.username, **email_ctx},
+            context={'recipient_name': display_name(lm), **email_ctx},
         )
 
 
@@ -169,7 +170,7 @@ def notify_request_assigned(request: SupportRequest) -> None:
         recipient=handler,
         subject=f'Support Request Assigned: {request.title}',
         template_name='emails/support/request_assigned.html',
-        context={'recipient_name': handler.get_full_name() or handler.username, **email_ctx},
+        context={'recipient_name': display_name(handler), **email_ctx},
     )
 
 
@@ -225,7 +226,7 @@ def notify_request_resolved(request: SupportRequest) -> None:
         recipient=request.requester,
         subject=f'Support Request Resolved: {request.title}',
         template_name='emails/support/request_resolved.html',
-        context={'recipient_name': request.requester.get_full_name() or request.requester.username, **email_ctx},
+        context={'recipient_name': display_name(request.requester), **email_ctx},
     )
 
 
@@ -248,7 +249,7 @@ def notify_request_closed(request: SupportRequest) -> None:
         recipient=request.requester,
         subject=f'Support Request Closed: {request.title}',
         template_name='emails/support/request_closed.html',
-        context={'recipient_name': request.requester.get_full_name() or request.requester.username, **email_ctx},
+        context={'recipient_name': display_name(request.requester), **email_ctx},
     )
 
     # Notify department line managers
@@ -267,7 +268,7 @@ def notify_request_closed(request: SupportRequest) -> None:
                 recipient=manager,
                 subject=f'Support Request Closed: {request.title}',
                 template_name='emails/support/request_closed.html',
-                context={'recipient_name': manager.get_full_name() or manager.username, **email_ctx},
+                context={'recipient_name': display_name(manager), **email_ctx},
             )
 
     # Notify the assigned handler (if not already a line manager)
@@ -287,7 +288,7 @@ def notify_request_closed(request: SupportRequest) -> None:
                 recipient=request.assigned_to,
                 subject=f'Support Request Closed: {request.title}',
                 template_name='emails/support/request_closed.html',
-                context={'recipient_name': request.assigned_to.get_full_name() or request.assigned_to.username, **email_ctx},
+                context={'recipient_name': display_name(request.assigned_to), **email_ctx},
             )
 
 
@@ -337,7 +338,7 @@ def update_request_status(
     if not comment_body:
         comment_body = (
             f'Status changed from "{previous_status}" to "{dict(SupportRequest.STATUS_CHOICES).get(new_status)}"'
-            f'{" by " + (user.get_full_name() or user.username) if user else ""}.'
+            f'{" by " + (display_name(user)) if user else ""}.'
         )
 
     SupportComment.objects.create(

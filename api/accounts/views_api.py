@@ -1,55 +1,81 @@
+import logging
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
-from django.core.cache import cache
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-import logging
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import permissions, status
+from rest_framework.exceptions import AuthenticationFailed, NotFound, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework.exceptions import ValidationError, NotFound, AuthenticationFailed, PermissionDenied
+from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.utils import timezone
-from datetime import timedelta
 
 from accounts.models import StaffProfile
 from accounts.serializers import (
     AdminCreateUserSerializer,
     ChangePasswordSerializer,
     LoginSerializer,
-    LogoutSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     PasswordResetValidateSerializer,
+    UpdateAdminUserSerializer,
     UpdateUserDepartmentSerializer,
     UpdateUserRoleSerializer,
     UpdateUserStatusSerializer,
-    UpdateAdminUserSerializer,
     UserWithProfileSerializer,
 )
 from applications.audit import log_audit
+from applications.audit_actions import AuditAction
 from applications.models import InternalApplication
 from common.access import can_user_access_application
-from common.authentication import HasValidServiceApiKey, ServiceApiKeyAuthentication
-from common.permissions import IsGlobalAccessUser, IsAdminOrGlobalReadOnly, has_admin_access, has_global_access
+from common.authentication import (
+    HasValidServiceApiKey,
+    PublicEndpointAuthentication,
+    ServiceApiKeyAuthentication,
+)
+from common.params import uuid_param
+from common.permissions import IsAdminOrGlobalReadOnly, has_global_access
 from emails.services.user_emails import UserEmailManager
-from organization.models import Department, Role, Unit, Team
-
+from organization.models import Department, Role, Team, Unit
 
 logger = logging.getLogger(__name__)
 
 
 def _profile_or_none(user):
     return getattr(user, 'staff_profile', None)
+
+
+def _user_search_query(search):
+    """Match a user by first name, last name, username or email.
+
+    With several words, also match "first last" and "last first", so typing a
+    full name finds the person whichever way round it is entered.
+    """
+    search_terms = [term for term in search.split() if term]
+    search_query = (
+        Q(first_name__icontains=search)
+        | Q(last_name__icontains=search)
+        | Q(username__icontains=search)
+        | Q(email__icontains=search)
+    )
+    if len(search_terms) > 1:
+        first = search_terms[0]
+        last = ' '.join(search_terms[1:])
+        search_query |= Q(first_name__icontains=first, last_name__icontains=last)
+        search_query |= Q(first_name__icontains=last, last_name__icontains=first)
+    return search_query
 
 
 def _jwt_payload_for_user(user):
@@ -89,6 +115,7 @@ def _clear_jwt_cookies(response):
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [PublicEndpointAuthentication]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
 
@@ -111,7 +138,7 @@ class LoginView(APIView):
         user = User.objects.filter(email__iexact=email).first()
         if not user:
             log_audit(
-                action='AUTH_LOGIN_FAILED',
+                action=AuditAction.AUTH_LOGIN_FAILED,
                 request=request,
                 target_type='User',
                 metadata={'email': email},
@@ -121,7 +148,7 @@ class LoginView(APIView):
 
         if not user.is_active:
             log_audit(
-                action='AUTH_LOGIN_FAILED',
+                action=AuditAction.AUTH_LOGIN_FAILED,
                 request=request,
                 target_type='User',
                 target_id=user.id,
@@ -135,7 +162,7 @@ class LoginView(APIView):
         authenticated = authenticate(request=request, username=user.username, password=password)
         if authenticated is None:
             log_audit(
-                action='AUTH_LOGIN_FAILED',
+                action=AuditAction.AUTH_LOGIN_FAILED,
                 request=request,
                 target_type='User',
                 target_id=user.id,
@@ -149,7 +176,7 @@ class LoginView(APIView):
 
         tokens = _jwt_payload_for_user(authenticated)
         log_audit(
-            action='AUTH_LOGIN_SUCCESS',
+            action=AuditAction.AUTH_LOGIN_SUCCESS,
             request=request,
             actor_user=authenticated,
             target_type='User',
@@ -172,8 +199,7 @@ class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = LogoutSerializer(data=request.data)
-        # Logout might not send refresh token in data if it's HttpOnly
+        # The refresh token may arrive in the body or, for browsers, in its HttpOnly cookie.
         refresh_token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
         if not refresh_token:
             return _clear_jwt_cookies(Response(status=status.HTTP_204_NO_CONTENT))
@@ -185,7 +211,7 @@ class LogoutView(APIView):
             raise ValidationError('Invalid refresh token.')
 
         log_audit(
-            action='AUTH_LOGOUT',
+            action=AuditAction.AUTH_LOGOUT,
             request=request,
             actor_user=request.user,
             target_type='User',
@@ -196,6 +222,7 @@ class LogoutView(APIView):
 
 class RefreshTokenView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [PublicEndpointAuthentication]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'refresh'
 
@@ -230,7 +257,7 @@ class RefreshTokenView(APIView):
                         pass
         except AuthenticationFailed:
             raise
-        except Exception as exc:
+        except Exception:
             logger.exception("Silent exception caught")
 
         serializer = TokenRefreshSerializer(data={'refresh': refresh_token})
@@ -252,7 +279,7 @@ class HeartbeatView(APIView):
             if profile is not None:
                 profile.last_activity_at = timezone.now()
                 profile.save(update_fields=['last_activity_at'])
-        except Exception as exc:
+        except Exception:
             logger.exception("Silent exception caught")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -271,7 +298,7 @@ class ChangePasswordView(APIView):
 
         if not request.user.check_password(old_password):
             log_audit(
-                action='AUTH_PASSWORD_CHANGE_FAILED',
+                action=AuditAction.AUTH_PASSWORD_CHANGE_FAILED,
                 request=request,
                 actor_user=request.user,
                 target_type='User',
@@ -293,7 +320,7 @@ class ChangePasswordView(APIView):
 
         tokens = _jwt_payload_for_user(request.user)
         log_audit(
-            action='AUTH_PASSWORD_CHANGED',
+            action=AuditAction.AUTH_PASSWORD_CHANGED,
             request=request,
             actor_user=request.user,
             target_type='User',
@@ -305,6 +332,7 @@ class ChangePasswordView(APIView):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [PublicEndpointAuthentication]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
 
@@ -316,7 +344,7 @@ class PasswordResetRequestView(APIView):
         user = User.objects.filter(email__iexact=email).first()
         if user is None:
             log_audit(
-                action='AUTH_PASSWORD_RESET_FAILED',
+                action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
                 request=request,
                 target_type='User',
                 metadata={'reason': 'user_not_found', 'email': email},
@@ -328,7 +356,7 @@ class PasswordResetRequestView(APIView):
 
         if not user.is_active:
             log_audit(
-                action='AUTH_PASSWORD_RESET_FAILED',
+                action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
                 request=request,
                 target_type='User',
                 target_id=user.id,
@@ -359,7 +387,7 @@ class PasswordResetRequestView(APIView):
             logger.error("Failed to send password reset email: %s", str(exc))
 
         log_audit(
-            action='AUTH_PASSWORD_RESET_REQUESTED',
+            action=AuditAction.AUTH_PASSWORD_RESET_REQUESTED,
             request=request,
             target_type='User',
             target_id=user.id,
@@ -373,6 +401,7 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetValidateView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [PublicEndpointAuthentication]
 
     def get(self, request):
         serializer = PasswordResetValidateSerializer(data=request.query_params)
@@ -410,6 +439,7 @@ class PasswordResetValidateView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [PublicEndpointAuthentication]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
 
@@ -425,7 +455,7 @@ class PasswordResetConfirmView(APIView):
 
         if user is None or not user.is_active or not default_token_generator.check_token(user, token):
             log_audit(
-                action='AUTH_PASSWORD_RESET_FAILED',
+                action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
                 request=request,
                 target_type='User',
                 metadata={'reason': 'invalid_or_expired_token'},
@@ -443,7 +473,7 @@ class PasswordResetConfirmView(APIView):
         user.save(update_fields=['password'])
 
         log_audit(
-            action='AUTH_PASSWORD_RESET_COMPLETED',
+            action=AuditAction.AUTH_PASSWORD_RESET_COMPLETED,
             request=request,
             target_type='User',
             target_id=user.id,
@@ -518,26 +548,13 @@ class AuthenticatedUserListView(APIView):
             'staff_profile__department',
         ).filter(is_active=True)
 
-        department_id = request.query_params.get('department_id')
+        department_id = uuid_param(request.query_params, 'department_id')
         if department_id:
             users = users.filter(staff_profile__department_id=department_id)
 
         search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
         if search:
-            search_terms = [term for term in search.split() if term]
-            search_query = (
-                Q(first_name__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(username__icontains=search)
-                | Q(email__icontains=search)
-            )
-            if len(search_terms) > 1:
-                first = search_terms[0]
-                last = ' '.join(search_terms[1:])
-                search_query |= Q(first_name__icontains=first, last_name__icontains=last)
-                search_query |= Q(first_name__icontains=last, last_name__icontains=first)
-
-            users = users.filter(search_query)
+            users = users.filter(_user_search_query(search))
 
         users = users.order_by(Lower('username'))
         
@@ -563,15 +580,15 @@ class AdminUserListView(APIView):
             'staff_profile__team'
         )
 
-        department_id = request.query_params.get('department_id')
+        department_id = uuid_param(request.query_params, 'department_id')
         if department_id:
             users = users.filter(staff_profile__department_id=department_id)
 
-        unit_id = request.query_params.get('unit_id')
+        unit_id = uuid_param(request.query_params, 'unit_id')
         if unit_id:
             users = users.filter(staff_profile__unit_id=unit_id)
 
-        team_id = request.query_params.get('team_id')
+        team_id = uuid_param(request.query_params, 'team_id')
         if team_id:
             users = users.filter(staff_profile__team_id=team_id)
 
@@ -586,20 +603,7 @@ class AdminUserListView(APIView):
         # Support 'q' param for admin search to mirror other list endpoints
         search = (request.query_params.get('q') or '').strip()
         if search:
-            search_terms = [term for term in search.split() if term]
-            search_query = (
-                Q(first_name__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(username__icontains=search)
-                | Q(email__icontains=search)
-            )
-            if len(search_terms) > 1:
-                first = search_terms[0]
-                last = ' '.join(search_terms[1:])
-                search_query |= Q(first_name__icontains=first, last_name__icontains=last)
-                search_query |= Q(first_name__icontains=last, last_name__icontains=first)
-
-            users = users.filter(search_query)
+            users = users.filter(_user_search_query(search))
 
         users = users.order_by(Lower('username'))
 
@@ -670,7 +674,7 @@ class AdminUserListView(APIView):
             pass
 
         log_audit(
-            action='ADMIN_USER_CREATED',
+            action=AuditAction.ADMIN_USER_CREATED,
             request=request,
             actor_user=request.user,
             target_type='User',
@@ -736,7 +740,7 @@ class AdminUserDetailView(APIView):
             user.set_password(temporary_password)
             user.save(update_fields=['password'])
             log_audit(
-                action='ADMIN_USER_PASSWORD_RESET',
+                action=AuditAction.ADMIN_USER_PASSWORD_RESET,
                 request=request,
                 actor_user=request.user,
                 target_type='User',
@@ -792,7 +796,7 @@ class AdminUserDetailView(APIView):
             profile.save(update_fields=['department', 'unit', 'team', 'role', 'updated_at'])
 
         log_audit(
-            action='ADMIN_USER_UPDATED',
+            action=AuditAction.ADMIN_USER_UPDATED,
             request=request,
             actor_user=request.user,
             target_type='User',
@@ -837,7 +841,7 @@ class AdminUserRoleUpdateView(APIView):
             profile.save(update_fields=['role', 'updated_at'])
 
         log_audit(
-            action='ADMIN_USER_ROLE_UPDATED',
+            action=AuditAction.ADMIN_USER_ROLE_UPDATED,
             request=request,
             actor_user=request.user,
             target_type='User',
@@ -875,7 +879,7 @@ class AdminUserDepartmentUpdateView(APIView):
         profile.save(update_fields=['department', 'updated_at'])
 
         log_audit(
-            action='ADMIN_USER_DEPARTMENT_UPDATED',
+            action=AuditAction.ADMIN_USER_DEPARTMENT_UPDATED,
             request=request,
             actor_user=request.user,
             target_type='User',
@@ -910,7 +914,7 @@ class AdminUserStatusUpdateView(APIView):
             profile.save(update_fields=['is_active', 'updated_at'])
 
         log_audit(
-            action='ADMIN_USER_STATUS_UPDATED',
+            action=AuditAction.ADMIN_USER_STATUS_UPDATED,
             request=request,
             actor_user=request.user,
             target_type='User',

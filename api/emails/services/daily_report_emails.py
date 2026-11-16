@@ -1,13 +1,14 @@
 """Email service for forwarding daily reports."""
 
 import logging
-import os
 from typing import Any, Dict, List
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.utils.formats import date_format
 
+from common.users import display_name
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
 from tasks.models import DailyReport
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_portal_base_url() -> str:
-    return os.getenv('PORTAL_BASE_URL', 'https://workspace.incelgroup.com').rstrip('/')
+    return settings.PORTAL_BASE_URL.rstrip('/')
 
 
 def build_daily_report_email_context(report: DailyReport, sender: User) -> Dict[str, Any]:
@@ -27,7 +28,7 @@ def build_daily_report_email_context(report: DailyReport, sender: User) -> Dict[
         comments_payload = []
         for comment in subreport.comments.all().order_by('created_at'):
             comments_payload.append({
-                'author_name': comment.author.get_full_name() or comment.author.username,
+                'author_name': display_name(comment.author),
                 'created_at_display': date_format(
                     timezone.localtime(comment.created_at),
                     'M j, Y, g:i a',
@@ -37,7 +38,7 @@ def build_daily_report_email_context(report: DailyReport, sender: User) -> Dict[
 
         subreports_payload.append({
             'title': subreport.title,
-            'created_by_name': subreport.created_by.get_full_name() or subreport.created_by.username,
+            'created_by_name': display_name(subreport.created_by),
             'created_at_display': date_format(
                 timezone.localtime(subreport.created_at),
                 'M j, Y, g:i a',
@@ -48,7 +49,7 @@ def build_daily_report_email_context(report: DailyReport, sender: User) -> Dict[
 
     report_date = report.report_date
     return {
-        'sender_name': sender.get_full_name() or sender.username,
+        'sender_name': display_name(sender),
         'sender_email': sender.email,
         'report_date_display': date_format(report_date, 'l, F j, Y'),
         'department_name': report.department.name,

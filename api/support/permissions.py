@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import BasePermission
 
 from .models import SupportRequest
 
@@ -15,13 +15,6 @@ class CanManageDepartmentRequests(BasePermission):
 
     def has_object_permission(self, request, view, obj: SupportRequest):
         return _is_department_manager(request.user, obj)
-
-
-class IsAssignedHandler(BasePermission):
-    """User is the assigned handler of the support request."""
-
-    def has_object_permission(self, request, view, obj: SupportRequest):
-        return obj.assigned_to == request.user
 
 
 class CanViewRequest(BasePermission):
@@ -53,7 +46,7 @@ class CanComment(BasePermission):
 class IsHandlerOrDepartmentManager(BasePermission):
     """User is either the assigned handler or a department manager.
 
-    Combines IsAssignedHandler and CanManageDepartmentRequests via OR logic.
+    Either condition is enough.
     """
 
     def has_object_permission(self, request, view, obj: SupportRequest):

@@ -1,6 +1,7 @@
-from typing import List, Dict, Any
-from emails.services.base_email_service import BaseEmailService
+from typing import Any, Dict, List
+
 from emails.config import EmailType
+from emails.services.base_email_service import BaseEmailService
 
 
 class ApplicationCreatedEmailService(BaseEmailService):

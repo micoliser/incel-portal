@@ -1,8 +1,12 @@
 from rest_framework import serializers
 
 from applications.audit_messages import action_label, build_message, target_label
-from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication
-from applications.models import RecentApplication
+from applications.models import (
+    ApplicationAccessOverride,
+    AuditLog,
+    InternalApplication,
+    RecentApplication,
+)
 from organization.models import Department
 
 

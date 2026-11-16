@@ -1,7 +1,9 @@
+from typing import Any, Dict
+
 from django.conf import settings
-from typing import Dict, Any
-from emails.services.base_email_service import BaseEmailService
+
 from emails.config import EmailType
+from emails.services.base_email_service import BaseEmailService
 
 
 class UserCreatedEmailService(BaseEmailService):

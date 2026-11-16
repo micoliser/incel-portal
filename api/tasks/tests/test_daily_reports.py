@@ -414,7 +414,6 @@ class DailyReportsApiTests(BaseAPITestCase):
     def test_first_report_sends_manager_email(self, mock_send):
         # Create department and assign manager
         from organization.models import Department
-        from accounts.models import StaffProfile
         
         dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
         
@@ -434,7 +433,6 @@ class DailyReportsApiTests(BaseAPITestCase):
     def test_eod_report_sends_manager_email(self, mock_send):
         # Create department and assign manager
         from organization.models import Department
-        from accounts.models import StaffProfile
         
         dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
         
@@ -447,9 +445,10 @@ class DailyReportsApiTests(BaseAPITestCase):
         # Reset mock call count because the first creation triggers an email
         mock_send.reset_mock()
         
-        from tasks.tasks import send_eod_daily_reports
         from django.core.cache import cache
         from django.utils import timezone
+
+        from tasks.tasks import send_eod_daily_reports
         cache.delete(f"eod_emails_sent_{timezone.localdate().isoformat()}")
         
         result = send_eod_daily_reports()
@@ -459,11 +458,11 @@ class DailyReportsApiTests(BaseAPITestCase):
 
     @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
     def test_eod_emails_not_sent_twice(self, mock_send):
-        from tasks.tasks import send_eod_daily_reports
         from django.core.cache import cache
         from django.utils import timezone
-        
+
         from organization.models import Department
+        from tasks.tasks import send_eod_daily_reports
         dept = Department.objects.create(name='Test Dept 2', code='TD2', line_manager_id=self.admin_user.id)
         profile = self.staff_user.staff_profile
         profile.department_id = dept.id
@@ -489,7 +488,7 @@ class DailyReportsApiTests(BaseAPITestCase):
 
     def test_all_reports_department_isolation(self):
         today = timezone.localdate()
-        yesterday = today - timedelta(days=1)
+        today - timedelta(days=1)
 
         # Create report for engineering user
         eng_report = DailyReport.objects.create(

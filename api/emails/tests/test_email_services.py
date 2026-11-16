@@ -1,11 +1,12 @@
-import os
-from django.test import TestCase, override_settings
-from django.contrib.auth import get_user_model
 from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase, override_settings
+
 from emails.config import EmailConfig
-from emails.services.user_emails import UserEmailManager
 from emails.services.summary_emails import SummaryEmailManager
 from emails.services.task_emails import TaskEmailManager
+from emails.services.user_emails import UserEmailManager
 from tasks.models import Task
 
 User = get_user_model()
@@ -15,9 +16,6 @@ class EmailServiceTestCase(TestCase):
     """Test email services."""
 
     def setUp(self):
-        # Ensure tests don't attempt to use Celery/Redis broker
-        os.environ['SEND_EMAILS_CELERY'] = 'False'
-
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
@@ -183,8 +181,9 @@ class EmailServiceTestCase(TestCase):
     @patch('emails.services.base_email_service.BaseEmailService._send_sync')
     def test_todo_reminder_email(self, mock_send):
         """Test sending todo reminder email."""
-        from tasks.models import TodoItem
         import datetime
+
+        from tasks.models import TodoItem
 
         mock_send.return_value = True
 
@@ -215,9 +214,8 @@ class ManagerEmailNotificationTestCase(TestCase):
     """Test manager notifications for tasks, recurring tasks, and weekly summaries."""
 
     def setUp(self):
-        os.environ['SEND_EMAILS_CELERY'] = 'False'
-        from organization.models import Role, Department, Unit, Team
         from accounts.models import StaffProfile
+        from organization.models import Department, Role
 
         self.role = Role.objects.create(name='Staff', code='STAFF')
 
@@ -348,6 +346,7 @@ class ManagerEmailNotificationTestCase(TestCase):
         """Recurring task events notify both assignee and direct managers."""
         mock_send.return_value = True
         from django.utils import timezone
+
         from tasks.models import RecurringSchedule
 
         schedule = RecurringSchedule.objects.create(
@@ -411,8 +410,8 @@ class ManagerEmailNotificationTestCase(TestCase):
 
     def test_team_lead_escalates_to_supervisor_direct_manager(self):
         """If user is a Team Lead, their direct manager escalates to the Unit Supervisor."""
-        from organization.models import Unit, Team
         from accounts.models import StaffProfile
+        from organization.models import Team, Unit
 
         supervisor = User.objects.create_user(
             username='sup', email='sup@example.com', password='password123'

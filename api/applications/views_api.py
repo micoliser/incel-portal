@@ -3,32 +3,39 @@ import uuid
 from django.contrib.auth.models import User
 from django.core.paginator import EmptyPage, Paginator
 from django.db import transaction
-from django.utils.dateparse import parse_datetime
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import permissions, status
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
 from applications.audit import log_audit
-from applications.models import ApplicationAccessOverride, AuditLog, InternalApplication, RecentApplication
-from applications.serializers import (
-    AccessOverrideCreateSerializer,
-    AccessOverrideSerializer,
-    AuditLogSerializer,
-    ApplicationLogoUploadUrlSerializer,
-    InternalApplicationSerializer,
-    InternalApplicationWriteSerializer,
-    SetApplicationDepartmentsSerializer,
+from applications.audit_actions import AuditAction
+from applications.models import (
+    ApplicationAccessOverride,
+    AuditLog,
+    InternalApplication,
+    RecentApplication,
 )
 from applications.s3 import (
     ApplicationLogoUploadError,
     delete_application_logo_by_public_url,
     generate_application_logo_upload_url,
 )
+from applications.serializers import (
+    AccessOverrideCreateSerializer,
+    AccessOverrideSerializer,
+    ApplicationLogoUploadUrlSerializer,
+    AuditLogSerializer,
+    InternalApplicationSerializer,
+    InternalApplicationWriteSerializer,
+    SetApplicationDepartmentsSerializer,
+)
 from common.access import can_user_access_application
-from common.permissions import IsAdminUser, IsGlobalAccessUser, IsAdminOrAuthenticatedReadOnly, has_global_access
+from common.params import int_param
+from common.permissions import IsAdminOrGlobalAccessUser, IsAdminUser, has_global_access
 from emails.services.application_emails import ApplicationEmailManager
 from emails.utils import EmailNotificationHelper
 from organization.models import Department
@@ -76,6 +83,26 @@ def _users_who_lost_application_access(application, user_emails):
             users_to_notify.append(user_email)
 
     return _dedupe_emails(users_to_notify)
+
+
+def _notify_department_access_changes(application, previous_department_ids, department_ids):
+    """Email the departments that gained access, and the people who lost it."""
+    added_department_ids = [
+        department_id for department_id in department_ids if department_id not in previous_department_ids
+    ]
+    if added_department_ids:
+        recipient_emails = _department_user_emails(added_department_ids)
+        if recipient_emails:
+            ApplicationEmailManager.send_departmental_access_emails(application, recipient_emails)
+
+    removed_department_ids = [
+        department_id for department_id in previous_department_ids if department_id not in department_ids
+    ]
+    if removed_department_ids:
+        recipient_emails = _department_user_emails(removed_department_ids)
+        recipient_emails = _users_who_lost_application_access(application, recipient_emails)
+        if recipient_emails:
+            ApplicationEmailManager.send_departmental_access_revoked_emails(application, recipient_emails)
 
 
 class ApplicationListView(APIView):
@@ -209,7 +236,7 @@ class ApplicationOpenView(APIView):
             raise NotFound('Application not found.')
 
         can_access, reason = can_user_access_application(request.user, app)
-        action = 'APPLICATION_OPEN_GRANTED' if can_access else 'APPLICATION_OPEN_DENIED'
+        action = AuditAction.APPLICATION_OPEN_GRANTED if can_access else AuditAction.APPLICATION_OPEN_DENIED
         log_audit(
             action=action,
             request=request,
@@ -257,7 +284,7 @@ class RecentApplicationsView(APIView):
 
 
 class AdminApplicationCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     @transaction.atomic
     def post(self, request):
@@ -277,7 +304,7 @@ class AdminApplicationCreateView(APIView):
         ApplicationEmailManager.send_application_created_to_users(app)
 
         log_audit(
-            action='ADMIN_APPLICATION_CREATED',
+            action=AuditAction.ADMIN_APPLICATION_CREATED,
             request=request,
             actor_user=request.user,
             target_type='InternalApplication',
@@ -293,7 +320,7 @@ class AdminApplicationCreateView(APIView):
 
 
 class AdminApplicationLogoUploadUrlView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'uploads'
 
@@ -314,7 +341,7 @@ class AdminApplicationLogoUploadUrlView(APIView):
 
 
 class AdminApplicationUpdateDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     @transaction.atomic
     def patch(self, request, application_id):
@@ -346,21 +373,10 @@ class AdminApplicationUpdateDeleteView(APIView):
                 raise ValidationError('One or more department IDs are invalid.')
             app.departments.set(departments)
 
-            added_department_ids = [department_id for department_id in department_ids if department_id not in previous_department_ids]
-            if added_department_ids:
-                recipient_emails = _department_user_emails(added_department_ids)
-                if recipient_emails:
-                    ApplicationEmailManager.send_departmental_access_emails(app, recipient_emails)
-
-            removed_department_ids = [department_id for department_id in previous_department_ids if department_id not in department_ids]
-            if removed_department_ids:
-                recipient_emails = _department_user_emails(removed_department_ids)
-                recipient_emails = _users_who_lost_application_access(app, recipient_emails)
-                if recipient_emails:
-                    ApplicationEmailManager.send_departmental_access_revoked_emails(app, recipient_emails)
+            _notify_department_access_changes(app, previous_department_ids, department_ids)
 
         log_audit(
-            action='ADMIN_APPLICATION_UPDATED',
+            action=AuditAction.ADMIN_APPLICATION_UPDATED,
             request=request,
             actor_user=request.user,
             target_type='InternalApplication',
@@ -384,7 +400,7 @@ class AdminApplicationUpdateDeleteView(APIView):
         app.save(update_fields=['status', 'visibility_scope', 'updated_at'])
 
         log_audit(
-            action='ADMIN_APPLICATION_SOFT_DELETED',
+            action=AuditAction.ADMIN_APPLICATION_SOFT_DELETED,
             request=request,
             actor_user=request.user,
             target_type='InternalApplication',
@@ -395,7 +411,7 @@ class AdminApplicationUpdateDeleteView(APIView):
 
 
 class AdminApplicationDepartmentsView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     @transaction.atomic
     def put(self, request, application_id):
@@ -415,21 +431,10 @@ class AdminApplicationDepartmentsView(APIView):
         app.departments.set(departments)
         app.save(update_fields=['updated_at'])
 
-        added_department_ids = [department_id for department_id in department_ids if department_id not in previous_department_ids]
-        if added_department_ids:
-            recipient_emails = _department_user_emails(added_department_ids)
-            if recipient_emails:
-                ApplicationEmailManager.send_departmental_access_emails(app, recipient_emails)
-
-        removed_department_ids = [department_id for department_id in previous_department_ids if department_id not in department_ids]
-        if removed_department_ids:
-            recipient_emails = _department_user_emails(removed_department_ids)
-            recipient_emails = _users_who_lost_application_access(app, recipient_emails)
-            if recipient_emails:
-                ApplicationEmailManager.send_departmental_access_revoked_emails(app, recipient_emails)
+        _notify_department_access_changes(app, previous_department_ids, department_ids)
 
         log_audit(
-            action='ADMIN_APPLICATION_DEPARTMENTS_UPDATED',
+            action=AuditAction.ADMIN_APPLICATION_DEPARTMENTS_UPDATED,
             request=request,
             actor_user=request.user,
             target_type='InternalApplication',
@@ -445,7 +450,7 @@ class AdminApplicationDepartmentsView(APIView):
 
 
 class AdminApplicationOverridesCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     def get(self, _request, application_id):
         app = InternalApplication.objects.filter(id=application_id).first()
@@ -478,7 +483,7 @@ class AdminApplicationOverridesCreateView(APIView):
         )
 
         log_audit(
-            action='ADMIN_APPLICATION_OVERRIDE_UPSERTED',
+            action=AuditAction.ADMIN_APPLICATION_OVERRIDE_UPSERTED,
             request=request,
             actor_user=request.user,
             target_type='ApplicationAccessOverride',
@@ -496,7 +501,7 @@ class AdminApplicationOverridesCreateView(APIView):
 
 
 class AdminApplicationOverrideDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     def delete(self, request, application_id, override_id):
         app = InternalApplication.objects.filter(id=application_id).first()
@@ -511,7 +516,7 @@ class AdminApplicationOverrideDeleteView(APIView):
         override.delete()
 
         log_audit(
-            action='ADMIN_APPLICATION_OVERRIDE_DELETED',
+            action=AuditAction.ADMIN_APPLICATION_OVERRIDE_DELETED,
             request=request,
             actor_user=request.user,
             target_type='ApplicationAccessOverride',
@@ -523,14 +528,16 @@ class AdminApplicationOverrideDeleteView(APIView):
 
 
 class AdminAuditLogListView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    # The audit trail holds sign-in failures, IP addresses and account changes,
+    # so it is limited to administrators and executives.
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalAccessUser]
 
     def get(self, request):
         logs = AuditLog.objects.select_related('actor_user').all().order_by('-created_at')
 
         action = request.query_params.get('action')
         target_type = request.query_params.get('target_type')
-        actor_user_id = request.query_params.get('actor_user_id')
+        actor_user_id = int_param(request.query_params, 'actor_user_id')
         created_from = request.query_params.get('created_from')
         created_to = request.query_params.get('created_to')
 
@@ -583,7 +590,7 @@ class AdminAuditLogListView(APIView):
 
 
 class AdminAuditLogDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalAccessUser]
 
     def get(self, _request, log_id):
         log = AuditLog.objects.select_related('actor_user').filter(id=log_id).first()

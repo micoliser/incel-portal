@@ -2,7 +2,9 @@
 
 import random
 import string
+
 from django.db import migrations, models
+
 
 def generate_unique_codes(apps, schema_editor):
     InventoryItem = apps.get_model('inventory', 'InventoryItem')

@@ -1,7 +1,9 @@
 import logging
-from typing import List, Dict, Any
-from emails.services.base_email_service import BaseEmailService
+from typing import Any, Dict
+
+from common.users import display_name
 from emails.config import EmailType
+from emails.services.base_email_service import BaseEmailService
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +349,7 @@ class TaskEmailManager:
             if assignee_manager and assigner_manager and assignee_manager.id == assigner_manager.id:
                 context = dict(base_context)
                 context['recipient_type'] = 'manager_both'
-                context['recipient_name'] = assignee_manager.get_full_name() or assignee_manager.username
+                context['recipient_name'] = display_name(assignee_manager)
                 TaskEmailManager._send_to_recipient(
                     service,
                     assignee_manager.email,
@@ -361,7 +363,7 @@ class TaskEmailManager:
             if assignee_manager:
                 context = dict(base_context)
                 context['recipient_type'] = 'manager_assignee'
-                context['recipient_name'] = assignee_manager.get_full_name() or assignee_manager.username
+                context['recipient_name'] = display_name(assignee_manager)
                 TaskEmailManager._send_to_recipient(
                     service,
                     assignee_manager.email,
@@ -374,7 +376,7 @@ class TaskEmailManager:
             if assigner_manager:
                 context = dict(base_context)
                 context['recipient_type'] = 'manager_assigner'
-                context['recipient_name'] = assigner_manager.get_full_name() or assigner_manager.username
+                context['recipient_name'] = display_name(assigner_manager)
                 TaskEmailManager._send_to_recipient(
                     service,
                     assigner_manager.email,
@@ -397,8 +399,8 @@ class TaskEmailManager:
             )
             return
 
-        assigner_name = created_by.get_full_name() or created_by.username
-        assignee_name = completed_by.get_full_name() or completed_by.username
+        assigner_name = display_name(created_by)
+        assignee_name = display_name(completed_by)
         assigner_context = {
             'task_id': str(task.id),
             'task_name': task.title,
@@ -431,8 +433,8 @@ class TaskEmailManager:
         if not created_by or not assigned_to:
             return
 
-        assigner_name = created_by.get_full_name() or created_by.username
-        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        assigner_name = display_name(created_by)
+        assignee_name = display_name(assigned_to)
         task_id = str(getattr(task, 'id', getattr(task, 'pk', '')))
         due_date = getattr(task, 'due_date', getattr(task, 'deadline', None))
 
@@ -459,8 +461,8 @@ class TaskEmailManager:
         if not created_by or not assigned_to:
             return
 
-        assigner_name = created_by.get_full_name() or created_by.username
-        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        assigner_name = display_name(created_by)
+        assignee_name = display_name(assigned_to)
         task_id = str(getattr(task, 'id', getattr(task, 'pk', '')))
         due_date = getattr(task, 'due_date', getattr(task, 'deadline', None))
 
@@ -489,8 +491,8 @@ class TaskEmailManager:
         if not assigned_to or not created_by:
             return
 
-        assigner_name = created_by.get_full_name() or created_by.username
-        assignee_name = assigned_to.get_full_name() or assigned_to.username
+        assigner_name = display_name(created_by)
+        assignee_name = display_name(assigned_to)
         task_id = str(getattr(task, 'id', getattr(task, 'pk', '')))
         due_date = getattr(task, 'due_date', getattr(task, 'deadline', None))
 
@@ -525,8 +527,8 @@ class TaskEmailManager:
             )
             return
 
-        assignee_name = assigned_to.get_full_name() or assigned_to.username
-        assigner_name = created_by.get_full_name() or created_by.username
+        assignee_name = display_name(assigned_to)
+        assigner_name = display_name(created_by)
         assignee_context = {
             'task_id': str(task.id),
             'task_name': task.title,
@@ -692,7 +694,7 @@ class TaskEmailManager:
             'priority': getattr(todo, 'priority', 'medium'),
             'priority_display': getattr(todo, 'priority', 'medium').capitalize(),
             'due_display': due_display,
-            'recipient_name': user.get_full_name() or user.username,
+            'recipient_name': display_name(user),
             'reminder_time_label': reminder_time_label,
             'todo_url': f"{portal_base_url}/todos",
         }

@@ -1,30 +1,32 @@
 import logging
 
-from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.viewsets import ModelViewSet
+
+from accounts.models import StaffProfile
+from common.params import uuid_param
+from common.users import display_name
 
 from .models import SupportAttachment, SupportComment, SupportRequest
 from .permissions import (
     CanComment,
     CanManageDepartmentRequests,
     CanViewRequest,
-    IsAssignedHandler,
     IsHandlerOrDepartmentManager,
     IsRequester,
     user_is_any_department_manager,
 )
 from .s3 import (
     SupportAttachmentStorageError,
-    build_support_attachment_key,
     generate_support_attachment_upload_url,
 )
 from .serializers import (
@@ -40,10 +42,12 @@ from .serializers import (
     SupportRequestStatusSerializer,
 )
 from .services import (
+    get_requester_line_manager,
     notify_comment_added,
     notify_request_assigned,
     notify_request_closed,
     notify_request_resolved,
+    notify_request_submitted,
     route_support_request,
     update_request_status,
 )
@@ -62,12 +66,16 @@ class SupportRequestViewSet(ModelViewSet):
     pagination_class = SupportRequestPagination
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'support'
+    # No PUT, PATCH or DELETE: a ticket only changes through the workflow
+    # actions below (assign, update-status, resolve, confirm, reopen), which
+    # check who may act, enforce the allowed transitions and leave a record.
+    # The default update and destroy actions would bypass all of that.
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
         user = self.request.user
         # Staff see their own requests + assigned requests
         # Department managers also see their department's requests
-        from .permissions import user_is_any_department_manager
 
         qs = SupportRequest.objects.filter(
             models.Q(requester=user) | models.Q(assigned_to=user)
@@ -75,7 +83,6 @@ class SupportRequestViewSet(ModelViewSet):
 
         if user_is_any_department_manager(user):
             # Add requests routed to the user's department
-            from accounts.models import StaffProfile
             try:
                 profile = user.staff_profile
                 if profile.department:
@@ -118,7 +125,6 @@ class SupportRequestViewSet(ModelViewSet):
         department = route_support_request(data['category'])
 
         # Snapshot the requester's line manager
-        from .services import get_requester_line_manager
         lm = get_requester_line_manager(self.request.user)
 
         with transaction.atomic():
@@ -140,7 +146,6 @@ class SupportRequestViewSet(ModelViewSet):
             )
 
         # Fire notifications outside the transaction
-        from .services import notify_request_submitted
         notify_request_submitted(request_obj)
 
         return request_obj
@@ -176,7 +181,7 @@ class SupportRequestViewSet(ModelViewSet):
             SupportComment.objects.create(
                 request=request_obj,
                 author=request.user,
-                body=f'Assigned to {handler.get_full_name() or handler.username}.',
+                body=f'Assigned to {display_name(handler)}.',
                 is_system=True,
             )
 
@@ -198,8 +203,8 @@ class SupportRequestViewSet(ModelViewSet):
                 serializer.validated_data['status'],
                 user=request.user,
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         output = SupportRequestDetailSerializer(updated, context={'request': request})
         return Response(output.data)
@@ -216,8 +221,8 @@ class SupportRequestViewSet(ModelViewSet):
                 user=request.user,
                 comment_body='Request marked as resolved.',
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         notify_request_resolved(updated)
 
@@ -242,8 +247,8 @@ class SupportRequestViewSet(ModelViewSet):
                 user=request.user,
                 comment_body='Requester confirmed resolution. Request closed.',
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         notify_request_closed(updated)
 
@@ -268,8 +273,8 @@ class SupportRequestViewSet(ModelViewSet):
                 user=request.user,
                 comment_body='Requester reopened this request.',
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         # Clear assignment on reopen
         request_obj.assigned_to = None
@@ -325,7 +330,7 @@ class SupportRequestViewSet(ModelViewSet):
         data = serializer.validated_data
 
         # Determine where to attach — if a comment_id was provided, attach to comment
-        comment_id = request.data.get('comment_id')
+        comment_id = uuid_param(request.data, 'comment_id')
         comment = None
         if comment_id:
             comment = get_object_or_404(SupportComment, id=comment_id, request=request_obj)
@@ -357,7 +362,6 @@ class SupportRequestViewSet(ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        from accounts.models import StaffProfile
         try:
             profile = request.user.staff_profile
         except StaffProfile.DoesNotExist:

@@ -1,8 +1,17 @@
-from rest_framework.test import APITestCase
-from rest_framework import status
-from django.contrib.auth.models import User
 from unittest.mock import patch
-from .models import InventoryCategory, InventoryItem, InventoryAssignment, InventoryMaintenanceLog, MaintenanceLogAttachment
+
+from django.contrib.auth.models import User
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from inventory.models import (
+    InventoryAssignment,
+    InventoryCategory,
+    InventoryItem,
+    InventoryMaintenanceLog,
+    MaintenanceLogAttachment,
+)
+
 
 class InventoryAPITests(APITestCase):
     def setUp(self):

@@ -1,13 +1,13 @@
 import datetime
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from accounts.models import ServiceApiKey
+from accounts.models import ServiceApiKey, StaffProfile
 from organization.models import Department, Role
-from accounts.models import StaffProfile
 
 User = get_user_model()
 

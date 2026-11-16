@@ -1,25 +1,28 @@
 """
-Comprehensive tests for Phase 2 features
+Tests for weekly summary comparison, sharing, export, goals and the organization summary
 """
-import json
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
+
 from django.conf import settings
-from django.test import TestCase
 from django.contrib.auth.models import User
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework.test import APIClient
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from tasks.models import (
-    Task, TaskActivity, TaskAttachment, WeeklySummary, WeeklySummaryShare,
-    WeeklySummaryUserShare, SummaryExport, UserGoal,
-    OrganizationSummaryCache
+    OrganizationSummaryCache,
+    SummaryExport,
+    Task,
+    TaskActivity,
+    TaskAttachment,
+    UserGoal,
+    WeeklySummary,
+    WeeklySummaryUserShare,
 )
-from tasks.services import (
-    calculate_weekly_comparison, calculate_organization_summary, check_user_goals
-)
+from tasks.services import calculate_weekly_comparison, check_user_goals
 from tasks.tasks import cache_organization_summaries
 
 
@@ -88,7 +91,7 @@ class BaseAPITestCase(TestCase):
         return summary_data
 
 
-class Phase2ComparisonTests(BaseAPITestCase):
+class ComparisonTests(BaseAPITestCase):
     """Tests for week-over-week comparison functionality"""
     
     def test_calculate_weekly_comparison_with_previous_week(self):
@@ -147,7 +150,7 @@ class Phase2ComparisonTests(BaseAPITestCase):
         self.assertEqual(comparison_flat['trend'], 'flat')
 
 
-class Phase2UserSharingTests(BaseAPITestCase):
+class UserSharingTests(BaseAPITestCase):
     """Tests for user-to-user summary sharing"""
     
     def test_share_summary_with_user(self):
@@ -215,7 +218,7 @@ class Phase2UserSharingTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
-class Phase2ExportTests(BaseAPITestCase):
+class ExportTests(BaseAPITestCase):
     """Tests for summary export (PDF)"""
     
     def test_export_summary_as_pdf(self):
@@ -260,7 +263,7 @@ class Phase2ExportTests(BaseAPITestCase):
         self.assertEqual(export.exported_by, self.user1)
 
 
-class Phase2GoalTests(BaseAPITestCase):
+class GoalTests(BaseAPITestCase):
     """Tests for goal tracking and progress"""
     
     def test_create_user_goal(self):
@@ -293,7 +296,7 @@ class Phase2GoalTests(BaseAPITestCase):
             week_end_date=week_start + timedelta(days=6),
             summary_data=self.build_summary_data(),
         )
-        goal = UserGoal.objects.create(
+        UserGoal.objects.create(
             user=self.user1,
             metric='files_attached',
             target_value=85.0,
@@ -316,7 +319,7 @@ class Phase2GoalTests(BaseAPITestCase):
     def test_check_goal_progress(self):
         """Test checking progress against goals"""
         week_start = date(2024, 5, 13)
-        goal = UserGoal.objects.create(
+        UserGoal.objects.create(
             user=self.user1,
             metric='tasks_completed',
             target_value=10.0,
@@ -364,7 +367,7 @@ class Phase2GoalTests(BaseAPITestCase):
         self.assertTrue(goal.is_active)
 
 
-class Phase2OrganizationTests(BaseAPITestCase):
+class OrganizationTests(BaseAPITestCase):
     """Tests for organization-wide summaries"""
     
     def test_organization_summary_requires_admin(self):
@@ -579,7 +582,7 @@ class Phase2OrganizationTests(BaseAPITestCase):
         self.assertEqual(OrganizationSummaryCache.objects.count(), 0)
 
 
-class Phase2ComparisonMetricsTest(BaseAPITestCase):
+class ComparisonMetricsTest(BaseAPITestCase):
     """Tests for comparison metrics in summaries"""
     
     def test_summary_with_comparison_data(self):
@@ -626,14 +629,14 @@ class Phase2ComparisonMetricsTest(BaseAPITestCase):
         self.assertEqual(current_summary.previous_week_summary, previous_summary)
 
 
-class Phase2PublicShareTests(BaseAPITestCase):
+class PublicShareTests(BaseAPITestCase):
     """Tests for public sharing (create/revoke/status/shared view)"""
 
     def test_create_public_share_and_shared_view_and_status(self):
         week_start = date(2024, 5, 13)
         summary_data = self.build_summary_data()
 
-        summary = WeeklySummary.objects.create(
+        WeeklySummary.objects.create(
             user=self.user1,
             week_start_date=week_start,
             week_end_date=week_start + timedelta(days=6),
@@ -674,7 +677,7 @@ class Phase2PublicShareTests(BaseAPITestCase):
         self.assertFalse(status_resp2.data.get('shared'))
 
 
-class Phase2UserScopedShareTests(BaseAPITestCase):
+class UserScopedShareTests(BaseAPITestCase):
     """Tests for user-scoped share tokens and access control"""
 
     def test_user_scoped_shared_access_control(self):
@@ -711,7 +714,7 @@ class Phase2UserScopedShareTests(BaseAPITestCase):
         self.assertIn('summary', resp3.data)
 
 
-class Phase2FilesTests(BaseAPITestCase):
+class FilesTests(BaseAPITestCase):
     """Tests for files listing within a summary and token-based access"""
 
     def test_files_list_permissions_and_token(self):
@@ -795,7 +798,7 @@ class Phase2FilesTests(BaseAPITestCase):
         self.assertTrue(len(token_resp.data.get('tasks', [])) >= 1)
 
 
-class Phase2RevokeUserShareTests(BaseAPITestCase):
+class RevokeUserShareTests(BaseAPITestCase):
     """Tests for revoking user-scoped shares"""
 
     def test_revoke_user_share(self):

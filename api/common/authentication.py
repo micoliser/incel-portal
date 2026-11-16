@@ -25,6 +25,23 @@ class CookieJWTAuthentication(JWTAuthentication):
         return self.get_user(validated_token), validated_token
 
 
+class PublicEndpointAuthentication(BaseAuthentication):
+    """For endpoints used by people who are not signed in (sign-in, token refresh,
+    password recovery).
+
+    It never authenticates anyone, so a stale or expired token sent along with
+    the request is ignored instead of being rejected before the view runs. It
+    still declares a challenge header: without one, DRF would report a failed
+    sign-in as 403 instead of 401.
+    """
+
+    def authenticate(self, request):
+        return None
+
+    def authenticate_header(self, request):
+        return 'Bearer realm="api"'
+
+
 class ServiceApiKeyAuthentication(BaseAuthentication):
     """
     Standard Bearer token authentication against the ServiceApiKey model.

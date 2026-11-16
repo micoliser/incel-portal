@@ -1,9 +1,10 @@
 # Generated migration for Phase 2 features
 
+import uuid
+
+import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
-import django.db.models.deletion
-import uuid
 
 
 class Migration(migrations.Migration):

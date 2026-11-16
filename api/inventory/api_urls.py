@@ -1,6 +1,12 @@
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views_api import InventoryCategoryViewSet, InventoryItemViewSet, MyInventoryView, InventoryMaintenanceLogViewSet
+
+from .views_api import (
+    InventoryCategoryViewSet,
+    InventoryItemViewSet,
+    InventoryMaintenanceLogViewSet,
+    MyInventoryView,
+)
 
 router = DefaultRouter()
 router.register(r'inventory/categories', InventoryCategoryViewSet, basename='inventory-category')

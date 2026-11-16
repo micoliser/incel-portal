@@ -6,3 +6,7 @@ deployment/
 deploy.sh
 *.csv
 REALTIME_IMPLEMENTATION.txt
+
+# Local audit trackers (working notes, not for the repository)
+AUDIT_SECURITY.md
+AUDIT_CONSISTENCY.md

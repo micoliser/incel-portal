@@ -1,4 +1,3 @@
-import json
 
 from applications.models import AuditLog
 

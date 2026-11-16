@@ -1,12 +1,11 @@
 import datetime
 import uuid
 
-from django.db import models
 from django.contrib.auth.models import User
+from django.db import models
 from django.utils import timezone
 
 from organization.models import Department
-
 
 TASK_PRIORITY_CHOICES = [
     ('low', 'Low'),
@@ -189,7 +188,7 @@ class WeeklySummary(models.Model):
     # Summary metrics stored as JSON
     summary_data = models.JSONField(default=dict)
     
-    # PHASE 2: Week-over-week comparison
+    # Week-over-week comparison
     previous_week_summary = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
@@ -233,7 +232,7 @@ class WeeklySummaryShare(models.Model):
         return f"Share of {self.summary} by {self.shared_by.username}"
 
 
-# PHASE 2 MODELS
+# Sharing, exports and goals
 
 class WeeklySummaryUserShare(models.Model):
     """User-to-user explicit sharing of summaries"""

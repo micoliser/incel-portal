@@ -1,6 +1,6 @@
 from rest_framework import permissions
 from rest_framework.permissions import BasePermission
-from common.permissions import has_global_access
+
 from .hierarchy import has_task_oversight
 
 

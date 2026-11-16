@@ -1,10 +1,12 @@
-from unittest.mock import patch, MagicMock
 from io import BytesIO
+from unittest.mock import MagicMock, patch
+
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from PIL import Image
 
-from inventory.models import InventoryItem, InventoryCategory
+from inventory.models import InventoryCategory, InventoryItem
+
 
 @override_settings(AWS_S3_BUCKET_NAME='test-bucket', AWS_INVENTORY_PHOTO_S3_PREFIX='inventory/photos')
 class CompressS3ImagesCommandTests(TestCase):

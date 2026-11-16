@@ -89,9 +89,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint API
+        working-directory: api
+        # Version pinned so a new ruff release cannot fail the build on its own.
+        run: |
+          pip install ruff==0.17.5
+          ruff check .
+
       - name: Run Django system checks
         working-directory: api
         run: python manage.py check
+
+      - name: Check for missing migrations
+        working-directory: api
+        run: python manage.py makemigrations --check --dry-run
 
       - name: Run Django tests
         working-directory: api

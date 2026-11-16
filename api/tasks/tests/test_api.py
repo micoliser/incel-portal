@@ -6,8 +6,8 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 
-from applications.models import AuditLog
 from accounts.models import StaffProfile
+from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
 from tasks.models import Task, TaskActivity, TaskAttachment
@@ -802,7 +802,7 @@ class TasksApiTests(BaseAPITestCase):
         )
 
         self.client.credentials(**self.auth_headers_for(self.staff_user))
-        with patch('tasks.views_api.generate_task_attachment_upload_url') as mock_upload_url:
+        with patch('tasks.views_api.tasks.generate_task_attachment_upload_url') as mock_upload_url:
             mock_upload_url.return_value = {
                 'upload_url': 'https://uploads.example/object',
                 'object_key': f'task-attachments/{task.id}/sample.pdf',

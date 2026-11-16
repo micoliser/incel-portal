@@ -5,9 +5,10 @@ from typing import Any, Dict
 
 from django.contrib.auth.models import User
 from django.utils import timezone
+
+from common.users import display_name
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
-
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class SummaryEmailManager:
     ):
         """Send email notification when weekly summary is ready."""
         context = {
-            'user_name': user.get_full_name() or user.username,
+            'user_name': display_name(user),
             'tasks_completed': summary_data.get('tasks_completed', 0),
             'tasks_assigned': summary_data.get('tasks_assigned', 0),
             'completion_rate': summary_data.get('completion_rate_percent', 0),
@@ -73,7 +74,7 @@ class SummaryEmailManager:
             if manager and manager.id != user.id and manager.email:
                 manager_context = dict(context)
                 manager_context['is_manager_copy'] = True
-                manager_context['manager_name'] = manager.get_full_name() or manager.username
+                manager_context['manager_name'] = display_name(manager)
                 manager_sent = service.send([manager.email], manager_context)
                 if manager_sent:
                     logger.info(
@@ -114,15 +115,15 @@ class SummaryEmailManager:
 
         # Keep context Celery-serializable (plain scalars only) so async dispatch works.
         context = {
-            'recipient_name': recipient.get_full_name() or recipient.username,
-            'sharer_name': sharer.get_full_name() or sharer.username,
+            'recipient_name': display_name(recipient),
+            'sharer_name': display_name(sharer),
             'week_start': summary_week,
             'week_end': week_end or summary_week,
             'shared_date_display': timezone.now().strftime('%B %d, %Y at %I:%M %p'),
             'view_summary_url': view_summary_url or '/summaries',
         }
 
-        subject = f"{sharer.get_full_name() or sharer.username} shared a summary with you"
+        subject = f"{display_name(sharer)} shared a summary with you"
         sent = BaseEmailService.send_email(
             subject=subject,
             recipients=[recipient_email],

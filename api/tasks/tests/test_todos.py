@@ -1,5 +1,6 @@
 import datetime
 from unittest.mock import patch
+
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
@@ -272,7 +273,7 @@ class TodoItemAPITests(TestCase):
         now = timezone.now()
         due_time = now + datetime.timedelta(minutes=15)
 
-        todo = TodoItem.objects.create(
+        TodoItem.objects.create(
             user=self.user1,
             title='Call client',
             description='Discuss renewal contract',

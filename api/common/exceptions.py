@@ -1,9 +1,16 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import exception_handler
 
 
 def custom_exception_handler(exc, context):
+    # Django's own ValidationError (raised by services, model validation, or the
+    # ORM when a value such as a UUID or date is malformed) means bad input. DRF
+    # does not know it, so without this it would surface as a 500.
+    if isinstance(exc, DjangoValidationError):
+        exc = ValidationError(exc.message_dict if hasattr(exc, 'error_dict') else exc.messages)
+
     response = exception_handler(exc, context)
     if response is None:
         return response

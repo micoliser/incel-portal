@@ -2,26 +2,14 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from accounts.models import StaffProfile
-from organization.models import Department, Role, Unit, Team
+from common.permissions import has_global_access
+from organization.models import Department, Role, Team, Unit
 
 
 class BasicUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_active']
-
-
-class StaffProfileSerializer(serializers.ModelSerializer):
-    role = serializers.StringRelatedField()
-    department_id = serializers.SerializerMethodField()
-
-    class Meta:
-        model = StaffProfile
-        fields = ['role', 'department_id', 'is_active']
-
-    def get_department_id(self, obj):
-        return obj.department_id
 
 
 class UserWithProfileSerializer(serializers.ModelSerializer):
@@ -67,11 +55,9 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
         return getattr(obj, 'staff_profile', None)
 
     def get_has_global_access(self, obj):
-        from common.permissions import has_global_access
         return has_global_access(obj)
 
     def get_is_manager(self, obj):
-        from common.permissions import has_global_access
         if has_global_access(obj):
             return True
         return (
@@ -81,7 +67,6 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
         )
 
     def get_manager_scope(self, obj):
-        from common.permissions import has_global_access
         if not obj or not obj.is_authenticated:
             return None
         if has_global_access(obj):
@@ -180,10 +165,6 @@ class LoginSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         return value.strip().lower()
-
-
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
 
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -374,7 +355,6 @@ class UpdateAdminUserSerializer(serializers.Serializer):
         if new_password != confirm_password:
             raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
 
-        user_id = self.context.get('user_id')
         email = attrs.get('email') or ''
         candidate_user = User(username=str(email).strip().lower(), email=str(email).strip().lower())
         validate_password(new_password, user=candidate_user)
