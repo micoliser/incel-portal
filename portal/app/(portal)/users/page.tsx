@@ -334,6 +334,7 @@ export default function UsersPage() {
     const errors: Record<string, string> = {};
 
     if (!values.first_name.trim()) errors.first_name = "First name is required.";
+    if (!values.last_name.trim()) errors.last_name = "Last name is required.";
     if (!values.email.trim()) errors.email = "Email is required.";
     else if (!isValidEmail(values.email.trim()))
       errors.email = "Enter a valid email address.";
@@ -352,6 +353,7 @@ export default function UsersPage() {
     const errors: Record<string, string> = {};
 
     if (!values.first_name.trim()) errors.first_name = "First name is required.";
+    if (!values.last_name.trim()) errors.last_name = "Last name is required.";
     if (!values.email.trim()) errors.email = "Email is required.";
     else if (!isValidEmail(values.email.trim()))
       errors.email = "Enter a valid email address.";
@@ -449,11 +451,13 @@ export default function UsersPage() {
         role_id: form.role_id || null,
       };
 
-      if (form.reset_password && form.new_password) {
+      if (form.reset_password) {
+        payload.reset_password = true;
         payload.new_password = form.new_password;
+        payload.confirm_password = form.confirm_new_password;
       }
 
-      const resp = await apiClient.put(
+      const resp = await apiClient.patch(
         `/admin/users/${editingUser.id}`,
         payload,
       );
@@ -1000,7 +1004,7 @@ export default function UsersPage() {
               </div>
 
               <div>
-                <Label htmlFor="last_name">Last Name</Label>
+                <Label htmlFor="last_name">Last Name *</Label>
                 <Input
                   id="last_name"
                   value={form.last_name}
@@ -1011,7 +1015,13 @@ export default function UsersPage() {
                   }}
                   className="mt-1.5"
                   placeholder="Last name"
+                  aria-invalid={Boolean(formErrors.last_name)}
                 />
+                {formErrors.last_name && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {formErrors.last_name}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1287,7 +1297,7 @@ export default function UsersPage() {
               </div>
 
               <div>
-                <Label htmlFor="edit_last_name">Last Name</Label>
+                <Label htmlFor="edit_last_name">Last Name *</Label>
                 <Input
                   id="edit_last_name"
                   value={form.last_name}
@@ -1297,7 +1307,13 @@ export default function UsersPage() {
                     setEditApiError("");
                   }}
                   className="mt-1.5"
+                  aria-invalid={Boolean(formErrors.last_name)}
                 />
+                {formErrors.last_name && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {formErrors.last_name}
+                  </p>
+                )}
               </div>
             </div>
 

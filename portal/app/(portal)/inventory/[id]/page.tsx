@@ -87,7 +87,7 @@ export default function InventoryItemDetail() {
   const [isReturnOpen, setIsReturnOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [assignForm, setAssignForm] = useState({ assigned_to: "", assigned_to_type: null as "user" | "department" | null, condition_notes: "" });
+  const [assignForm, setAssignForm] = useState({ assigned_to: "", condition_notes: "" });
   const [returnForm, setReturnForm] = useState({ condition_notes: "" });
 
   const fetchData = useCallback(async () => {
@@ -125,14 +125,15 @@ export default function InventoryItemDetail() {
 
     try {
       setIsSubmitting(true);
-      const assignPayload = assignForm.assigned_to_type === "user" 
-        ? { assigned_to: assignForm.assigned_to, condition_notes: assignForm.condition_notes }
-        : { assigned_to_department: assignForm.assigned_to, condition_notes: assignForm.condition_notes };
-        
-      await apiClient.post(`/inventory/items/${id}/assign/`, assignPayload);
+      // This dialog only assigns to a person; department assignment is done
+      // from the inventory list.
+      await apiClient.post(`/inventory/items/${id}/assign/`, {
+        assigned_to: assignForm.assigned_to,
+        condition_notes: assignForm.condition_notes,
+      });
       toast.success("Item assigned successfully");
       setIsAssignOpen(false);
-      setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
+      setAssignForm({ assigned_to: "", condition_notes: "" });
       fetchData();
     } catch (error) {
       toast.error(extractApiErrorMessage(error, "Failed to assign item"));
@@ -330,7 +331,7 @@ export default function InventoryItemDetail() {
       <Dialog open={isAssignOpen} onOpenChange={(open) => {
         setIsAssignOpen(open);
         if (!open) {
-          setAssignForm({ assigned_to: "", assigned_to_type: null, condition_notes: "" });
+          setAssignForm({ assigned_to: "", condition_notes: "" });
         }
       }}>
         <DialogContent className="sm:max-w-md">
@@ -344,7 +345,7 @@ export default function InventoryItemDetail() {
               <UserCombobox
                 value={assignForm.assigned_to}
                 onChange={(value) => setAssignForm({ ...assignForm, assigned_to: value })}
-                apiEndpoint="/admin/users"
+                apiEndpoint="/users"
               />
             </div>
             <div className="space-y-2">

@@ -728,7 +728,7 @@ class AdminUserDetailView(APIView):
         user.email = serializer.validated_data['email']
         user.username = serializer.validated_data['email']
         user.first_name = serializer.validated_data['first_name']
-        user.last_name = serializer.validated_data.get('last_name', '')
+        user.last_name = serializer.validated_data['last_name']
         user.save(update_fields=['email', 'username', 'first_name', 'last_name'])
 
         if serializer.validated_data.get('reset_password'):
