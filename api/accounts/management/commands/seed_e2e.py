@@ -10,7 +10,6 @@ name ends in ``_e2e``.
 
 from __future__ import annotations
 
-import os
 from datetime import time, timedelta
 
 from django.conf import settings
@@ -36,7 +35,7 @@ class Command(BaseCommand):
             )
 
         # Seeding must never send mail or push, whatever the surrounding env says.
-        os.environ['EMAIL_ENABLED'] = 'False'
+        settings.EMAIL_ENABLED = False
         settings.WEB_PUSH_VAPID_PUBLIC_KEY = ''
         settings.WEB_PUSH_VAPID_PRIVATE_KEY = ''
 
@@ -88,8 +87,10 @@ class Seeder:
         self.role_md = Role.objects.create(name='MD', code='MD', has_global_access=True)
 
         self.dept_ops = Department.objects.create(name='Operations', code='OPS')
-        self.dept_it = Department.objects.create(name='IT', code='IT')
-        self.dept_hr = Department.objects.create(name='Human Resources', code='HR')
+        self.dept_it = Department.objects.create(
+            name='IT', code='IT', manages_inventory=True, handles_it_support=True,
+        )
+        self.dept_hr = Department.objects.create(name='Human Resources', code='HR', handles_general_support=True)
         self.dept_finance = Department.objects.create(name='Finance', code='FIN')
 
         self.unit_logistics = Unit.objects.create(department=self.dept_ops, name='Logistics', code='OPS-LOG')
@@ -166,7 +167,11 @@ class Seeder:
     # ------------------------------------------------------------------
 
     def seed_applications(self):
-        from applications.models import ApplicationAccessOverride, InternalApplication, RecentApplication
+        from applications.models import (
+            ApplicationAccessOverride,
+            InternalApplication,
+            RecentApplication,
+        )
 
         A = InternalApplication
         self.app_payroll = A.objects.create(
@@ -411,7 +416,10 @@ class Seeder:
 
     def seed_inventory(self):
         from inventory.models import (
-            InventoryAssignment, InventoryCategory, InventoryItem, InventoryMaintenanceLog,
+            InventoryAssignment,
+            InventoryCategory,
+            InventoryItem,
+            InventoryMaintenanceLog,
         )
 
         laptops = InventoryCategory.objects.create(name='Laptops', description='Portable computers')
@@ -462,7 +470,9 @@ class Seeder:
     def seed_summaries_and_goals(self):
         from tasks.models import OrganizationSummaryCache, UserGoal, WeeklySummary
         from tasks.services import (
-            calculate_organization_summary, calculate_user_weekly_summary, calculate_weekly_comparison,
+            calculate_organization_summary,
+            calculate_user_weekly_summary,
+            calculate_weekly_comparison,
         )
 
         week_before = self.summary_monday - timedelta(days=7)

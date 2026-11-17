@@ -1,4 +1,5 @@
 "use client";
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -50,6 +51,8 @@ export default function MaintenanceLogsPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const isRequestInFlightRef = useRef(false);
+  // Only the newest list request may update the list.
+  const latestRequestRef = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,17 +69,18 @@ export default function MaintenanceLogsPage() {
     const loadMetadata = async () => {
       try {
         const [catsRes, meRes, permsRes] = await Promise.all([
-          apiClient.get("/inventory/categories/"),
+          apiClient.get("/inventory/categories"),
           apiClient.get("/me"),
           apiClient.get("/me/permissions")
         ]);
         setCategories(catsRes.data.results || catsRes.data);
         
-        const meData = meRes.data as { department_code?: string | null };
+        const meData = meRes.data as { can_manage_inventory?: boolean };
         const permsData = permsRes.data as { is_superuser?: boolean; role_code?: string | null };
         
         const isAdmin = Boolean(permsData.is_superuser) || String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
-        const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
+        // Members of a department responsible for company assets.
+        const isIT = Boolean(meData.can_manage_inventory);
         
         setHasWriteAccess(isAdmin || isIT);
       } catch (err) {
@@ -87,8 +91,11 @@ export default function MaintenanceLogsPage() {
   }, []);
 
   const loadLogs = useCallback(async () => {
-    if (isRequestInFlightRef.current) return;
+    // Only loading more waits for a request in flight; a filter change starts
+      // a new request, and the older one's answer is then ignored.
+      if (isRequestInFlightRef.current && currentPage > 1) return;
 
+    const requestId = ++latestRequestRef.current;
     try {
       isRequestInFlightRef.current = true;
       if (currentPage === 1) {
@@ -99,10 +106,13 @@ export default function MaintenanceLogsPage() {
       
       const params: Record<string, string | number> = { page: currentPage };
       if (statusFilter !== "all") params.status = statusFilter;
-      if (categoryFilter !== "all") params.category = categoryFilter;
-      if (debouncedSearch) params.q = debouncedSearch;
+      if (categoryFilter !== "all") params.category_id = categoryFilter;
+      if (debouncedSearch) params.search = debouncedSearch;
       
       const payload = await fetchMaintenanceLogs(params);
+
+      // A newer request (the filters changed) has superseded this one.
+      if (requestId !== latestRequestRef.current) return;
       
       let results: MaintenanceLog[] = [];
       if (Array.isArray(payload)) {
@@ -114,18 +124,16 @@ export default function MaintenanceLogsPage() {
 
       setLogs((current) => (currentPage === 1 ? results : [...current, ...results]));
       
-      const hasNext = !Array.isArray(payload) && payload && typeof payload === "object"
-        ? Boolean((payload as { next_page?: unknown }).next_page)
-        : false;
-      
-      setHasNextPage(hasNext);
+      setHasNextPage(pageHasNext(payload));
       setError(null);
     } catch (err) {
       setError(extractApiErrorMessage(err, "Failed to load maintenance logs"));
     } finally {
-      isRequestInFlightRef.current = false;
-      setLoading(false);
-      setIsLoadingMore(false);
+      if (requestId === latestRequestRef.current) {
+        isRequestInFlightRef.current = false;
+        setLoading(false);
+        setIsLoadingMore(false);
+      }
     }
   }, [statusFilter, categoryFilter, debouncedSearch, currentPage]);
 
@@ -152,8 +160,8 @@ export default function MaintenanceLogsPage() {
       setIsExporting(true);
       const params: Record<string, string> = {};
       if (statusFilter !== "all") params.status = statusFilter;
-      if (categoryFilter !== "all") params.category = categoryFilter;
-      if (debouncedSearch) params.q = debouncedSearch;
+      if (categoryFilter !== "all") params.category_id = categoryFilter;
+      if (debouncedSearch) params.search = debouncedSearch;
       
       const blob = await exportMaintenanceLogs(params);
       const url = window.URL.createObjectURL(new Blob([blob]));

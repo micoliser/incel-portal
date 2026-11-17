@@ -7,10 +7,15 @@ WORKDIR /app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir gunicorn
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Run as an unprivileged user: a compromise of the application must not mean
+# root inside the container.
+RUN useradd --system --no-create-home --uid 10001 app \
+    && chown -R app:app /app
+USER app
 
 EXPOSE 8000
 

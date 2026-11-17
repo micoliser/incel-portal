@@ -19,7 +19,7 @@ export function MaintenanceLogsList({ itemId, item }: { itemId: string, item?: {
   const loadLogs = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchMaintenanceLogs({ item: itemId });
+      const data = await fetchMaintenanceLogs({ item_id: itemId });
       setLogs(data.results || data);
       setError(null);
     } catch (err) {

@@ -75,6 +75,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     department?: string | null;
     department_id?: number | string | null;
     department_code?: string | null;
+    can_manage_inventory?: boolean;
     has_global_access?: boolean;
     is_manager?: boolean;
     manager_scope?: {
@@ -130,6 +131,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           department?: string | null;
           department_id?: number | string | null;
           department_code?: string | null;
+          can_manage_inventory?: boolean;
           has_global_access?: boolean;
           is_manager?: boolean;
           manager_scope?: {
@@ -151,7 +153,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
         // Route guarding
         const hasGlobalAccess = Boolean(data.has_global_access);
-        const isIT = String(data.department_code ?? "").toUpperCase() === "IT";
+        // Members of a department responsible for company assets.
+        const isIT = Boolean(data.can_manage_inventory);
         
         if (pathname.startsWith("/users") && !isAdminUser && !hasGlobalAccess) {
           router.replace("/dashboard");
@@ -778,7 +781,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </div>
 
           {/* Group 3: Administration & Oversight */}
-          {isAdmin || userInfo?.has_global_access || userInfo?.department === "IT" ? (
+          {isAdmin || userInfo?.has_global_access || userInfo?.can_manage_inventory ? (
             <div className="flex flex-col gap-1 border-t border-sidebar-border/70 pt-3">
               {isAdmin || userInfo?.has_global_access ? (
                 <Link
@@ -828,7 +831,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 </Link>
               ) : null}
 
-              {isAdmin || userInfo?.has_global_access || userInfo?.department === "IT" ? (
+              {isAdmin || userInfo?.has_global_access || userInfo?.can_manage_inventory ? (
                 <Link
                   href="/inventory"
                   onClick={handleCloseSidebar}

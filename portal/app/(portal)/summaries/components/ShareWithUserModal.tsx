@@ -97,9 +97,7 @@ export function ShareWithUserModal({
 
       try {
         if (typeof window !== "undefined" && "Notification" in window) {
-          const shareLink =
-            resp?.share_link ||
-            (resp?.share_token ? `/summaries?token=${resp.share_token}` : null);
+          const shareLink = resp?.share_link || null;
           const fullUrl = shareLink
             ? `${window.location.origin}${shareLink}`
             : `${window.location.origin}/summaries?id=${weekStartDate}`;

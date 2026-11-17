@@ -78,11 +78,11 @@ class StaffProfile(TimeStampedModel):
             if code == 'ADMIN' or name in ['ADMIN', 'ADMINISTRATOR']:
                 return self.role.name or "Admin"
 
-        if self.user.managed_departments.exists():
+        if list(self.user.managed_departments.all()):  # uses the prefetched list when loaded
             return "Line Manager"
-        if self.user.managed_units.exists():
+        if list(self.user.managed_units.all()):  # uses the prefetched list when loaded
             return "Supervisor"
-        if self.user.managed_teams.exists():
+        if list(self.user.managed_teams.all()):  # uses the prefetched list when loaded
             return "Team Lead"
 
         return "Staff"
@@ -108,6 +108,11 @@ class StaffProfile(TimeStampedModel):
         return f"{self.user.get_username()} ({self.role.code})"
 
 
+SERVICE_API_SCOPES = [
+    ('users:read', 'Read the staff directory (GET /external/users)'),
+]
+
+
 class ServiceApiKey(TimeStampedModel):
     """
     API Key model for external machine-to-machine integrations.
@@ -127,6 +132,9 @@ class ServiceApiKey(TimeStampedModel):
     )
     is_active = models.BooleanField(default=True, db_index=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
+    # What the key may do. A key is only accepted by endpoints whose scope it
+    # holds, so a leaked key exposes no more than it was issued for.
+    scopes = models.JSONField(default=list, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -140,6 +148,9 @@ class ServiceApiKey(TimeStampedModel):
         ordering = ['-created_at']
         verbose_name = 'Service API Key'
         verbose_name_plural = 'Service API Keys'
+
+    def has_scope(self, scope):
+        return scope in (self.scopes or [])
 
     def __str__(self):
         return f"{self.name} ({self.prefix}...)"
@@ -164,6 +175,7 @@ class ServiceApiKey(TimeStampedModel):
         created_by=None,
         expires_at=None,
         prefix_tag: str = "incel_live_",
+        scopes=('users:read',),
     ) -> tuple['ServiceApiKey', str]:
         """
         Generate a new random raw API key, store its hash and prefix,
@@ -181,5 +193,6 @@ class ServiceApiKey(TimeStampedModel):
             created_by=created_by,
             expires_at=expires_at,
             is_active=True,
+            scopes=list(scopes),
         )
         return instance, raw_key

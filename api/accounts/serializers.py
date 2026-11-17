@@ -2,26 +2,28 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from accounts.models import StaffProfile
-from organization.models import Department, Role, Unit, Team
+from common.permissions import has_global_access
+from organization.models import Department, Role, Team, Unit
+
+# What the user serializer reads besides the user row. List views load users
+# with these so the cost of a page does not grow with the number of users.
+USER_PROFILE_RELATED = (
+    'staff_profile__role',
+    'staff_profile__department',
+    'staff_profile__unit',
+    'staff_profile__team',
+)
+USER_PROFILE_PREFETCH = ('managed_departments', 'managed_units', 'managed_teams')
 
 
-class BasicUserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_active']
+def with_profile(queryset):
+    """A user queryset loaded with everything UserWithProfileSerializer reads."""
+    return queryset.select_related(*USER_PROFILE_RELATED).prefetch_related(*USER_PROFILE_PREFETCH)
 
 
-class StaffProfileSerializer(serializers.ModelSerializer):
-    role = serializers.StringRelatedField()
-    department_id = serializers.SerializerMethodField()
-
-    class Meta:
-        model = StaffProfile
-        fields = ['role', 'department_id', 'is_active']
-
-    def get_department_id(self, obj):
-        return obj.department_id
+def _managed(user, relation):
+    """The groups a user leads, from the prefetched list when there is one."""
+    return list(getattr(user, relation).all())
 
 
 class UserWithProfileSerializer(serializers.ModelSerializer):
@@ -38,6 +40,7 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     is_manager = serializers.SerializerMethodField()
     manager_scope = serializers.SerializerMethodField()
     department_code = serializers.SerializerMethodField()
+    can_manage_inventory = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -61,27 +64,30 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'has_global_access',
             'is_manager',
             'manager_scope',
+            'can_manage_inventory',
         ]
 
     def _profile(self, obj):
         return getattr(obj, 'staff_profile', None)
 
+    def get_can_manage_inventory(self, obj):
+        from inventory.permissions import can_manage_inventory
+
+        return can_manage_inventory(obj)
+
     def get_has_global_access(self, obj):
-        from common.permissions import has_global_access
         return has_global_access(obj)
 
     def get_is_manager(self, obj):
-        from common.permissions import has_global_access
         if has_global_access(obj):
             return True
         return (
-            obj.managed_departments.exists()
-            or obj.managed_units.exists()
-            or obj.managed_teams.exists()
+            bool(_managed(obj, 'managed_departments'))
+            or bool(_managed(obj, 'managed_units'))
+            or bool(_managed(obj, 'managed_teams'))
         )
 
     def get_manager_scope(self, obj):
-        from common.permissions import has_global_access
         if not obj or not obj.is_authenticated:
             return None
         if has_global_access(obj):
@@ -91,24 +97,24 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
                 'scope_name': 'All Departments',
                 'description': 'Viewing company-wide tasks across all departments and units.',
             }
-        if obj.managed_departments.exists():
-            names = ', '.join(obj.managed_departments.values_list('name', flat=True))
+        if bool(_managed(obj, 'managed_departments')):
+            names = ', '.join(group.name for group in _managed(obj, 'managed_departments'))
             return {
                 'role_type': 'department',
                 'title': 'Department Line Manager',
                 'scope_name': names,
                 'description': f'Viewing all tasks related to the {names} department.',
             }
-        if obj.managed_units.exists():
-            names = ', '.join(obj.managed_units.values_list('name', flat=True))
+        if bool(_managed(obj, 'managed_units')):
+            names = ', '.join(group.name for group in _managed(obj, 'managed_units'))
             return {
                 'role_type': 'unit',
                 'title': 'Unit Supervisor',
                 'scope_name': names,
                 'description': f'Viewing all tasks related to the {names} unit.',
             }
-        if obj.managed_teams.exists():
-            names = ', '.join(obj.managed_teams.values_list('name', flat=True))
+        if bool(_managed(obj, 'managed_teams')):
+            names = ', '.join(group.name for group in _managed(obj, 'managed_teams'))
             return {
                 'role_type': 'team',
                 'title': 'Team Lead',
@@ -182,10 +188,6 @@ class LoginSerializer(serializers.Serializer):
         return value.strip().lower()
 
 
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
-
-
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
@@ -219,23 +221,10 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return value
 
 
-class UpdateUserRoleSerializer(serializers.Serializer):
-    role_id = serializers.UUIDField()
-
-
-class UpdateUserDepartmentSerializer(serializers.Serializer):
-    department_id = serializers.UUIDField()
-
-
-class UpdateUserStatusSerializer(serializers.Serializer):
-    is_active = serializers.BooleanField()
-
-
 class AdminCreateUserSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
-    password = serializers.CharField(write_only=True, min_length=8)
     department_id = serializers.UUIDField(required=False, allow_null=True)
     unit_id = serializers.UUIDField(required=False, allow_null=True)
     team_id = serializers.UUIDField(required=False, allow_null=True)
@@ -287,24 +276,19 @@ class AdminCreateUserSerializer(serializers.Serializer):
             raise serializers.ValidationError('Role not found.')
         return value
 
-    def validate_password(self, value):
-        email = self.initial_data.get('email', '')
-        candidate_user = User(username=str(email).strip().lower(), email=str(email).strip().lower())
-        validate_password(value, user=candidate_user)
-        return value
-
 
 class UpdateAdminUserSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150)
-    email = serializers.EmailField()
+    """A partial update: a field that is not sent is left as it is."""
+
+    first_name = serializers.CharField(max_length=150, required=False)
+    last_name = serializers.CharField(max_length=150, required=False)
+    email = serializers.EmailField(required=False)
     department_id = serializers.UUIDField(allow_null=True, required=False)
     unit_id = serializers.UUIDField(allow_null=True, required=False)
     team_id = serializers.UUIDField(allow_null=True, required=False)
     role_id = serializers.UUIDField(allow_null=True, required=False)
-    reset_password = serializers.BooleanField(required=False, default=False)
-    new_password = serializers.CharField(required=False, write_only=True, allow_blank=False)
-    confirm_password = serializers.CharField(required=False, write_only=True, allow_blank=False)
+    is_active = serializers.BooleanField(required=False)
+    send_reset_link = serializers.BooleanField(required=False)
 
     def validate_first_name(self, value):
         value = value.strip()
@@ -355,28 +339,3 @@ class UpdateAdminUserSerializer(serializers.Serializer):
         if not Role.objects.filter(id=value).exists():
             raise serializers.ValidationError('Role not found.')
         return value
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-
-        if not attrs.get('reset_password'):
-            return attrs
-
-        new_password = attrs.get('new_password')
-        confirm_password = attrs.get('confirm_password')
-
-        if not new_password:
-            raise serializers.ValidationError({'new_password': 'New password is required.'})
-
-        if len(new_password) < 8:
-            raise serializers.ValidationError({'new_password': 'Password must be at least 8 characters.'})
-
-        if new_password != confirm_password:
-            raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
-
-        user_id = self.context.get('user_id')
-        email = attrs.get('email') or ''
-        candidate_user = User(username=str(email).strip().lower(), email=str(email).strip().lower())
-        validate_password(new_password, user=candidate_user)
-
-        return attrs

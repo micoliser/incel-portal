@@ -4,13 +4,32 @@ import logging
 from datetime import timedelta
 
 from celery import shared_task
+from django.conf import settings
+from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from .models import RecurrenceOccurrence, RecurringSchedule
+from emails.services.daily_report_emails import DailyReportEmailManager
+from emails.services.summary_emails import SummaryEmailManager
+from emails.services.task_emails import TaskEmailManager
+from notifications.models import Notification
+from notifications.services import create_notification
+
+from . import services as task_services
+from .models import (
+    DailyReport,
+    OrganizationSummaryCache,
+    RecurrenceOccurrence,
+    RecurringSchedule,
+    TodoItem,
+    WeeklySummary,
+)
 from .services import (
     build_deadline_for_occurrence,
     calculate_next_run_at,
+    calculate_user_weekly_summary,
+    calculate_weekly_comparison,
     create_task_with_side_effects,
     iter_schedule_occurrences,
 )
@@ -38,9 +57,12 @@ def generate_recurring_task_occurrences() -> dict[str, int]:
     for schedule_id in due_schedule_ids:
         try:
             with transaction.atomic():
+                # Re-checked under the lock: the schedule may have been paused
+                # or ended since the list above was read.
                 schedule = RecurringSchedule.objects.select_for_update(skip_locked=True).get(
                     id=schedule_id,
                     is_active=True,
+                    is_paused=False,
                     next_run_at__isnull=False,
                     next_run_at__lte=now,
                 )
@@ -88,6 +110,17 @@ def _process_schedule(*, schedule: RecurringSchedule, now) -> int:
         start_after=start_after,
         end_at=now,
     )
+
+    # After an outage many runs may be overdue at once. Creating a task for
+    # each would bury the assignee, so only the most recent ones are created.
+    due_times = list(due_times)
+    limit = settings.RECURRING_MAX_CATCH_UP_RUNS
+    if len(due_times) > limit:
+        logger.warning(
+            'Recurring schedule %s: skipping %s missed runs, creating the latest %s',
+            schedule.id, len(due_times) - limit, limit,
+        )
+        due_times = due_times[-limit:]
 
     for scheduled_for in due_times:
         occurrence, _ = RecurrenceOccurrence.objects.get_or_create(
@@ -139,13 +172,9 @@ def _create_task_for_occurrence(*, schedule: RecurringSchedule, occurrence: Recu
 @shared_task(name='tasks.generate_weekly_summaries')
 def generate_weekly_summaries() -> dict[str, int]:
     """Generate weekly summaries for all users every Monday at 00:00"""
-    from datetime import datetime, date
-    from django.contrib.auth.models import User
-    from .models import WeeklySummary
-    from .services import calculate_user_weekly_summary
     
     # Calculate the previous week (Monday to Sunday)
-    today = date.today()
+    today = timezone.localdate()
     # Monday is 0, Sunday is 6
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday + 7)  # Start of last week
@@ -183,23 +212,22 @@ def generate_weekly_summaries() -> dict[str, int]:
     }
 
 
-# PHASE 2: Weekly email notifications and comparisons
+# Weekly email notifications and comparisons
 
 @shared_task(name='tasks.send_weekly_summary_emails')
 def send_weekly_summary_emails() -> dict[str, int]:
     """Send weekly summary emails to users every Monday at 8 AM"""
-    from datetime import datetime, date
-    from .models import WeeklySummary
-    from emails.services.summary_emails import SummaryEmailManager
     
     # Find summaries from last week
-    today = timezone.now().date()
+    today = timezone.localdate()
     last_week_start = today - timedelta(days=(today.weekday() + 7))  # Last Monday
     
+    # Deactivated accounts are not emailed.
     summaries = WeeklySummary.objects.filter(
-        week_start_date=last_week_start
-    )
-    
+        week_start_date=last_week_start,
+        user__is_active=True,
+    ).select_related('user')
+
     emails_sent = 0
     errors = 0
     
@@ -224,19 +252,19 @@ def send_weekly_summary_emails() -> dict[str, int]:
 
 @shared_task(name='tasks.calculate_weekly_comparisons')
 def calculate_weekly_comparisons() -> dict[str, int]:
-    """Calculate week-over-week comparisons for all users"""
-    from datetime import date
-    from .models import WeeklySummary
-    from .services import calculate_weekly_comparison
-    
+    """Compare the week that has just finished with the one before it, for every user.
+
+    Runs on Monday after the weekly summaries are generated; those are for the
+    week that ended on Sunday, so that is the week compared here.
+    """
+
     comparisons_created = 0
     errors = 0
-    
-    # Get all current week summaries
-    today = timezone.now().date()
-    current_week_start = today - timedelta(days=today.weekday())  # Monday of current week
+
+    today = timezone.localdate()
+    current_week_start = today - timedelta(days=today.weekday() + 7)  # Monday of the finished week
     previous_week_start = current_week_start - timedelta(days=7)
-    
+
     current_summaries = WeeklySummary.objects.filter(
         week_start_date=current_week_start
     )
@@ -279,9 +307,6 @@ def cache_organization_summaries() -> dict[str, int]:
     Runs after user weekly summaries are generated so admins see cached data
     instead of live-aggregating on every page load.
     """
-    from datetime import date
-    from .models import WeeklySummary, OrganizationSummaryCache
-    from .services import calculate_organization_summary
 
     week_starts = (
         WeeklySummary.objects
@@ -296,7 +321,7 @@ def cache_organization_summaries() -> dict[str, int]:
     for week_start in week_starts:
         try:
             week_end = week_start + timedelta(days=6)
-            org_data = calculate_organization_summary(week_start, week_end)
+            org_data = task_services.calculate_organization_summary(week_start, week_end)
 
             OrganizationSummaryCache.objects.update_or_create(
                 week_start_date=week_start,
@@ -318,10 +343,6 @@ def cache_organization_summaries() -> dict[str, int]:
     return {'cached': cached, 'errors': errors}
 @shared_task(name='tasks.send_eod_daily_reports')
 def send_eod_daily_reports() -> dict[str, int]:
-    from django.utils import timezone
-    from tasks.models import DailyReport
-    from emails.services.daily_report_emails import DailyReportEmailManager
-    from django.core.cache import cache
 
     today = timezone.localdate()
     lock_key = f"eod_emails_sent_{today.isoformat()}"
@@ -341,11 +362,6 @@ def send_eod_daily_reports() -> dict[str, int]:
 
 @shared_task(name='tasks.check_due_todo_reminders')
 def check_due_todo_reminders() -> dict[str, int]:
-    from notifications.services import create_notification
-    from notifications.models import Notification
-    from tasks.models import TodoItem
-    from django.core.mail import send_mail
-    from django.conf import settings
 
     now = timezone.now()
     due_reminders = TodoItem.objects.filter(
@@ -390,7 +406,6 @@ def check_due_todo_reminders() -> dict[str, int]:
                     '5m': '5-minute',
                     '10m': '10-minute',
                     '15m': '15-minute',
-                    '20m': '20-minute',
                     '30m': '30-minute',
                     '1h': '1-hour',
                     '2h': '2-hour',
@@ -438,7 +453,6 @@ def check_due_todo_reminders() -> dict[str, int]:
 
                 if item.send_email_reminder and item.user.email:
                     try:
-                        from emails.services.task_emails import TaskEmailManager
                         TaskEmailManager.send_todo_reminder_email(
                             todo=item,
                             reminder_time_label=reminder_time_label,

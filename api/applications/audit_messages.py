@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from applications.models import InternalApplication
 from organization.models import Department, Role
 
+
 def _clean_text(value, fallback='-'):
     if value is None:
         return fallback
@@ -238,24 +239,24 @@ def build_message(action, metadata, target_type='', target_id=''):
     if action == 'TASK_RECURRING_SCHEDULE_RESUMED':
         return f'Recurring schedule for task "{title}" was resumed.'
 
-    if action == 'inventory.item.created':
+    if action == 'INVENTORY_ITEM_CREATED':
         item_name = _clean_text(payload.get('name'), fallback='an inventory item')
         return f'Admin created inventory item: {item_name}.'
 
-    if action == 'inventory.item.updated':
+    if action == 'INVENTORY_ITEM_UPDATED':
         item_name = _clean_text(payload.get('name'), fallback='an inventory item')
         return f'Admin updated inventory item: {item_name}.'
 
-    if action == 'inventory.item.deleted':
+    if action == 'INVENTORY_ITEM_DELETED':
         item_name = _clean_text(payload.get('name'), fallback='an inventory item')
         return f'Admin deleted inventory item: {item_name}.'
 
-    if action == 'inventory.item.assigned':
+    if action == 'INVENTORY_ITEM_ASSIGNED':
         item_name = _clean_text(payload.get('name'), fallback='an inventory item')
         assigned_to = _clean_text(payload.get('assigned_to'), fallback='a user')
         return f'Admin assigned {item_name} to {assigned_to}.'
 
-    if action == 'inventory.item.returned':
+    if action == 'INVENTORY_ITEM_RETURNED':
         item_name = _clean_text(payload.get('name'), fallback='an inventory item')
         returned_by = _clean_text(payload.get('returned_by_user'), fallback='a user')
         return f'Admin marked {item_name} as returned by {returned_by}.'

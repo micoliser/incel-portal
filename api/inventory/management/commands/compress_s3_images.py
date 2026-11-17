@@ -1,12 +1,12 @@
-import time
 from io import BytesIO
-from urllib.parse import urlparse
-from django.core.management.base import BaseCommand
+
 from django.conf import settings
+from django.core.management.base import BaseCommand
 from PIL import Image, UnidentifiedImageError
 
 from inventory.models import InventoryItem
-from inventory.s3 import extract_inventory_photo_key_from_public_url, _s3_client
+from inventory.s3 import _s3_client, extract_inventory_photo_key_from_public_url
+
 
 class Command(BaseCommand):
     help = 'Compresses existing inventory images stored on S3 to < 300KB and 1280px.'

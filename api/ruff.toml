@@ -1,0 +1,9 @@
+# Lint rules for the API. Run with `ruff check .` from this directory.
+# Kept to real defects (undefined names, unused imports and variables, syntax
+# errors, mixed indentation) so a failure always means something is wrong.
+target-version = "py312"
+line-length = 120
+extend-exclude = [".venv", "*/migrations/*"]
+
+[lint]
+select = ["F", "E9", "E101", "W191"]

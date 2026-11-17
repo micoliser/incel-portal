@@ -1,7 +1,8 @@
 import logging
+
+from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
 
@@ -120,26 +121,6 @@ def access_override_handler(sender, instance, created, **kwargs):
 
 
 # ===== USER SIGNALS =====
-@receiver(post_save, sender=User)
-def user_created_handler(sender, instance, created, **kwargs):
-    """Send welcome email when user is created."""
-    if created and not kwargs.get('skip_email', False):
-        from emails.services.user_emails import UserEmailManager
-        try:
-            temporary_password = kwargs.get('temporary_password') or getattr(
-                instance, '_temporary_password', None
-            )
-            if not temporary_password:
-                logger.info(
-                    "Skipping user created email for user id=%s because no initial password was provided",
-                    getattr(instance, 'pk', None),
-                )
-                return
-            UserEmailManager.send_user_created_email(instance, temporary_password)
-        except Exception as e:
-            logger.error(f"Failed to send user created email: {str(e)}")
-
-
 @receiver(post_save, sender=User)
 def user_status_changed_handler(sender, instance, created, **kwargs):
     """Send email when user is enabled/disabled."""

@@ -48,7 +48,7 @@ type Team = {
   id: string;
   name: string;
   code: string;
-  team_lead_info: UserBasicInfo | null;
+  team_lead: UserBasicInfo | null;
   is_active: boolean;
   members_count?: number;
   member_count?: number;
@@ -58,7 +58,7 @@ type Unit = {
   id: string;
   name: string;
   code: string;
-  supervisor_info: UserBasicInfo | null;
+  supervisor: UserBasicInfo | null;
   is_active: boolean;
   teams: Team[];
   members_count?: number;
@@ -69,7 +69,7 @@ type Department = {
   id: string;
   name: string;
   code: string;
-  line_manager_info: UserBasicInfo | null;
+  line_manager: UserBasicInfo | null;
   is_active: boolean;
   units: Unit[];
   members_count?: number;
@@ -244,7 +244,7 @@ export default function DepartmentsPage() {
     setIsSubmitting(true);
     setApiError("");
     try {
-      await apiClient.post("/admin/organization/departments/", {
+      await apiClient.post("/organization/departments", {
         name: form.name.trim(),
         code: form.code.trim(),
       });
@@ -270,10 +270,10 @@ export default function DepartmentsPage() {
     setIsSubmitting(true);
     setApiError("");
     try {
-      await apiClient.post("/admin/organization/units/", {
+      await apiClient.post("/organization/units", {
         name: form.name.trim(),
         code: form.code.trim(),
-        department: selectedParentId,
+        department_id: selectedParentId,
       });
       toast.success("Unit created.");
       setIsCreateUnitOpen(false);
@@ -297,10 +297,10 @@ export default function DepartmentsPage() {
     setIsSubmitting(true);
     setApiError("");
     try {
-      await apiClient.post("/admin/organization/teams/", {
+      await apiClient.post("/organization/teams", {
         name: form.name.trim(),
         code: form.code.trim(),
-        unit: selectedParentId,
+        unit_id: selectedParentId,
       });
       toast.success("Team created.");
       setIsCreateTeamOpen(false);
@@ -347,11 +347,11 @@ export default function DepartmentsPage() {
   const totalLeaders = useMemo(() => {
     let count = 0;
     departments.forEach((d) => {
-      if (d.line_manager_info) count++;
+      if (d.line_manager) count++;
       d.units.forEach((u) => {
-        if (u.supervisor_info) count++;
+        if (u.supervisor) count++;
         u.teams.forEach((t) => {
-          if (t.team_lead_info) count++;
+          if (t.team_lead) count++;
         });
       });
     });
@@ -657,11 +657,11 @@ export default function DepartmentsPage() {
                     {/* Line Manager Pill */}
                     <div className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-card px-3 py-1 text-xs">
                       <User className="size-3.5 text-muted-foreground" />
-                      {dep.line_manager_info ? (
+                      {dep.line_manager ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-muted-foreground">Manager:</span>
                           <span className="font-semibold text-foreground">
-                            {dep.line_manager_info.first_name} {dep.line_manager_info.last_name}
+                            {dep.line_manager.first_name} {dep.line_manager.last_name}
                           </span>
                           {isAdmin && (
                             <button
@@ -671,7 +671,7 @@ export default function DepartmentsPage() {
                                   "department",
                                   dep.id,
                                   dep.name,
-                                  dep.line_manager_info?.id,
+                                  dep.line_manager?.id,
                                 )
                               }
                               className="size-5 rounded hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground ml-1"
@@ -803,11 +803,11 @@ export default function DepartmentsPage() {
                                 <div className="flex items-center flex-wrap gap-2">
                                   {/* Supervisor Pill */}
                                   <div className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-0.5 text-xs">
-                                    {unit.supervisor_info ? (
+                                    {unit.supervisor ? (
                                       <div className="flex items-center gap-1.5">
                                         <span className="text-muted-foreground text-[11px]">Supervisor:</span>
                                         <span className="font-medium text-foreground text-xs">
-                                          {unit.supervisor_info.first_name} {unit.supervisor_info.last_name}
+                                          {unit.supervisor.first_name} {unit.supervisor.last_name}
                                         </span>
                                         {isAdmin && (
                                           <button
@@ -817,7 +817,7 @@ export default function DepartmentsPage() {
                                                 "unit",
                                                 unit.id,
                                                 unit.name,
-                                                unit.supervisor_info?.id,
+                                                unit.supervisor?.id,
                                               )
                                             }
                                             className="size-4.5 rounded hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground ml-0.5"
@@ -908,11 +908,11 @@ export default function DepartmentsPage() {
                                             <div className="flex items-center flex-wrap gap-2">
                                               {/* Team Lead Pill */}
                                               <div className="flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-xs">
-                                                {team.team_lead_info ? (
+                                                {team.team_lead ? (
                                                   <div className="flex items-center gap-1">
                                                     <span className="text-muted-foreground text-[10px]">Lead:</span>
                                                     <span className="font-medium text-foreground text-xs">
-                                                      {team.team_lead_info.first_name} {team.team_lead_info.last_name}
+                                                      {team.team_lead.first_name} {team.team_lead.last_name}
                                                     </span>
                                                     {isAdmin && (
                                                       <button
@@ -922,7 +922,7 @@ export default function DepartmentsPage() {
                                                             "team",
                                                             team.id,
                                                             team.name,
-                                                            team.team_lead_info?.id,
+                                                            team.team_lead?.id,
                                                           )
                                                         }
                                                         className="size-4 rounded hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground"

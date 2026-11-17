@@ -55,9 +55,11 @@ as the `e2e-report` artifact.
    that API.
 3. Tests run one at a time, in file order.
 
-The test API never sends email (messages are rendered and logged), has browser
-push switched off, and points object storage at an unroutable address. Your
-working database is never touched: `seed_e2e` refuses to run against a database
+The test API never sends email. Each message is written as a file to
+`e2e/.mail/` (emptied at every start), which `e2e/support/mail.ts` reads so a
+test can follow an emailed link, for example the one a new user sets their
+password with. Browser push is switched off, and object storage points at an
+unroutable address. Your working database is never touched: `seed_e2e` refuses to run against a database
 whose name does not end in `_e2e`.
 
 ## The dataset
@@ -116,8 +118,8 @@ a failure in those.
 
 - File uploads and downloads (logos, photos, task and support attachments) and
   the summary PDF export: they need real object storage.
-- The content of emails and browser push delivery.
-- Completing a password reset from the emailed link.
+- The wording of emails (only the password links in them are used) and browser
+  push delivery.
 - Scheduled background jobs (recurring task generation, reminders, weekly
   summaries, auto-closing support requests).
 

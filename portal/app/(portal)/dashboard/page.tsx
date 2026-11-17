@@ -206,7 +206,7 @@ export default function DashboardPage() {
         ] = await Promise.all([
           apiClient.get("/me"),
           apiClient.get("/me/permissions"),
-          apiClient.get("/applications"),
+          apiClient.get("/applications", { params: { page_size: 100 } }),
           getTaskDashboardSummary(),
         ]);
 
@@ -214,7 +214,7 @@ export default function DashboardPage() {
         const permissionsData = permissionsResponse.data as MePermissions;
         setProfile(profileData);
         setPermissions(permissionsData);
-        setApplications(applicationsResponse.data as DashboardApplication[]);
+        setApplications((applicationsResponse.data?.results ?? []) as DashboardApplication[]);
 
         // Auto-select view based on role: Unit Supervisors upwards default to tasks they assigned
         const shouldDefaultToAssignedBy = isUnitSupervisorUpwards(

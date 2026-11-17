@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -157,7 +158,7 @@ export function NotificationCenter() {
 
         const response = await getNotifications(page, PAGE_SIZE);
         setCurrentPage(response.page);
-        setHasNextPage(response.next_page !== null);
+        setHasNextPage(pageHasNext(response));
 
         setNotifications((current) => {
           if (mode === "replace") {

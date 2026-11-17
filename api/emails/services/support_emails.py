@@ -1,8 +1,8 @@
 import logging
 from typing import Any
 
-from emails.services.base_email_service import BaseEmailService
 from emails.config import EmailType
+from emails.services.base_email_service import BaseEmailService
 
 logger = logging.getLogger(__name__)
 

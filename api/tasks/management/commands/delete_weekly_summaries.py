@@ -32,7 +32,7 @@ class Command(BaseCommand):
             except ValueError as exc:
                 raise CommandError('week-start-date must be in YYYY-MM-DD format') from exc
         else:
-            today = timezone.now().date()
+            today = timezone.localdate()
             days_since_monday = today.weekday()
             week_start = today - timedelta(days=days_since_monday)
 

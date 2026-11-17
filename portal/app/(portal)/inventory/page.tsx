@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -149,6 +150,8 @@ export default function InventoryDashboard() {
   const [refreshCounter, setRefreshCounter] = useState(0);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const isRequestInFlightRef = useRef(false);
+  // Only the newest list request may update the list.
+  const latestRequestRef = useRef(0);
 
   // Modals
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -163,7 +166,20 @@ export default function InventoryDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  // Holds a department id (or "all"). Assets are managed by IT or Admin.
   const [managingDeptFilter, setManagingDeptFilter] = useState("all");
+  const [managingDeptOptions, setManagingDeptOptions] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    apiClient
+      .get<{ id: string; name: string }[]>("/organization/departments")
+      .then((response) =>
+        setManagingDeptOptions(
+          response.data.filter((department) => ["IT", "Admin"].includes(department.name)),
+        ),
+      )
+      .catch(() => setManagingDeptOptions([]));
+  }, []);
 
   // Forms
   const [categoryForm, setCategoryForm] = useState({
@@ -193,15 +209,15 @@ export default function InventoryDashboard() {
   const fetchStatsAndCategories = async () => {
     try {
       const [statsRes, catsRes, meRes, permsRes] = await Promise.all([
-        apiClient.get("/inventory/items/stats/"),
-        apiClient.get("/inventory/categories/"),
+        apiClient.get("/inventory/items/stats"),
+        apiClient.get("/inventory/categories"),
         apiClient.get("/me"),
         apiClient.get("/me/permissions"),
       ]);
       setStats(statsRes.data);
       setCategories(catsRes.data);
 
-      const meData = meRes.data as { department_code?: string | null };
+      const meData = meRes.data as { can_manage_inventory?: boolean };
       const permsData = permsRes.data as {
         is_superuser?: boolean;
         role_code?: string | null;
@@ -210,7 +226,8 @@ export default function InventoryDashboard() {
       const isAdmin =
         Boolean(permsData.is_superuser) ||
         String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
-      const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
+      // Members of a department responsible for company assets.
+        const isIT = Boolean(meData.can_manage_inventory);
 
       setHasWriteAccess(isAdmin || isIT);
     } catch (err) {
@@ -224,8 +241,11 @@ export default function InventoryDashboard() {
 
   useEffect(() => {
     async function loadItems() {
-      if (isRequestInFlightRef.current) return;
+      // Only loading more waits for a request in flight; a filter change starts
+      // a new request, and the older one's answer is then ignored.
+      if (isRequestInFlightRef.current && currentPage > 1) return;
 
+      const requestId = ++latestRequestRef.current;
       try {
         isRequestInFlightRef.current = true;
         if (currentPage === 1) {
@@ -235,12 +255,15 @@ export default function InventoryDashboard() {
         }
 
         const params: Record<string, string | number> = { page: currentPage };
-        if (searchQuery) params.q = searchQuery;
+        if (searchQuery) params.search = searchQuery;
         if (statusFilter !== "all") params.status = statusFilter;
-        if (categoryFilter !== "all") params.category = categoryFilter;
-        if (managingDeptFilter !== "all") params.managing_department = managingDeptFilter;
+        if (categoryFilter !== "all") params.category_id = categoryFilter;
+        if (managingDeptFilter !== "all") params.managing_department_id = managingDeptFilter;
 
-        const response = await apiClient.get("/inventory/items/", { params });
+        const response = await apiClient.get("/inventory/items", { params });
+
+        // A newer request (the filters changed) has superseded this one.
+        if (requestId !== latestRequestRef.current) return;
         const payload = response.data;
 
         let results: InventoryItem[] = [];
@@ -257,20 +280,17 @@ export default function InventoryDashboard() {
           currentPage === 1 ? results : [...current, ...results],
         );
 
-        const hasNext =
-          !Array.isArray(payload) && payload && typeof payload === "object"
-            ? Boolean((payload as { next_page?: unknown }).next_page)
-            : false;
-
-        setHasNextPage(hasNext);
+        setHasNextPage(pageHasNext(payload));
         setError(null);
       } catch (err) {
         setError(extractApiErrorMessage(err, "Failed to load inventory data."));
       } finally {
-        isRequestInFlightRef.current = false;
-        hasInitialLoadCompleted.current = true;
-        setLoading(false);
-        setIsLoadingMore(false);
+        if (requestId === latestRequestRef.current) {
+          isRequestInFlightRef.current = false;
+          hasInitialLoadCompleted.current = true;
+          setLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     }
 
@@ -312,11 +332,11 @@ export default function InventoryDashboard() {
       setIsExporting(true);
       const params: Record<string, string> = {};
       if (statusFilter !== "all") params.status = statusFilter;
-      if (categoryFilter !== "all") params.category = categoryFilter;
-      if (managingDeptFilter !== "all") params.managing_department = managingDeptFilter;
-      if (searchQuery) params.q = searchQuery;
+      if (categoryFilter !== "all") params.category_id = categoryFilter;
+      if (managingDeptFilter !== "all") params.managing_department_id = managingDeptFilter;
+      if (searchQuery) params.search = searchQuery;
 
-      const response = await apiClient.get("/inventory/items/export/", {
+      const response = await apiClient.get("/inventory/items/export", {
         params,
         responseType: "blob",
       });
@@ -343,7 +363,7 @@ export default function InventoryDashboard() {
 
     try {
       setIsSubmitting(true);
-      await apiClient.post("/inventory/categories/", categoryForm);
+      await apiClient.post("/inventory/categories", categoryForm);
       toast.success("Category created");
       setIsCategoryModalOpen(false);
       setCategoryForm({ name: "", description: "" });
@@ -425,17 +445,18 @@ export default function InventoryDashboard() {
           content_type: processedFile.type,
         });
 
-        await fetch(uploadData.upload_url, {
+        const uploaded = await fetch(uploadData.upload_url, {
           method: "PUT",
           body: processedFile,
           headers: { "Content-Type": processedFile.type },
         });
+        if (!uploaded.ok) throw new Error("The photo could not be uploaded.");
         finalPhotoUrl = uploadData.public_url;
       }
 
       const payload: Record<string, string | number> = {
         name: itemForm.name,
-        category: itemForm.category,
+        category_id: itemForm.category,
         serial_number: itemForm.serial_number,
         quantity: itemForm.quantity,
         status: itemForm.status,
@@ -445,26 +466,26 @@ export default function InventoryDashboard() {
           : {}),
         ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {}),
         ...(itemForm.managing_department
-          ? { managing_department: itemForm.managing_department }
+          ? { managing_department_id: itemForm.managing_department }
           : {}),
       };
 
-      await apiClient.patch(`/inventory/items/${editingItem.id}/`, payload);
+      await apiClient.patch(`/inventory/items/${editingItem.id}`, payload);
 
       if (itemForm.assigned_to && itemForm.assigned_to_type) {
         const assignPayload =
           itemForm.assigned_to_type === "user"
             ? {
-                assigned_to: itemForm.assigned_to,
+                assigned_to_id: itemForm.assigned_to,
                 condition_notes: itemForm.condition_notes,
               }
             : {
-                assigned_to_department: itemForm.assigned_to,
+                assigned_to_department_id: itemForm.assigned_to,
                 condition_notes: itemForm.condition_notes,
               };
 
         await apiClient.post(
-          `/inventory/items/${editingItem.id}/assign/`,
+          `/inventory/items/${editingItem.id}/assign`,
           assignPayload,
         );
       }
@@ -496,7 +517,7 @@ export default function InventoryDashboard() {
 
       let finalCategoryId = itemForm.category;
       if (itemForm.category === "create_new") {
-        const catRes = await apiClient.post("/inventory/categories/", {
+        const catRes = await apiClient.post("/inventory/categories", {
           name: itemForm.new_category_name,
           description: itemForm.new_category_description,
         });
@@ -522,19 +543,20 @@ export default function InventoryDashboard() {
           content_type: processedFile.type,
         });
 
-        await fetch(uploadData.upload_url, {
+        const uploaded = await fetch(uploadData.upload_url, {
           method: "PUT",
           body: processedFile,
           headers: {
             "Content-Type": processedFile.type,
           },
         });
+        if (!uploaded.ok) throw new Error("The photo could not be uploaded.");
         finalPhotoUrl = uploadData.public_url;
       }
 
       const payload: Record<string, string | number> = {
         name: itemForm.name,
-        category: finalCategoryId,
+        category_id: finalCategoryId,
         serial_number: itemForm.serial_number,
         quantity: itemForm.quantity,
         status: itemForm.status,
@@ -544,26 +566,26 @@ export default function InventoryDashboard() {
           : {}),
         ...(finalPhotoUrl ? { photo_url: finalPhotoUrl } : {}),
         ...(itemForm.managing_department
-          ? { managing_department: itemForm.managing_department }
+          ? { managing_department_id: itemForm.managing_department }
           : {}),
       };
 
-      const response = await apiClient.post("/inventory/items/", payload);
+      const response = await apiClient.post("/inventory/items", payload);
 
       if (itemForm.assigned_to && itemForm.assigned_to_type) {
         const assignPayload =
           itemForm.assigned_to_type === "user"
             ? {
-                assigned_to: itemForm.assigned_to,
+                assigned_to_id: itemForm.assigned_to,
                 condition_notes: itemForm.condition_notes,
               }
             : {
-                assigned_to_department: itemForm.assigned_to,
+                assigned_to_department_id: itemForm.assigned_to,
                 condition_notes: itemForm.condition_notes,
               };
 
         await apiClient.post(
-          `/inventory/items/${response.data.id}/assign/`,
+          `/inventory/items/${response.data.id}/assign`,
           assignPayload,
         );
       }
@@ -862,8 +884,11 @@ export default function InventoryDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Depts</SelectItem>
-                  <SelectItem value="IT">IT</SelectItem>
-                  <SelectItem value="Admin">Admin</SelectItem>
+                  {managingDeptOptions.map((department) => (
+                    <SelectItem key={department.id} value={department.id}>
+                      {department.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1370,7 +1395,7 @@ export default function InventoryDashboard() {
               <Input
                 id="item_photo"
                 type="file"
-                accept="image/*"
+                accept=".png,.jpg,.jpeg,.webp"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
@@ -1601,7 +1626,7 @@ export default function InventoryDashboard() {
               <Input
                 id="edit_item_photo"
                 type="file"
-                accept="image/*"
+                accept=".png,.jpg,.jpeg,.webp"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {

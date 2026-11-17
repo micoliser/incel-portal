@@ -1,21 +1,29 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone as datetime_timezone
+from datetime import datetime, timedelta
+from datetime import timezone as datetime_timezone
 from typing import Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.contrib.auth.models import User
+from django.db.models import Count, F, Q
 from django.utils import timezone
+from django.utils import timezone as django_timezone
 
 from applications.audit import log_audit
+from applications.audit_actions import AuditAction
+from common.users import display_name
 from notifications.models import Notification
 from notifications.services import create_notification
 
-from .models import DailyReport, RecurringSchedule, Task, TaskActivity
-
-
-def _display_name(user: User) -> str:
-    return user.get_full_name() or user.username
+from .models import (
+    DailyReport,
+    RecurringSchedule,
+    Task,
+    TaskActivity,
+    UserGoal,
+    WeeklySummary,
+)
 
 
 def _schedule_timezone(schedule: RecurringSchedule) -> ZoneInfo:
@@ -153,7 +161,7 @@ def create_task_with_side_effects(
         recurrence_scheduled_for=recurrence_scheduled_for,
     )
 
-    activity_comment = f'Task created by {_display_name(assigner)}'
+    activity_comment = f'Task created by {display_name(assigner)}'
     if recurrence_schedule and recurrence_scheduled_for:
         activity_comment = (
             f'{activity_comment} from recurring schedule '
@@ -180,7 +188,7 @@ def create_task_with_side_effects(
         metadata['recurrence_scheduled_for'] = recurrence_scheduled_for
 
     log_audit(
-        action='TASK_CREATED',
+        action=AuditAction.TASK_CREATED,
         request=request,
         actor_user=assigner,
         target_type='task',
@@ -188,7 +196,7 @@ def create_task_with_side_effects(
         metadata=metadata,
     )
 
-    body = f'You were assigned: {task.title} by {_display_name(assigner)}'
+    body = f'You were assigned: {task.title} by {display_name(assigner)}'
     if recurrence_schedule:
         body = f'{body} [recurring]'
 
@@ -213,8 +221,6 @@ def create_task_with_side_effects(
 
 def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_end: datetime.date) -> dict:
     """Calculate weekly summary metrics for a user"""
-    from django.db.models import Count, Q, F
-    from django.utils import timezone as django_timezone
     
     # Convert dates to datetime for database queries
     week_start_dt = django_timezone.make_aware(
@@ -331,7 +337,7 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
         'week_start_date': str(week_start),
         'week_end_date': str(week_end),
         'user_id': str(user.id),
-        'user_name': user.get_full_name() or user.username,
+        'user_name': display_name(user),
         
         # Task metrics
         'tasks_created': tasks_created.count(),
@@ -365,7 +371,6 @@ def calculate_user_weekly_summary(user: User, week_start: datetime.date, week_en
 
 def calculate_user_files_received(user: User, week_start_dt: datetime.datetime, week_end_dt: datetime.datetime) -> int:
     """Count attachments received on tasks the user is involved with during a time range."""
-    from django.db.models import Count, Q
 
     user_tasks = Task.objects.filter(
         Q(assigned_to=user) | Q(assigned_by=user)
@@ -383,7 +388,7 @@ def calculate_user_files_received(user: User, week_start_dt: datetime.datetime, 
     )
 
 
-# PHASE 2: Week-over-week comparison and analytics
+# Week-over-week comparison and analytics
 
 def calculate_weekly_comparison(current_summary: dict, previous_summary: dict | None) -> dict:
     """Calculate week-over-week deltas and trends"""
@@ -439,7 +444,6 @@ def calculate_weekly_comparison(current_summary: dict, previous_summary: dict | 
 
 def calculate_organization_summary(week_start: datetime.date, week_end: datetime.date) -> dict:
     """Calculate organization-wide summary stats (admin-only)"""
-    from .models import WeeklySummary
     
     summaries = WeeklySummary.objects.filter(
         week_start_date=week_start
@@ -509,7 +513,6 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
     )
 
     # Calculate week-over-week comparison
-    from datetime import timedelta
     prev_week = week_start - timedelta(days=7)
     prev_summaries = WeeklySummary.objects.filter(week_start_date=prev_week)
     comparison = None
@@ -563,7 +566,6 @@ def calculate_organization_summary(week_start: datetime.date, week_end: datetime
 
 def check_user_goals(user: User, week_start: datetime.date, week_end: datetime.date, summary_data: dict) -> dict:
     """Check if user achieved their goals for the week"""
-    from .models import UserGoal
     
     goals = UserGoal.objects.filter(
         user=user,

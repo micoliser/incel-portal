@@ -2,19 +2,15 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
+
+from common.storage import file_suffix
+from common.storage import s3_client as _s3_client
 
 
 class SupportAttachmentStorageError(RuntimeError):
     pass
-
-
-def _s3_client():
-    region_name = getattr(settings, 'AWS_S3_REGION_NAME', '').strip() or None
-    endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', '').strip() or None
-    return boto3.client('s3', region_name=region_name, endpoint_url=endpoint_url)
 
 
 def _support_prefix() -> str:
@@ -26,12 +22,12 @@ def _request_path(request_id) -> str:
     return f'{_support_prefix()}/{request_id}'
 
 
+def support_attachment_key_prefix(request_id) -> str:
+    return f'{_request_path(request_id)}/'
+
+
 def build_support_attachment_key(request_id, file_name: str) -> str:
-    suffix = ''
-    base_name = file_name.strip().replace('\\', '/')
-    if '.' in base_name:
-        suffix = f'.{base_name.rsplit(".", 1)[-1].lower()}'
-    return f'{_request_path(request_id)}/{uuid4().hex}{suffix}'
+    return f'{_request_path(request_id)}/{uuid4().hex}{file_suffix(file_name)}'
 
 
 def generate_support_attachment_upload_url(*, request_id, file_name: str, content_type: str):

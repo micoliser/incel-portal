@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+
 from common.permissions import has_global_access
 
 User = get_user_model()

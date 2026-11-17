@@ -1,12 +1,11 @@
 import datetime
 import uuid
 
-from django.db import models
 from django.contrib.auth.models import User
+from django.db import models
 from django.utils import timezone
 
 from organization.models import Department
-
 
 TASK_PRIORITY_CHOICES = [
     ('low', 'Low'),
@@ -24,8 +23,9 @@ class RecurringSchedule(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    assigned_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recurring_schedules_created')
-    assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recurring_schedules_assigned')
+    # PROTECT: work records outlive a staff member; accounts are deactivated, not deleted.
+    assigned_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='recurring_schedules_created')
+    assigned_to = models.ForeignKey(User, on_delete=models.PROTECT, related_name='recurring_schedules_assigned')
     priority = models.CharField(max_length=20, choices=TASK_PRIORITY_CHOICES, default='medium')
     frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES)
     interval = models.PositiveIntegerField(default=1)
@@ -108,8 +108,9 @@ class Task(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    assigned_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tasks_created')
-    assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tasks_assigned')
+    # PROTECT: deleting one person must not delete other people's tasks.
+    assigned_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='tasks_created')
+    assigned_to = models.ForeignKey(User, on_delete=models.PROTECT, related_name='tasks_assigned')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     deadline = models.DateTimeField(null=True, blank=True)
@@ -189,7 +190,7 @@ class WeeklySummary(models.Model):
     # Summary metrics stored as JSON
     summary_data = models.JSONField(default=dict)
     
-    # PHASE 2: Week-over-week comparison
+    # Week-over-week comparison
     previous_week_summary = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
@@ -233,7 +234,7 @@ class WeeklySummaryShare(models.Model):
         return f"Share of {self.summary} by {self.shared_by.username}"
 
 
-# PHASE 2 MODELS
+# Sharing, exports and goals
 
 class WeeklySummaryUserShare(models.Model):
     """User-to-user explicit sharing of summaries"""
@@ -270,7 +271,7 @@ class DailyReport(models.Model):
     """One top-level report per user per day."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='daily_reports')
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='daily_reports')
     department = models.ForeignKey(Department, on_delete=models.PROTECT, related_name='daily_reports')
     report_date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)

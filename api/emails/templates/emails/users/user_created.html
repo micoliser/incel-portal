@@ -108,42 +108,37 @@
       <div class="content">
         <p>Hi {{ first_name }},</p>
         <p>
-          Welcome to Incel Portal! Your account has been successfully created.
-          Here are your login credentials:
+          Welcome to Incel Portal! Your account has been created. To finish
+          setting it up, choose your password using the button below.
         </p>
 
         <div class="credentials-box">
-          <p><span class="label">Username:</span></p>
-          <div class="value">{{ username }}</div>
-
-          <p style="margin-top: 15px">
-            <span class="label">Initial Password:</span>
-          </p>
-          <div class="value">{{ temporary_password }}</div>
+          <p><span class="label">Your sign-in email:</span></p>
+          <div class="value">{{ email }}</div>
         </div>
 
-        <div class="info-box">
-          <p>
-            <strong>⚠️ Important:</strong> This is a temporary password. You
-            should change it immediately after your first login for security
-            reasons.
-          </p>
-        </div>
-
-        <a href="{{ login_url }}" class="cta-button">Login to Incel Portal</a>
+        <a href="{{ setup_url }}" class="cta-button">Set your password</a>
 
         <p>
           If the button is not clickable, copy and paste this link into your
           browser:<br />
-          <a href="{{ login_url }}">{{ login_url }}</a>
+          <a href="{{ setup_url }}">{{ setup_url }}</a>
         </p>
+
+        <div class="info-box">
+          <p>
+            <strong>⚠️ Important:</strong> This link is valid for
+            <strong>{{ expiry_hours }} hours</strong> and can be used once. If
+            it expires, use "Forgot password" on the
+            <a href="{{ login_url }}">sign-in page</a> to get a new one.
+          </p>
+        </div>
 
         <div class="security-tips">
           <p><strong>🔒 Security Tips:</strong></p>
           <ul>
-            <li>Change your password immediately after first login</li>
             <li>Use a strong, unique password</li>
-            <li>Never share your credentials with anyone</li>
+            <li>Never share your password with anyone</li>
             <li>Log out when finished using the portal</li>
           </ul>
         </div>

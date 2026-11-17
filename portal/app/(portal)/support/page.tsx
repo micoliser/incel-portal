@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -101,7 +102,6 @@ const STATUS_FILTERS = [
   { key: "closed", label: "Closed" },
 ] as const;
 
-const ITEMS_PER_PAGE = 10;
 
 function formatRequestDate(dateStr: string) {
   try {
@@ -170,7 +170,7 @@ export default function SupportListPage() {
         const results = Array.isArray(response.results) ? response.results : [];
         setRequests((prev) => (append ? [...prev, ...results] : results));
         setTotalCount(response.count ?? 0);
-        setHasMore(Boolean(response.next) || results.length >= ITEMS_PER_PAGE);
+        setHasMore(pageHasNext(response));
       } catch (err) {
         setError(extractApiErrorMessage(err, "Failed to load requests."));
       } finally {

@@ -1,5 +1,6 @@
-import os
 from enum import Enum
+
+from django.conf import settings
 
 
 class EmailType(Enum):
@@ -33,32 +34,32 @@ class EmailType(Enum):
 
 
 class EmailConfig:
-    """Centralized email configuration."""
+    """Email configuration, read from Django settings."""
 
     @staticmethod
     def is_enabled():
         """Check if email sending is enabled."""
-        return os.getenv('EMAIL_ENABLED', 'True').lower() == 'true'
+        return settings.EMAIL_ENABLED
 
     @staticmethod
     def is_debug_mode():
-        """Check if running in debug mode (console output)."""
-        return os.getenv('EMAIL_DEBUG', 'False').lower() == 'true'
+        """Check if running in debug mode (emails are logged, not sent)."""
+        return settings.EMAIL_DEBUG
 
     @staticmethod
     def use_celery():
         """Check if Celery should be used for async sending."""
-        return os.getenv('SEND_EMAILS_CELERY', 'True').lower() == 'true'
+        return settings.SEND_EMAILS_CELERY
 
     @staticmethod
     def get_sender_name():
         """Get the email sender name."""
-        return os.getenv('EMAIL_SENDER_NAME', 'Incel Portal')
+        return settings.EMAIL_SENDER_NAME
 
     @staticmethod
     def get_default_from_email():
         """Get the default from email."""
-        return os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+        return settings.DEFAULT_FROM_EMAIL
 
     @staticmethod
     def format_from_email():
@@ -69,9 +70,5 @@ class EmailConfig:
 
     @staticmethod
     def get_backend():
-        """Return the configured email backend (Django setting or env).
-
-        This is used by management commands and tests to report which
-        backend will be used for sending emails.
-        """
-        return os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+        """Return the email backend in use, for management commands to report."""
+        return settings.EMAIL_BACKEND

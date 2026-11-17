@@ -72,6 +72,9 @@ jobs:
       AWS_S3_OBJECT_ACL: public-read
       AWS_ACCESS_KEY_ID: ci-access-key
       AWS_SECRET_ACCESS_KEY: ci-secret-key
+      # Run the suite against the Postgres service above instead of SQLite, so
+      # constraints, row locks and case rules behave as in production.
+      TEST_USE_SQLITE: "false"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -89,9 +92,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint API
+        working-directory: api
+        # Version pinned so a new ruff release cannot fail the build on its own.
+        run: |
+          pip install ruff==0.17.5
+          ruff check .
+
       - name: Run Django system checks
         working-directory: api
         run: python manage.py check
+
+      - name: Check for missing migrations
+        working-directory: api
+        run: python manage.py makemigrations --check --dry-run
 
       - name: Run Django tests
         working-directory: api

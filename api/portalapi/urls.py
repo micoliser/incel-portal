@@ -14,12 +14,25 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import logging
+
 from django.contrib import admin
+from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path
 
+logger = logging.getLogger(__name__)
+
 
 def health_check(request):
+    """200 when the API can reach its database, 503 when it cannot, so the
+    platform stops routing to (or restarts) an instance that is up but broken."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+    except Exception:
+        logger.exception('Health check: database unreachable')
+        return JsonResponse({'status': 'unavailable', 'database': 'unreachable'}, status=503)
     return JsonResponse({'status': 'ok'})
 
 urlpatterns = [

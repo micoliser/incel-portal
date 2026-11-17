@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { FORMER_USER, PASSWORD, USERS } from "../support/seed";
 import { expect, test } from "../support/fixtures";
+import { emailCount, passwordLinkFor } from "../support/mail";
 import { header, main, sidebar } from "../support/ui";
 
 /**
@@ -133,18 +134,36 @@ test.describe("signed-in session", () => {
 });
 
 test.describe("password recovery", () => {
-  test("reports an email address that has no account", async ({ page }) => {
+  // The page answers the same way whether or not the address has an account,
+  // so it cannot be used to find out which staff emails exist.
+  const SENT = /If an active account exists for .+, an email has been sent/;
+
+  test("gives the same answer for an address with no account, and sends nothing", async ({ page }) => {
+    const address = `nobody-${Date.now()}@e2e.test`;
     await page.goto("/forgot-password");
-    await page.getByRole("textbox", { name: "Company Email Address" }).fill(`nobody-${Date.now()}@e2e.test`);
+    await page.getByRole("textbox", { name: "Company Email Address" }).fill(address);
     await page.getByRole("button", { name: "Send Reset Link" }).click();
-    await expect(main(page).getByText(/No account found with this email address/)).toBeVisible();
+    await expect(main(page).getByText(SENT).first()).toBeVisible();
+    expect(emailCount(address)).toBe(0);
   });
 
-  test("confirms that a reset link was sent for a real account", async ({ page }) => {
+  test("gives the same answer for a deactivated account, and sends nothing", async ({ page }) => {
+    await page.goto("/forgot-password");
+    await page.getByRole("textbox", { name: "Company Email Address" }).fill(FORMER_USER.email);
+    await page.getByRole("button", { name: "Send Reset Link" }).click();
+    await expect(main(page).getByText(SENT).first()).toBeVisible();
+    expect(emailCount(FORMER_USER.email)).toBe(0);
+  });
+
+  test("emails a working reset link to a real account", async ({ page }) => {
     await page.goto("/forgot-password");
     await page.getByRole("textbox", { name: "Company Email Address" }).fill(USERS.clerk.email);
     await page.getByRole("button", { name: "Send Reset Link" }).click();
-    await expect(main(page).getByText(/reset link has been sent|check your email/i).first()).toBeVisible();
+    await expect(main(page).getByText(SENT).first()).toBeVisible();
+
+    // The emailed link opens the form to choose a new password.
+    await page.goto(await passwordLinkFor(USERS.clerk.email));
+    await expect(page.getByPlaceholder("Enter new password")).toBeVisible();
   });
 
   test("rejects a reset link with no token", async ({ page }) => {

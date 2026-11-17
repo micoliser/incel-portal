@@ -120,7 +120,7 @@ export default function MyAssetsPage() {
   const fetchMyAssets = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get("/me/inventory/");
+      const response = await apiClient.get("/me/inventory");
       setItems(response.data as InventoryItem[]);
       setError(null);
     } catch (err) {

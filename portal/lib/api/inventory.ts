@@ -32,22 +32,22 @@ export type MaintenanceLog = {
 };
 
 export async function fetchMaintenanceLogs(params?: Record<string, string | number | boolean>) {
-  const response = await apiClient.get("/inventory/maintenance-logs/", { params });
+  const response = await apiClient.get("/inventory/maintenance-logs", { params });
   return response.data;
 }
 
 export async function createMaintenanceLog(data: Record<string, unknown>) {
-  const response = await apiClient.post("/inventory/maintenance-logs/", data);
+  const response = await apiClient.post("/inventory/maintenance-logs", data);
   return response.data;
 }
 
 export async function updateMaintenanceLog(id: string, data: Record<string, unknown>) {
-  const response = await apiClient.patch(`/inventory/maintenance-logs/${id}/`, data);
+  const response = await apiClient.patch(`/inventory/maintenance-logs/${id}`, data);
   return response.data;
 }
 
 export async function getAttachmentUploadUrl(payload: { file_name: string; content_type: string }) {
-  const response = await apiClient.post("/inventory/maintenance-logs/upload-url/", payload);
+  const response = await apiClient.post("/inventory/maintenance-logs/attachment-upload-url", payload);
   return response.data as {
     upload_url: string;
     public_url: string;
@@ -56,7 +56,7 @@ export async function getAttachmentUploadUrl(payload: { file_name: string; conte
 }
 
 export async function getInventoryPhotoUploadUrl(payload: { file_name: string; content_type: string }) {
-  const response = await apiClient.post("/inventory/items/upload_photo_url/", payload);
+  const response = await apiClient.post("/inventory/items/photo-upload-url", payload);
   return response.data as {
     upload_url: string;
     public_url: string;
@@ -65,7 +65,7 @@ export async function getInventoryPhotoUploadUrl(payload: { file_name: string; c
 }
 
 export async function exportInventoryItems(params?: Record<string, string | number | boolean>) {
-  const response = await apiClient.get("/inventory/items/export/", {
+  const response = await apiClient.get("/inventory/items/export", {
     params,
     responseType: "blob",
   });
@@ -73,7 +73,7 @@ export async function exportInventoryItems(params?: Record<string, string | numb
 }
 
 export async function exportMaintenanceLogs(params?: Record<string, string | number | boolean>) {
-  const response = await apiClient.get("/inventory/maintenance-logs/export/", {
+  const response = await apiClient.get("/inventory/maintenance-logs/export", {
     params,
     responseType: "blob",
   });

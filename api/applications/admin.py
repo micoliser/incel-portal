@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import ApplicationAccessOverride, AuditLog, InternalApplication, RecentApplication
+from .models import (
+    ApplicationAccessOverride,
+    AuditLog,
+    InternalApplication,
+    RecentApplication,
+)
 
 
 @admin.register(InternalApplication)

@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -150,6 +151,8 @@ export default function TasksPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
+  // Only the newest list request may update the list.
+  const latestRequestRef = useRef(0);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -236,6 +239,7 @@ export default function TasksPage() {
         return;
       }
 
+      const requestId = ++latestRequestRef.current;
       try {
         isRequestInFlightRef.current = true;
         if (!hasInitialLoadCompleted.current) {
@@ -253,12 +257,15 @@ export default function TasksPage() {
           page: currentPage,
         });
 
+        // A newer request (the filters changed) has superseded this one.
+        if (requestId !== latestRequestRef.current) return;
+
         setTasks((current) =>
           currentPage === 1
             ? taskData.results
             : [...current, ...taskData.results],
         );
-        setHasNextPage(Boolean(taskData.next));
+        setHasNextPage(pageHasNext(taskData));
         setLoadError(null);
         setError(null);
       } catch (err) {
@@ -269,11 +276,13 @@ export default function TasksPage() {
           setLoadError(message);
         }
       } finally {
-        isRequestInFlightRef.current = false;
-        hasInitialLoadCompleted.current = true;
-        setLoading(false);
-        setIsFiltering(false);
-        setIsLoadingMore(false);
+        if (requestId === latestRequestRef.current) {
+          isRequestInFlightRef.current = false;
+          hasInitialLoadCompleted.current = true;
+          setLoading(false);
+          setIsFiltering(false);
+          setIsLoadingMore(false);
+        }
       }
     };
 

@@ -17,6 +17,8 @@ class Notification(models.Model):
     TYPE_SUPPORT_RESOLVED = 'support_request_resolved'
     TYPE_SUPPORT_CLOSED = 'support_request_closed'
     TYPE_TODO_REMINDER = 'todo_reminder'
+    TYPE_INVENTORY_ASSIGNED = 'inventory_assigned'
+    TYPE_SUMMARY_SHARED = 'summary_shared'
 
     TYPE_CHOICES = [
         (TYPE_TASK_ASSIGNED, 'Task Assigned'),
@@ -29,6 +31,8 @@ class Notification(models.Model):
         (TYPE_SUPPORT_RESOLVED, 'Support Request Resolved'),
         (TYPE_SUPPORT_CLOSED, 'Support Request Closed'),
         (TYPE_TODO_REMINDER, 'To-Do Reminder'),
+        (TYPE_INVENTORY_ASSIGNED, 'Inventory Assigned'),
+        (TYPE_SUMMARY_SHARED, 'Summary Shared'),
     ]
 
     recipient = models.ForeignKey(

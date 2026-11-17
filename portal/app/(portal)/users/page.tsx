@@ -1,10 +1,9 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
-  Eye,
-  EyeOff,
   Pencil,
   Plus,
   Trash,
@@ -46,6 +45,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api-client";
+import {
+  createUser,
+  listUsers,
+  sendPasswordResetLink,
+  setUserActive,
+  updateUser,
+} from "@/lib/api/users";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 
@@ -82,11 +88,6 @@ type UserFormState = {
   unit_id: string;
   team_id: string;
   role_id: string;
-  password: string;
-  confirm_password: string;
-  reset_password: boolean;
-  new_password: string;
-  confirm_new_password: string;
 };
 
 const initialFormState: UserFormState = {
@@ -97,11 +98,6 @@ const initialFormState: UserFormState = {
   unit_id: "",
   team_id: "",
   role_id: "",
-  password: "",
-  confirm_password: "",
-  reset_password: false,
-  new_password: "",
-  confirm_new_password: "",
 };
 
 function isValidEmail(email: string) {
@@ -132,14 +128,18 @@ export default function UsersPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
+  // Only the newest list request may update the list.
+  const latestRequestRef = useRef(0);
+  // Bumped after a change, so the list is reloaded and any answer that was
+  // already on its way (with the old values) is ignored.
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [statusConfirmUser, setStatusConfirmUser] = useState<User | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [showCreatePassword, setShowCreatePassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isSendingResetLink, setIsSendingResetLink] = useState(false);
 
   const [form, setForm] = useState<UserFormState>(initialFormState);
   const [formErrors, setFormErrors] = useState<
@@ -164,6 +164,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     async function load() {
+      const requestId = ++latestRequestRef.current;
       try {
         if (currentPage === 1) {
           setLoading(true);
@@ -181,18 +182,20 @@ export default function UsersPage() {
           permsResp,
         ] = await Promise.all([
           apiClient.get("/organization/hierarchy"),
-          apiClient.get("/admin/users", {
-            params: {
-              q: search,
-              department_id: departmentFilter || undefined,
-              page: currentPage,
-              page_size: 20,
-            },
-          }),
-          apiClient.get("/admin/users"),
+          listUsers({
+            search: search || undefined,
+            department_id: departmentFilter || undefined,
+            include_inactive: true,
+            page: currentPage,
+            page_size: 20,
+          }).then((data) => ({ data })),
+          listUsers({ include_inactive: true }).then((data) => ({ data })),
           apiClient.get("/organization/roles"),
           apiClient.get("/me/permissions"),
         ]);
+
+        // A newer request has superseded this one.
+        if (requestId !== latestRequestRef.current) return;
 
         const permissionsData = permsResp.data as {
           is_superuser?: boolean;
@@ -225,9 +228,7 @@ export default function UsersPage() {
         setUsers((current) =>
           currentPage === 1 ? results : [...current, ...results],
         );
-        setHasNextPage(
-          Boolean(usersData && (usersData.next_page || usersData.next)),
-        );
+        setHasNextPage(pageHasNext(usersData));
 
         const totalUsersData = totalUsersResp.data || {};
         const totalCount =
@@ -245,14 +246,16 @@ export default function UsersPage() {
         console.error(err);
         toast.error(extractApiErrorMessage(err, "Failed to load users."));
       } finally {
-        isRequestInFlightRef.current = false;
-        setLoading(false);
-        setIsLoadingMore(false);
+        if (requestId === latestRequestRef.current) {
+          isRequestInFlightRef.current = false;
+          setLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     }
 
     void load();
-  }, [search, departmentFilter, currentPage]);
+  }, [search, departmentFilter, currentPage, refreshCounter]);
 
   useEffect(() => {
     // Reset to first page when search or filter change
@@ -326,8 +329,6 @@ export default function UsersPage() {
     setFormErrors({});
     setCreateApiError("");
     setEditApiError("");
-    setShowCreatePassword(false);
-    setShowNewPassword(false);
   }
 
   function validateCreateForm(values: UserFormState) {
@@ -338,13 +339,6 @@ export default function UsersPage() {
     if (!values.email.trim()) errors.email = "Email is required.";
     else if (!isValidEmail(values.email.trim()))
       errors.email = "Enter a valid email address.";
-
-    if (!values.password) errors.password = "Password is required.";
-    else if (values.password.length < 8)
-      errors.password = "Password must be at least 8 characters.";
-
-    if (values.password !== values.confirm_password)
-      errors.confirm_password = "Passwords do not match.";
 
     return errors;
   }
@@ -357,16 +351,6 @@ export default function UsersPage() {
     if (!values.email.trim()) errors.email = "Email is required.";
     else if (!isValidEmail(values.email.trim()))
       errors.email = "Enter a valid email address.";
-
-    if (values.reset_password) {
-      if (!values.new_password)
-        errors.new_password = "New password is required.";
-      else if (values.new_password.length < 8)
-        errors.new_password = "Password must be at least 8 characters.";
-
-      if (values.new_password !== values.confirm_new_password)
-        errors.confirm_new_password = "Passwords do not match.";
-    }
 
     return errors;
   }
@@ -389,14 +373,13 @@ export default function UsersPage() {
         unit_id: form.unit_id || null,
         team_id: form.team_id || null,
         role_id: form.role_id || null,
-        password: form.password,
       };
-      const resp = await apiClient.post("/admin/users", payload);
-      setUsers((current) => [resp.data, ...current]);
+      const created = await createUser(payload);
+      setUsers((current) => [created, ...current]);
       setTotalUsers((current) => current + 1);
       setIsCreateOpen(false);
       resetForm();
-      toast.success("User created successfully.");
+      toast.success("User created. A link to set their password has been emailed to them.");
     } catch (error) {
       const msg = extractApiErrorMessage(error, "Failed to create user.");
       setCreateApiError(msg);
@@ -416,16 +399,9 @@ export default function UsersPage() {
       unit_id: user.unit_id || "",
       team_id: user.team_id || "",
       role_id: user.role_id || "",
-      password: "",
-      confirm_password: "",
-      reset_password: false,
-      new_password: "",
-      confirm_new_password: "",
     });
     setFormErrors({});
     setEditApiError("");
-    setShowCreatePassword(false);
-    setShowNewPassword(false);
     setIsEditOpen(true);
   }
 
@@ -441,7 +417,7 @@ export default function UsersPage() {
 
     try {
       setIsUpdatingUser(true);
-      const payload: Record<string, unknown> = {
+      const payload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         email: form.email.trim(),
@@ -451,23 +427,15 @@ export default function UsersPage() {
         role_id: form.role_id || null,
       };
 
-      if (form.reset_password) {
-        payload.reset_password = true;
-        payload.new_password = form.new_password;
-        payload.confirm_password = form.confirm_new_password;
-      }
-
-      const resp = await apiClient.patch(
-        `/admin/users/${editingUser.id}`,
-        payload,
-      );
+      const updated = await updateUser(editingUser.id, payload);
       setUsers((current) =>
-        current.map((item) => (item.id === resp.data.id ? resp.data : item)),
+        current.map((item) => (item.id === updated.id ? updated : item)),
       );
       setIsEditOpen(false);
       resetForm();
       setEditingUser(null);
       toast.success("User updated successfully.");
+      reloadList();
     } catch (error) {
       const msg = extractApiErrorMessage(error, "Failed to update user.");
       setEditApiError(msg);
@@ -475,6 +443,26 @@ export default function UsersPage() {
     } finally {
       setIsUpdatingUser(false);
     }
+  }
+
+  async function handleSendResetLink() {
+    if (!editingUser) return;
+
+    try {
+      setIsSendingResetLink(true);
+      await sendPasswordResetLink(editingUser.id);
+      toast.success(`Password reset link sent to ${editingUser.email}.`);
+    } catch (error) {
+      toast.error(extractApiErrorMessage(error, "Failed to send the reset link."));
+    } finally {
+      setIsSendingResetLink(false);
+    }
+  }
+
+  /** Reload from the first page after a change, discarding older answers. */
+  function reloadList() {
+    setCurrentPage(1);
+    setRefreshCounter((value) => value + 1);
   }
 
   function requestStatusToggle(user: User) {
@@ -487,18 +475,19 @@ export default function UsersPage() {
 
     try {
       setIsUpdatingStatus(true);
-      const resp = await apiClient.patch(
-        `/admin/users/${statusConfirmUser.id}/status`,
-        { is_active: nextIsActive },
-      );
+      const updated = await setUserActive(statusConfirmUser.id, nextIsActive);
       setUsers((current) =>
-        current.map((item) => (item.id === resp.data.id ? resp.data : item)),
+        current.map((item) => (item.id === updated.id ? updated : item)),
       );
       toast.success(nextIsActive ? "User enabled." : "User disabled.");
       setStatusConfirmUser(null);
-    } catch {
+      reloadList();
+    } catch (error) {
       toast.error(
-        nextIsActive ? "Failed to enable user." : "Failed to disable user.",
+        extractApiErrorMessage(
+          error,
+          nextIsActive ? "Failed to enable user." : "Failed to disable user.",
+        ),
       );
     } finally {
       setIsUpdatingStatus(false);
@@ -1048,67 +1037,10 @@ export default function UsersPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="password">Password *</Label>
-                <div className="relative mt-1.5">
-                  <Input
-                    id="password"
-                    type={showCreatePassword ? "text" : "password"}
-                    value={form.password}
-                    onChange={(e) => {
-                      setForm({ ...form, password: e.target.value });
-                      setFormErrors((c) => ({ ...c, password: undefined }));
-                      setCreateApiError("");
-                    }}
-                    className="pr-10"
-                    placeholder="Min 8 chars"
-                    autoComplete="new-password"
-                    aria-invalid={Boolean(formErrors.password)}
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowCreatePassword((c) => !c)}
-                    aria-label={showCreatePassword ? "Hide password" : "Show password"}
-                  >
-                    {showCreatePassword ? (
-                      <EyeOff className="size-3.5" />
-                    ) : (
-                      <Eye className="size-3.5" />
-                    )}
-                  </button>
-                </div>
-                {formErrors.password && (
-                  <p className="mt-1 text-xs text-destructive">
-                    {formErrors.password}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="confirm_password">Confirm Password *</Label>
-                <Input
-                  id="confirm_password"
-                  type="password"
-                  value={form.confirm_password}
-                  onChange={(e) => {
-                    setForm({ ...form, confirm_password: e.target.value });
-                    setFormErrors((c) => ({ ...c, confirm_password: undefined }));
-                    setCreateApiError("");
-                  }}
-                  className="mt-1.5"
-                  placeholder="Repeat password"
-                  autoComplete="new-password"
-                  aria-invalid={Boolean(formErrors.confirm_password)}
-                />
-                {formErrors.confirm_password && (
-                  <p className="mt-1 text-xs text-destructive">
-                    {formErrors.confirm_password}
-                  </p>
-                )}
-              </div>
-            </div>
+            <p className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              No password is needed here. The new user is emailed a link to
+              set their own password, valid for 72 hours.
+            </p>
 
             <div className="border-t border-border/60 pt-3 space-y-3">
               <div>
@@ -1448,86 +1380,26 @@ export default function UsersPage() {
               </div>
             </div>
 
-            {/* Password Reset Accordion / Section */}
-            <div className="border-t border-border/60 pt-3">
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-foreground">
-                <input
-                  type="checkbox"
-                  checked={form.reset_password}
-                  onChange={(e) =>
-                    setForm({ ...form, reset_password: e.target.checked })
-                  }
-                  className="rounded border-border text-[#0d47a1] focus:ring-[#0d47a1]"
-                />
-                <span>Reset User Password</span>
-              </label>
-
-              {form.reset_password && (
-                <div className="mt-3 grid grid-cols-2 gap-3 pl-6">
-                  <div>
-                    <Label htmlFor="edit_new_password">New Password</Label>
-                    <div className="relative mt-1.5">
-                      <Input
-                        id="edit_new_password"
-                        type={showNewPassword ? "text" : "password"}
-                        value={form.new_password}
-                        onChange={(e) => {
-                          setForm({ ...form, new_password: e.target.value });
-                          setFormErrors((c) => ({ ...c, new_password: undefined }));
-                          setEditApiError("");
-                        }}
-                        className="pr-10"
-                        placeholder="Min 8 chars"
-                        aria-invalid={Boolean(formErrors.new_password)}
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground hover:text-foreground"
-                        onClick={() => setShowNewPassword((c) => !c)}
-                        aria-label={showNewPassword ? "Hide password" : "Show password"}
-                      >
-                        {showNewPassword ? (
-                          <EyeOff className="size-3.5" />
-                        ) : (
-                          <Eye className="size-3.5" />
-                        )}
-                      </button>
-                    </div>
-                    {formErrors.new_password && (
-                      <p className="mt-1 text-xs text-destructive">
-                        {formErrors.new_password}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="edit_confirm_new_password">Confirm New</Label>
-                    <Input
-                      id="edit_confirm_new_password"
-                      type="password"
-                      value={form.confirm_new_password}
-                      onChange={(e) => {
-                        setForm({
-                          ...form,
-                          confirm_new_password: e.target.value,
-                        });
-                        setFormErrors((c) => ({
-                          ...c,
-                          confirm_new_password: undefined,
-                        }));
-                        setEditApiError("");
-                      }}
-                      className="mt-1.5"
-                      placeholder="Repeat password"
-                      aria-invalid={Boolean(formErrors.confirm_new_password)}
-                    />
-                    {formErrors.confirm_new_password && (
-                      <p className="mt-1 text-xs text-destructive">
-                        {formErrors.confirm_new_password}
-                      </p>
-                    )}
-                  </div>
-                </div>
+            {/* Password reset: the user sets their own password through an emailed link */}
+            <div className="border-t border-border/60 pt-3 space-y-2">
+              <p className="text-xs font-semibold text-foreground">Password</p>
+              <p className="text-xs text-muted-foreground">
+                Emails this user a link to choose a new password. Their current
+                password keeps working until they use it.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSendResetLink}
+                disabled={isSendingResetLink || isUpdatingUser || !editingUser?.is_active}
+                className="rounded-lg text-xs"
+              >
+                {isSendingResetLink ? "Sending..." : "Send password reset link"}
+              </Button>
+              {editingUser && !editingUser.is_active && (
+                <p className="text-xs text-muted-foreground">
+                  Enable the account before sending a reset link.
+                </p>
               )}
             </div>
 

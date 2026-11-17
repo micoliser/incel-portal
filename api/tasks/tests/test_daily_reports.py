@@ -1,0 +1,668 @@
+from datetime import timedelta
+from unittest.mock import patch
+
+from django.contrib.auth.models import User
+from django.test import override_settings
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework import status
+
+from accounts.models import StaffProfile
+from common.test_utils import BaseAPITestCase
+from tasks.models import DailyReport, DailyReportComment, DailyReportSubreport
+
+
+class DailyReportsApiTests(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.hr_user = User.objects.create_user(
+            username='hr@example.com',
+            email='hr@example.com',
+            password='HrStrongPass123!',
+            first_name='HR',
+            last_name='Member',
+        )
+        StaffProfile.objects.create(
+            user=self.hr_user,
+            role=self.role_staff,
+            department=self.dep_hr,
+        )
+
+    def _create_report(self, report_date=None, title='Morning update', comment='Initial note'):
+        if report_date is None:
+            report_date = timezone.localdate().isoformat()
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-day-hub'),
+            {
+                'report_date': report_date,
+                'title': title,
+                'comment': comment,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return response
+
+    def test_day_hub_does_not_create_reports_on_get_and_excludes_other_departments(self):
+        today = timezone.localdate()
+        today_str = today.isoformat()
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(
+            reverse('reports-day-hub'),
+            {'report_date': today_str},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['your_report'])
+        self.assertEqual(response.data['all_reports'], [])
+        self.assertEqual(
+            DailyReport.objects.filter(report_date=today).count(),
+            0,
+        )
+
+        self._create_report(title='Engineering update', comment='Engineering note')
+
+        self.client.credentials(**self.auth_headers_for(self.hr_user))
+        hr_response = self.client.post(
+            reverse('reports-day-hub'),
+            {
+                'report_date': today_str,
+                'title': 'HR update',
+                'comment': 'HR note',
+            },
+            format='json',
+        )
+        self.assertEqual(hr_response.status_code, status.HTTP_201_CREATED)
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(
+            reverse('reports-day-hub'),
+            {'report_date': today_str},
+        )
+
+        report_creator_ids = {item['creator']['id'] for item in response.data['all_reports']}
+        self.assertIn(self.staff_user.id, report_creator_ids)
+        self.assertNotIn(self.hr_user.id, report_creator_ids)
+
+        self.assertEqual(
+            DailyReport.objects.filter(report_date=today, department=self.dep_eng).count(),
+            1,
+        )
+
+    def test_month_calendar_returns_dates_with_reports(self):
+        today = timezone.localdate()
+        self._create_report()
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(
+            reverse('reports-month-calendar'),
+            {'month': today.strftime('%Y-%m')},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        report_dates = {item['report_date']: item for item in response.data['dates']}
+        today_str = today.isoformat()
+        self.assertIn(today_str, report_dates)
+        self.assertEqual(report_dates[today_str]['report_count'], 1)
+        self.assertEqual(report_dates[today_str]['subreport_count'], 1)
+        self.assertTrue(report_dates[today_str]['has_your_report'])
+
+    def test_create_report_adds_subreport_and_initial_comment(self):
+        response = self._create_report(title='Daily sync', comment='Finished the initial draft.')
+
+        report = DailyReport.objects.get(user=self.staff_user, report_date=timezone.localdate())
+        subreports = report.subreports.all()
+        self.assertEqual(subreports.count(), 1)
+        subreport = subreports.first()
+        self.assertEqual(subreport.title, 'Daily sync')
+        self.assertEqual(subreport.comments.count(), 1)
+        self.assertEqual(subreport.comments.first().body, 'Finished the initial draft.')
+        self.assertEqual(response.data['title'], 'Daily sync')
+        self.assertEqual(response.data['comments'][0]['body'], 'Finished the initial draft.')
+
+    def test_additional_report_can_be_created_without_report_date(self):
+        self._create_report(title='Daily sync', comment='Finished the initial draft.')
+        daily_report = DailyReport.objects.get(user=self.staff_user, report_date=timezone.localdate())
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-subreports-create', kwargs={'report_id': daily_report.id}),
+            {
+                'title': 'Follow-up update',
+                'comment': 'Second report without a date payload.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['title'], 'Follow-up update')
+        self.assertEqual(response.data['comments'][0]['body'], 'Second report without a date payload.')
+        self.assertEqual(daily_report.subreports.count(), 2)
+
+    def test_daily_report_detail_lists_subreports(self):
+        create_response = self._create_report(title='Top level title', comment='Initial body')
+        daily_report = DailyReport.objects.get(user=self.staff_user, report_date=timezone.localdate())
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('reports-daily-detail', kwargs={'report_id': daily_report.id}))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], str(daily_report.id))
+        self.assertEqual(response.data['subreports'][0]['title'], 'Top level title')
+        self.assertEqual(response.data['subreports'][0]['view_url'], f'/reports/subreports/{create_response.data["id"]}')
+
+    def test_subreport_detail_returns_comments_and_allows_append_owner_only(self):
+        create_response = self._create_report(title='Standup', comment='First comment')
+        subreport_id = create_response.data['id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('reports-subreport-detail', kwargs={'subreport_id': subreport_id}))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['comments']), 1)
+        self.assertEqual(response.data['comments'][0]['body'], 'First comment')
+
+        append_response = self.client.post(
+            reverse('reports-subreport-comments', kwargs={'subreport_id': subreport_id}),
+            {'body': 'Second comment'},
+            format='json',
+        )
+        self.assertEqual(append_response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(reverse('reports-subreport-detail', kwargs={'subreport_id': subreport_id}))
+        self.assertEqual(len(response.data['comments']), 2)
+        self.assertEqual(response.data['comments'][0]['body'], 'First comment')
+        self.assertEqual(response.data['comments'][1]['body'], 'Second comment')
+
+        self.client.credentials(**self.auth_headers_for(self.hr_user))
+        forbidden_response = self.client.post(
+            reverse('reports-subreport-comments', kwargs={'subreport_id': subreport_id}),
+            {'body': 'Should not be allowed'},
+            format='json',
+        )
+        self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_department_user_cannot_view_other_department_report(self):
+        self._create_report()
+        daily_report = DailyReport.objects.get(user=self.staff_user, report_date=timezone.localdate())
+
+        self.client.credentials(**self.auth_headers_for(self.hr_user))
+        response = self.client.get(reverse('reports-daily-detail', kwargs={'report_id': daily_report.id}))
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_cannot_create_report_for_past_or_future_date(self):
+        today = timezone.localdate()
+        past_date = (today - timedelta(days=1)).isoformat()
+        future_date = (today + timedelta(days=1)).isoformat()
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        past_response = self.client.post(
+            reverse('reports-day-hub'),
+            {
+                'report_date': past_date,
+                'title': 'Past report',
+                'comment': 'Should be rejected.',
+            },
+            format='json',
+        )
+        future_response = self.client.post(
+            reverse('reports-day-hub'),
+            {
+                'report_date': future_date,
+                'title': 'Future report',
+                'comment': 'Should also be rejected.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(past_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(future_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cannot_add_subreport_to_non_current_day_report(self):
+        past_report = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=timezone.localdate() - timedelta(days=1),
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-subreports-create', kwargs={'report_id': past_report.id}),
+            {
+                'title': 'Past day subreport',
+                'comment': 'Should not be allowed.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(past_report.subreports.count(), 0)
+
+    def test_cannot_add_comment_to_non_current_day_subreport(self):
+        past_report = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=timezone.localdate() - timedelta(days=1),
+        )
+        past_subreport = DailyReportSubreport.objects.create(
+            daily_report=past_report,
+            title='Past report entry',
+            created_by=self.staff_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-subreport-comments', kwargs={'subreport_id': past_subreport.id}),
+            {'body': 'Should be blocked.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(past_subreport.comments.count(), 0)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    @patch('emails.config.EmailConfig.is_debug_mode', return_value=False)
+    @patch('emails.config.EmailConfig.use_celery', return_value=False)
+    @patch('emails.config.EmailConfig.is_enabled', return_value=True)
+    def test_owner_can_forward_daily_report_email(self, *_mocks):
+        create_response = self._create_report(
+            title='Morning standup',
+            comment='Shipped the API changes.',
+        )
+        report_id = create_response.data['daily_report_id']
+        report = DailyReport.objects.get(id=report_id)
+
+        second_subreport = DailyReportSubreport.objects.create(
+            daily_report=report,
+            title='Afternoon sync',
+            created_by=self.staff_user,
+        )
+        DailyReportComment.objects.create(
+            subreport=second_subreport,
+            author=self.staff_user,
+            body='Blocked on review.',
+        )
+
+        User.objects.create_user(username='colleague', email='colleague@example.com', password='pass', is_active=True)
+        User.objects.create_user(username='manager', email='manager@example.com', password='pass', is_active=True)
+        
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['colleague@example.com', 'manager@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn('2 recipients', response.data['detail'])
+
+        from django.core import mail
+
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertCountEqual(message.to, ['colleague@example.com', 'manager@example.com'])
+        self.assertEqual(message.reply_to, ['staff@example.com'])
+        self.assertIn('Morning standup', message.body)
+        self.assertIn('Afternoon sync', message.body)
+        self.assertIn('Shipped the API changes.', message.body)
+        self.assertIn('Blocked on review.', message.body)
+        self.assertIn(f'/reports/daily/{report_id}', message.body)
+
+    def test_non_owner_cannot_forward_daily_report_email(self):
+        create_response = self._create_report(
+            title='Engineering update',
+            comment='Team note.',
+        )
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.hr_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['someone@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_global_admin_cannot_forward_someone_elses_report(self):
+        create_response = self._create_report(
+            title='Staff report',
+            comment='Only owner should send.',
+        )
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['admin-forward@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_send_email_rejects_duplicate_recipients(self):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['dup@example.com', 'dup@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['type'], 'validation_error')
+
+    def test_send_email_rejects_more_than_five_recipients(self):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {
+                'recipients': [
+                    'a@example.com',
+                    'b@example.com',
+                    'c@example.com',
+                    'd@example.com',
+                    'e@example.com',
+                    'f@example.com',
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('emails.config.EmailConfig.is_enabled', return_value=False)
+    def test_send_email_returns_503_when_email_disabled(self, _mock_enabled):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['someone@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    @patch('emails.config.EmailConfig.is_enabled', return_value=True)
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=False)
+    def test_send_email_returns_502_when_delivery_fails(self, _mock_send, _mock_enabled):
+        create_response = self._create_report()
+        report_id = create_response.data['daily_report_id']
+
+        User.objects.create_user(username='someone', email='someone@example.com', password='pass', is_active=True)
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(
+            reverse('reports-daily-send-email', kwargs={'report_id': report_id}),
+            {'recipients': ['someone@example.com']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_first_report_sends_manager_email(self, mock_send):
+        # Create department and assign manager
+        from organization.models import Department
+        
+        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
+        
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        # First subreport should trigger email
+        self._create_report(title='First')
+        self.assertEqual(mock_send.call_count, 1)
+        
+        # Second subreport should NOT trigger email
+        self._create_report(title='Second')
+        self.assertEqual(mock_send.call_count, 1)
+        
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_report_sends_manager_email(self, mock_send):
+        # Create department and assign manager
+        from organization.models import Department
+        
+        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
+        
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        self._create_report(title='First')
+        
+        # Reset mock call count because the first creation triggers an email
+        mock_send.reset_mock()
+        
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        from tasks.tasks import send_eod_daily_reports
+        cache.delete(f"eod_emails_sent_{timezone.localdate().isoformat()}")
+        
+        result = send_eod_daily_reports()
+        
+        self.assertEqual(result['sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_emails_not_sent_twice(self, mock_send):
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        from organization.models import Department
+        from tasks.tasks import send_eod_daily_reports
+        dept = Department.objects.create(name='Test Dept 2', code='TD2', line_manager_id=self.admin_user.id)
+        profile = self.staff_user.staff_profile
+        profile.department_id = dept.id
+        profile.save()
+        
+        self._create_report(title='EOD First')
+        mock_send.reset_mock()
+        
+        today = timezone.localdate()
+        cache.delete(f"eod_emails_sent_{today.isoformat()}")
+
+        # First run should send emails
+        result1 = send_eod_daily_reports()
+        self.assertEqual(result1['sent'], 1)
+        
+        # Second run should skip
+        result2 = send_eod_daily_reports()
+        self.assertEqual(result2['sent'], 0)
+        self.assertEqual(result2.get('status'), 'already_sent')
+        
+        # The mock should only be called once total
+        mock_send.assert_called_once()
+
+    def test_all_reports_department_isolation(self):
+        today = timezone.localdate()
+        today - timedelta(days=1)
+
+        # Create report for engineering user
+        eng_report = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=eng_report,
+            title='Eng Today',
+            created_by=self.staff_user,
+        )
+
+        # Create report for HR user
+        hr_report = DailyReport.objects.create(
+            user=self.hr_user,
+            department=self.dep_hr,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=hr_report,
+            title='HR Today',
+            created_by=self.hr_user,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('reports-department-all'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['current_date'], str(today))
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['creator']['id'], self.staff_user.id)
+        self.assertEqual(response.data['results'][0]['department'], self.dep_eng.name)
+
+    def test_all_reports_date_based_pagination(self):
+        today = timezone.localdate()
+        day1 = today
+        day2 = today - timedelta(days=1)
+        day3 = today - timedelta(days=3)
+
+        for d, title in [(day1, 'Day 1'), (day2, 'Day 2'), (day3, 'Day 3')]:
+            rep = DailyReport.objects.create(
+                user=self.staff_user,
+                department=self.dep_eng,
+                report_date=d,
+            )
+            DailyReportSubreport.objects.create(
+                daily_report=rep,
+                title=title,
+                created_by=self.staff_user,
+            )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        # Page 1: most recent date (day1)
+        res1 = self.client.get(reverse('reports-department-all'), {'page': 1})
+        self.assertEqual(res1.status_code, status.HTTP_200_OK)
+        self.assertEqual(res1.data['current_date'], str(day1))
+        self.assertEqual(res1.data['page'], 1)
+        self.assertEqual(res1.data['total_pages'], 3)
+        self.assertEqual(res1.data['count'], 3)
+        self.assertEqual(res1.data['total_pages'], 3)
+        self.assertEqual(res1.data['page_size'], 1)
+        self.assertEqual(res1.data['results'][0]['subreports'][0]['title'], 'Day 1')
+
+        # Page 2: next date backwards in time (day2)
+        res2 = self.client.get(reverse('reports-department-all'), {'page': 2})
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        self.assertEqual(res2.data['current_date'], str(day2))
+        self.assertEqual(res2.data['page'], 2)
+        self.assertEqual(res2.data['page'], 2)
+        self.assertEqual(res2.data['results'][0]['subreports'][0]['title'], 'Day 2')
+
+        # Page 3: oldest date (day3)
+        res3 = self.client.get(reverse('reports-department-all'), {'page': 3})
+        self.assertEqual(res3.status_code, status.HTTP_200_OK)
+        self.assertEqual(res3.data['current_date'], str(day3))
+        self.assertEqual(res3.data['page'], 3)
+        self.assertEqual(res3.data['page'], res3.data['total_pages'])
+        self.assertEqual(res3.data['results'][0]['subreports'][0]['title'], 'Day 3')
+
+        # Page 4: beyond available dates
+        res4 = self.client.get(reverse('reports-department-all'), {'page': 4})
+        self.assertEqual(res4.status_code, status.HTTP_200_OK)
+        self.assertIsNone(res4.data['current_date'])
+        self.assertEqual(res4.data['results'], [])
+        self.assertEqual(res4.data['results'], [])
+
+    def test_all_reports_date_filtering(self):
+        today = timezone.localdate()
+        day1 = today
+        day2 = today - timedelta(days=2)
+        day3 = today - timedelta(days=5)
+
+        for d in [day1, day2, day3]:
+            rep = DailyReport.objects.create(
+                user=self.staff_user,
+                department=self.dep_eng,
+                report_date=d,
+            )
+            DailyReportSubreport.objects.create(
+                daily_report=rep,
+                title=f'Report {d}',
+                created_by=self.staff_user,
+            )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        # Single date filter
+        res_single = self.client.get(reverse('reports-department-all'), {'date': str(day2)})
+        self.assertEqual(res_single.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_single.data['total_pages'], 1)
+        self.assertEqual(res_single.data['current_date'], str(day2))
+        self.assertEqual(len(res_single.data['results']), 1)
+
+        # Date range filter
+        res_range = self.client.get(
+            reverse('reports-department-all'),
+            {'date_from': str(day2), 'date_to': str(day1)},
+        )
+        self.assertEqual(res_range.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_range.data['total_pages'], 2)
+        self.assertEqual(res_range.data['current_date'], str(day1))
+
+    def test_all_reports_user_search(self):
+        today = timezone.localdate()
+
+        # Second engineer in engineering
+        eng2 = User.objects.create_user(
+            username='eng2@example.com',
+            email='eng2@example.com',
+            password='Eng2StrongPass123!',
+            first_name='Alice',
+            last_name='Developer',
+        )
+        StaffProfile.objects.create(
+            user=eng2,
+            role=self.role_staff,
+            department=self.dep_eng,
+        )
+
+        r1 = DailyReport.objects.create(
+            user=self.staff_user,
+            department=self.dep_eng,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=r1,
+            title='Staff report',
+            created_by=self.staff_user,
+        )
+
+        r2 = DailyReport.objects.create(
+            user=eng2,
+            department=self.dep_eng,
+            report_date=today,
+        )
+        DailyReportSubreport.objects.create(
+            daily_report=r2,
+            title='Alice report',
+            created_by=eng2,
+        )
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        # Search by email
+        res_email = self.client.get(reverse('reports-department-all'), {'search': 'eng2@example.com'})
+        self.assertEqual(res_email.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_email.data['results']), 1)
+        self.assertEqual(res_email.data['results'][0]['creator']['email'], 'eng2@example.com')
+
+        # Search by first name
+        res_name = self.client.get(reverse('reports-department-all'), {'search': 'Alice'})
+        self.assertEqual(res_name.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_name.data['results']), 1)
+        self.assertEqual(res_name.data['results'][0]['creator']['full_name'], 'Alice Developer')
+

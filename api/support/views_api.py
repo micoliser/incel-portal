@@ -1,31 +1,34 @@
 import logging
 
-from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
-from rest_framework import status
+from rest_framework import mixins, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.viewsets import GenericViewSet
+
+from common.pagination import page_size
+from common.params import choice_param, uuid_param
+from common.uploads import checked_upload
+from common.users import display_name
 
 from .models import SupportAttachment, SupportComment, SupportRequest
 from .permissions import (
     CanComment,
     CanManageDepartmentRequests,
     CanViewRequest,
-    IsAssignedHandler,
     IsHandlerOrDepartmentManager,
     IsRequester,
     user_is_any_department_manager,
 )
 from .s3 import (
     SupportAttachmentStorageError,
-    build_support_attachment_key,
     generate_support_attachment_upload_url,
+    support_attachment_key_prefix,
 )
 from .serializers import (
     SupportAttachmentConfirmSerializer,
@@ -40,10 +43,12 @@ from .serializers import (
     SupportRequestStatusSerializer,
 )
 from .services import (
+    get_requester_line_manager,
     notify_comment_added,
     notify_request_assigned,
     notify_request_closed,
     notify_request_resolved,
+    notify_request_submitted,
     route_support_request,
     update_request_status,
 )
@@ -51,47 +56,46 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
-class SupportRequestPagination(PageNumberPagination):
-    page_size = 10
+REQUEST_STATUSES = {value for value, _label in SupportRequest.STATUS_CHOICES}
 
 
-class SupportRequestViewSet(ModelViewSet):
-    """API endpoint for support requests."""
+class SupportRequestViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    GenericViewSet,
+):
+    """Support requests.
+
+    A request can be listed, opened and created. It only changes through the
+    workflow actions below (assign, status, resolve, confirm, reopen), which
+    check who may act, enforce the allowed transitions and leave a record, so
+    there is deliberately no update or delete.
+    """
+
+    lookup_value_converter = 'uuid'
 
     permission_classes = [IsAuthenticated]
-    pagination_class = SupportRequestPagination
+    pagination_class = page_size(10)
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'support'
-
     def get_queryset(self):
+        """The requests the caller is involved in: ones they raised, ones assigned
+        to them, ones routed to a department they manage, and ones raised by
+        people they were line manager of at the time."""
         user = self.request.user
-        # Staff see their own requests + assigned requests
-        # Department managers also see their department's requests
-        from .permissions import user_is_any_department_manager
-
         qs = SupportRequest.objects.filter(
-            models.Q(requester=user) | models.Q(assigned_to=user)
+            models.Q(requester=user)
+            | models.Q(assigned_to=user)
+            | models.Q(department__line_manager=user)
+            | models.Q(line_manager=user)
         )
 
-        if user_is_any_department_manager(user):
-            # Add requests routed to the user's department
-            from accounts.models import StaffProfile
-            try:
-                profile = user.staff_profile
-                if profile.department:
-                    dept_qs = SupportRequest.objects.filter(department=profile.department)
-                    qs = qs | dept_qs
-            except StaffProfile.DoesNotExist:
-                pass
-
-        # Status filter
-        status_param = (self.request.query_params.get('status') or '').strip()
+        status_param = choice_param(self.request.query_params, 'status', REQUEST_STATUSES)
         if status_param:
             qs = qs.filter(status=status_param)
 
-        return qs.distinct().select_related(
-            'requester', 'department', 'assigned_to'
-        )
+        return qs.distinct().select_related('requester', 'department', 'assigned_to').order_by('-created_at')
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -118,7 +122,6 @@ class SupportRequestViewSet(ModelViewSet):
         department = route_support_request(data['category'])
 
         # Snapshot the requester's line manager
-        from .services import get_requester_line_manager
         lm = get_requester_line_manager(self.request.user)
 
         with transaction.atomic():
@@ -140,7 +143,6 @@ class SupportRequestViewSet(ModelViewSet):
             )
 
         # Fire notifications outside the transaction
-        from .services import notify_request_submitted
         notify_request_submitted(request_obj)
 
         return request_obj
@@ -176,7 +178,7 @@ class SupportRequestViewSet(ModelViewSet):
             SupportComment.objects.create(
                 request=request_obj,
                 author=request.user,
-                body=f'Assigned to {handler.get_full_name() or handler.username}.',
+                body=f'Assigned to {display_name(handler)}.',
                 is_system=True,
             )
 
@@ -185,7 +187,7 @@ class SupportRequestViewSet(ModelViewSet):
         output = SupportRequestDetailSerializer(request_obj, context={'request': request})
         return Response(output.data)
 
-    @action(detail=True, methods=['post'], url_path='update-status')
+    @action(detail=True, methods=['post'], url_path='status', url_name='status')
     def update_status(self, request, pk=None):
         """Update request status. Assigned handler or department manager."""
         request_obj: SupportRequest = self.get_object()
@@ -198,8 +200,8 @@ class SupportRequestViewSet(ModelViewSet):
                 serializer.validated_data['status'],
                 user=request.user,
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         output = SupportRequestDetailSerializer(updated, context={'request': request})
         return Response(output.data)
@@ -216,8 +218,8 @@ class SupportRequestViewSet(ModelViewSet):
                 user=request.user,
                 comment_body='Request marked as resolved.',
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         notify_request_resolved(updated)
 
@@ -230,10 +232,7 @@ class SupportRequestViewSet(ModelViewSet):
         request_obj: SupportRequest = self.get_object()
 
         if request_obj.status != 'resolved':
-            return Response(
-                {'error': 'Only resolved requests can be confirmed.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('Only resolved requests can be confirmed.')
 
         try:
             updated = update_request_status(
@@ -242,8 +241,8 @@ class SupportRequestViewSet(ModelViewSet):
                 user=request.user,
                 comment_body='Requester confirmed resolution. Request closed.',
             )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.messages)
 
         notify_request_closed(updated)
 
@@ -256,30 +255,28 @@ class SupportRequestViewSet(ModelViewSet):
         request_obj: SupportRequest = self.get_object()
 
         if request_obj.status not in ('resolved', 'closed'):
-            return Response(
-                {'error': 'Only resolved or closed requests can be reopened.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('Only resolved or closed requests can be reopened.')
 
-        try:
-            update_request_status(
-                request_obj,
-                'open',
-                user=request.user,
-                comment_body='Requester reopened this request.',
-            )
-        except ValueError as e:
-            raise ValidationError(str(e))
+        # Both changes happen together or not at all.
+        with transaction.atomic():
+            try:
+                update_request_status(
+                    request_obj,
+                    'open',
+                    user=request.user,
+                    comment_body='Requester reopened this request.',
+                )
+            except DjangoValidationError as e:
+                raise ValidationError(e.messages)
 
-        # Clear assignment on reopen
-        request_obj.assigned_to = None
-        request_obj.assigned_by = None
-        request_obj.save(update_fields=['assigned_to', 'assigned_by', 'updated_at'])
+            request_obj.assigned_to = None
+            request_obj.assigned_by = None
+            request_obj.save(update_fields=['assigned_to', 'assigned_by', 'updated_at'])
 
         output = SupportRequestDetailSerializer(request_obj, context={'request': request})
         return Response(output.data)
 
-    @action(detail=True, methods=['post'], url_path='add-comment')
+    @action(detail=True, methods=['post'], url_path='comments', url_name='comments')
     def add_comment(self, request, pk=None):
         """Add a comment to the request."""
         request_obj: SupportRequest = self.get_object()
@@ -297,7 +294,7 @@ class SupportRequestViewSet(ModelViewSet):
         comment_serializer = SupportCommentSerializer(comment, context={'request': request})
         return Response(comment_serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['post'], url_path='upload-url')
+    @action(detail=True, methods=['post'], url_path='attachment-upload-url', url_name='attachment-upload-url')
     def upload_url(self, request, pk=None):
         """Generate a presigned S3 URL for attachment upload."""
         request_obj: SupportRequest = self.get_object()
@@ -315,7 +312,7 @@ class SupportRequestViewSet(ModelViewSet):
 
         return Response(result)
 
-    @action(detail=True, methods=['post'], url_path='confirm-upload')
+    @action(detail=True, methods=['post'], url_path='attachments', url_name='attachments')
     def confirm_upload(self, request, pk=None):
         """Confirm an attachment was uploaded to S3 and create the record."""
         request_obj: SupportRequest = self.get_object()
@@ -324,8 +321,21 @@ class SupportRequestViewSet(ModelViewSet):
 
         data = serializer.validated_data
 
+        # A file can only be attached to the request it was uploaded for, and
+        # only once.
+        if not data['object_key'].startswith(support_attachment_key_prefix(request_obj.id)):
+            raise ValidationError({'object_key': ['This file does not belong to this request.']})
+        if SupportAttachment.objects.filter(object_key=data['object_key']).exists():
+            raise ValidationError({'object_key': ['This file is already attached.']})
+        data['size'], data['content_type'] = checked_upload(
+            data['object_key'],
+            field='object_key',
+            claimed_size=data['size'],
+            claimed_type=data['content_type'],
+        )
+
         # Determine where to attach — if a comment_id was provided, attach to comment
-        comment_id = request.data.get('comment_id')
+        comment_id = uuid_param(request.data, 'comment_id')
         comment = None
         if comment_id:
             comment = get_object_or_404(SupportComment, id=comment_id, request=request_obj)
@@ -350,41 +360,20 @@ class SupportRequestViewSet(ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def department(self, request):
-        """List all requests for the user's department (manager view)."""
+        """The queue of every department the caller manages."""
         if not user_is_any_department_manager(request.user):
-            return Response(
-                {'error': 'Department manager access required.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            raise PermissionDenied('Department manager access required.')
 
-        from accounts.models import StaffProfile
-        try:
-            profile = request.user.staff_profile
-        except StaffProfile.DoesNotExist:
-            return Response(
-                {'error': 'Staff profile not found.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        requests_qs = (
+            SupportRequest.objects.filter(department__line_manager=request.user)
+            .select_related('requester', 'department', 'assigned_to')
+            .order_by('-created_at')
+        )
 
-        if not profile.department:
-            return Response(
-                {'error': 'You are not assigned to any department.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        requests_qs = SupportRequest.objects.filter(
-            department=profile.department
-        ).select_related('requester', 'department', 'assigned_to').order_by('-created_at')
-
-        # Status filter
-        status_param = (request.query_params.get('status') or '').strip()
+        status_param = choice_param(request.query_params, 'status', REQUEST_STATUSES)
         if status_param:
             requests_qs = requests_qs.filter(status=status_param)
 
         page = self.paginate_queryset(requests_qs)
-        if page is not None:
-            serializer = SupportRequestListSerializer(page, many=True, context={'request': request})
-            return self.get_paginated_response(serializer.data)
-
-        serializer = SupportRequestListSerializer(requests_qs, many=True, context={'request': request})
-        return Response(serializer.data)
+        serializer = SupportRequestListSerializer(page, many=True, context={'request': request})
+        return self.get_paginated_response(serializer.data)

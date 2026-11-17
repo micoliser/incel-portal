@@ -1,64 +1,91 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from organization.models import Department, Role, Unit, Team
+from common.serializers import UserSummarySerializer
+from organization.models import Department, Role, Team, Unit
 
 
-class _UserBasicSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'first_name', 'last_name', 'email']
+def _profile_field(user, field):
+    """A field from the user's staff profile, or None if they have no profile."""
+    profile = getattr(user, 'staff_profile', None)
+    return getattr(profile, field, None)
 
 
-class TeamSerializer(serializers.ModelSerializer):
-    team_lead_info = _UserBasicSerializer(source='team_lead', read_only=True)
+def _leader_fields(name):
+    """A leader is read as a nested user (`<name>`) and written by id (`<name>_id`)."""
+    return {
+        name: UserSummarySerializer(read_only=True),
+        f'{name}_id': serializers.PrimaryKeyRelatedField(
+            source=name,
+            queryset=User.objects.filter(is_active=True),
+            write_only=True,
+            required=False,
+            allow_null=True,
+        ),
+    }
+
+
+class _LeaderMustBeMember:
+    """Shared validation: whoever leads a group must already be a member of it."""
+
+    leader_field = ''
+    membership_field = ''
+    group_label = ''
+    leader_label = ''
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        leader = attrs.get(self.leader_field)
+        if leader and self.instance:
+            if _profile_field(leader, self.membership_field) != self.instance.id:
+                raise serializers.ValidationError(
+                    {f'{self.leader_field}_id': f'The {self.leader_label} must be a member of this {self.group_label}.'}
+                )
+        elif leader:
+            raise serializers.ValidationError(
+                {
+                    f'{self.leader_field}_id': (
+                        f'Cannot assign a {self.leader_label} before the {self.group_label} is created.'
+                    )
+                }
+            )
+        return attrs
+
+
+class TeamSerializer(_LeaderMustBeMember, serializers.ModelSerializer):
+    leader_field, membership_field, group_label, leader_label = 'team_lead', 'team_id', 'team', 'team lead'
+    locals().update(_leader_fields('team_lead'))
+    unit_id = serializers.PrimaryKeyRelatedField(source='unit', queryset=Unit.objects.all())
 
     class Meta:
         model = Team
-        fields = ['id', 'name', 'code', 'unit', 'team_lead', 'team_lead_info', 'is_active', 'created_at', 'updated_at']
-
-    def validate(self, attrs):
-        team_lead = attrs.get('team_lead')
-        if team_lead and self.instance:
-            if team_lead.staff_profile.team_id != self.instance.id:
-                raise serializers.ValidationError({"team_lead": "The team lead must be a member of this team."})
-        elif team_lead and not self.instance:
-            raise serializers.ValidationError({"team_lead": "Cannot assign a team lead before the team is created."})
-        return attrs
+        fields = ['id', 'name', 'code', 'unit_id', 'team_lead', 'team_lead_id', 'is_active', 'created_at', 'updated_at']
 
 
-class UnitSerializer(serializers.ModelSerializer):
-    supervisor_info = _UserBasicSerializer(source='supervisor', read_only=True)
+class UnitSerializer(_LeaderMustBeMember, serializers.ModelSerializer):
+    leader_field, membership_field, group_label, leader_label = 'supervisor', 'unit_id', 'unit', 'supervisor'
+    locals().update(_leader_fields('supervisor'))
+    department_id = serializers.PrimaryKeyRelatedField(source='department', queryset=Department.objects.all())
 
     class Meta:
         model = Unit
-        fields = ['id', 'name', 'code', 'department', 'supervisor', 'supervisor_info', 'is_active', 'created_at', 'updated_at']
-
-    def validate(self, attrs):
-        supervisor = attrs.get('supervisor')
-        if supervisor and self.instance:
-            if supervisor.staff_profile.unit_id != self.instance.id:
-                raise serializers.ValidationError({"supervisor": "The supervisor must be a member of this unit."})
-        elif supervisor and not self.instance:
-            raise serializers.ValidationError({"supervisor": "Cannot assign a supervisor before the unit is created."})
-        return attrs
+        fields = [
+            'id', 'name', 'code', 'department_id', 'supervisor', 'supervisor_id',
+            'is_active', 'created_at', 'updated_at',
+        ]
 
 
-class DepartmentSerializer(serializers.ModelSerializer):
-    line_manager_info = _UserBasicSerializer(source='line_manager', read_only=True)
+class DepartmentSerializer(_LeaderMustBeMember, serializers.ModelSerializer):
+    leader_field, membership_field = 'line_manager', 'department_id'
+    group_label, leader_label = 'department', 'line manager'
+    locals().update(_leader_fields('line_manager'))
 
     class Meta:
         model = Department
-        fields = ['id', 'name', 'code', 'line_manager', 'line_manager_info', 'is_active', 'created_at', 'updated_at']
-
-    def validate(self, attrs):
-        line_manager = attrs.get('line_manager')
-        if line_manager and self.instance:
-            if line_manager.staff_profile.department_id != self.instance.id:
-                raise serializers.ValidationError({"line_manager": "The line manager must be a member of this department."})
-        elif line_manager and not self.instance:
-            raise serializers.ValidationError({"line_manager": "Cannot assign a line manager before the department is created."})
-        return attrs
+        fields = [
+            'id', 'name', 'code', 'line_manager', 'line_manager_id', 'is_active',
+            'manages_inventory', 'handles_it_support', 'handles_general_support', 'created_at', 'updated_at',
+        ]
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -67,46 +94,38 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'code', 'has_global_access', 'is_active', 'created_at', 'updated_at']
 
 
-# Nested serializers for the hierarchy tree
+# Nested serializers for the hierarchy tree. `members_count` comes from the
+# view's annotation, so the whole tree is counted in the query that loads it.
 class TeamHierarchySerializer(serializers.ModelSerializer):
-    team_lead_info = _UserBasicSerializer(source='team_lead', read_only=True)
-    members_count = serializers.SerializerMethodField()
-    
+    team_lead = UserSummarySerializer(read_only=True)
+    members_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Team
-        fields = ['id', 'name', 'code', 'team_lead_info', 'is_active', 'members_count']
-
-    def get_members_count(self, obj):
-        return obj.members.filter(user__is_active=True).count()
+        fields = ['id', 'name', 'code', 'team_lead', 'is_active', 'members_count']
 
 
 class UnitHierarchySerializer(serializers.ModelSerializer):
-    supervisor_info = _UserBasicSerializer(source='supervisor', read_only=True)
+    supervisor = UserSummarySerializer(read_only=True)
     teams = TeamHierarchySerializer(many=True, read_only=True)
-    members_count = serializers.SerializerMethodField()
-    
+    members_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Unit
-        fields = ['id', 'name', 'code', 'supervisor_info', 'is_active', 'teams', 'members_count']
-
-    def get_members_count(self, obj):
-        return obj.members.filter(user__is_active=True).count()
+        fields = ['id', 'name', 'code', 'supervisor', 'is_active', 'teams', 'members_count']
 
 
 class DepartmentHierarchySerializer(serializers.ModelSerializer):
-    line_manager_info = _UserBasicSerializer(source='line_manager', read_only=True)
+    line_manager = UserSummarySerializer(read_only=True)
     units = UnitHierarchySerializer(many=True, read_only=True)
-    members_count = serializers.SerializerMethodField()
-    
+    members_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Department
-        fields = ['id', 'name', 'code', 'line_manager_info', 'is_active', 'units', 'members_count']
-
-    def get_members_count(self, obj):
-        return obj.members.filter(user__is_active=True).count()
+        fields = ['id', 'name', 'code', 'line_manager', 'is_active', 'units', 'members_count']
 
 
-class BulkMemberSerializer(serializers.Serializer):
+class MembershipChangeSerializer(serializers.Serializer):
     user_ids = serializers.ListField(
         child=serializers.IntegerField(min_value=1),
         allow_empty=True,

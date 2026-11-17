@@ -1,5 +1,6 @@
 "use client";
-import { extractApiErrorMessage } from "@/lib/api-errors";
+
+import { hasNextPage as pageHasNext } from "@/lib/api/types";import { extractApiErrorMessage } from "@/lib/api-errors";
 
 import axios from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -33,15 +34,14 @@ type PermissionPayload = {
 
 type AuditLogEntry = {
   id: string;
-  actor_user?: number | null;
-  actor_username?: string | null;
+  actor_user?: { id: number; username: string } | null;
   action: string;
   action_label?: string;
   target_type?: string;
   target_id?: string;
   target_label?: string;
   message?: string;
-  metadata_json?: unknown;
+  metadata?: unknown;
   ip_address?: string | null;
   created_at: string;
   updated_at: string;
@@ -391,7 +391,7 @@ export default function LogsPage() {
           params.created_to = appliedFilters.createdTo;
         }
 
-        const logsResponse = await apiClient.get("/admin/audit-logs", {
+        const logsResponse = await apiClient.get("/audit-logs", {
           params,
         });
 
@@ -633,7 +633,7 @@ export default function LogsPage() {
   const logs = useMemo(() => logsPayload?.results ?? [], [logsPayload?.results]);
   const totalCount = logsPayload?.count ?? 0;
   const totalPages = logsPayload?.total_pages ?? 1;
-  const hasNext = Boolean(logsPayload?.next_page);
+  const hasNext = pageHasNext(logsPayload);
   const hasPrevious = Boolean(logsPayload?.previous_page);
 
   const filteredLogs = useMemo(() => {
@@ -641,7 +641,7 @@ export default function LogsPage() {
     const q = searchQuery.toLowerCase().trim();
     return logs.filter((log) => {
       return (
-        (log.actor_username && log.actor_username.toLowerCase().includes(q)) ||
+        (log.actor_user?.username && log.actor_user?.username.toLowerCase().includes(q)) ||
         (log.message && log.message.toLowerCase().includes(q)) ||
         (log.action && log.action.toLowerCase().includes(q)) ||
         (log.action_label && log.action_label.toLowerCase().includes(q)) ||
@@ -1015,7 +1015,7 @@ export default function LogsPage() {
                 filteredLogs.map((log) => {
                   const dt = formatDateTime(log.created_at);
                   const badgeCfg = getActionBadge(log.action);
-                  const initials = getActorInitials(log.actor_username);
+                  const initials = getActorInitials(log.actor_user?.username);
 
                   return (
                     <tr
@@ -1042,11 +1042,11 @@ export default function LogsPage() {
                           </div>
                           <div className="flex flex-col min-w-0">
                             <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
-                              {log.actor_username || "system"}
+                              {log.actor_user?.username || "system"}
                             </span>
                             {log.actor_user && (
                               <span className="text-[10px] text-muted-foreground font-mono">
-                                ID #{log.actor_user}
+                                ID #{log.actor_user.id}
                               </span>
                             )}
                           </div>
@@ -1137,7 +1137,7 @@ export default function LogsPage() {
                                 Payload:
                               </span>
                               <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-1.5 font-mono text-[10px] text-foreground">
-                                {formatMetadata(log.metadata_json)}
+                                {formatMetadata(log.metadata)}
                               </div>
                             </div>
                           </div>

@@ -1,3 +1,5 @@
+import logging
+
 """PDF export storage helpers for weekly summaries."""
 
 import io
@@ -7,7 +9,10 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 
+from common.users import display_name
 from tasks.s3 import _s3_client
+
+logger = logging.getLogger(__name__)
 
 
 def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict | None = None) -> bytes:
@@ -21,7 +26,13 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
     except ImportError:
         raise ImportError('reportlab is required for PDF export. Install with: pip install reportlab')
 
@@ -73,6 +84,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
 
         try:
             from datetime import datetime
+
             from .services import calculate_user_weekly_summary
 
             week_start = datetime.strptime(summary_data['week_start_date'], '%Y-%m-%d').date()
@@ -80,6 +92,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
             computed = calculate_user_weekly_summary(user, week_start, week_end)
             return computed.get('daily_reports') or []
         except Exception:
+            logger.exception('Could not compute daily reports for the summary export')
             return []
 
     def pct_text(value):
@@ -179,7 +192,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
         canvas.line(doc_obj.leftMargin, doc_obj.bottomMargin - 10, doc_obj.pagesize[0] - doc_obj.rightMargin, doc_obj.bottomMargin - 10)
         canvas.setFont('Helvetica', 8)
         canvas.setFillColor(palette['muted'])
-        canvas.drawString(doc_obj.leftMargin, doc_obj.bottomMargin - 24, f'Exported for {user.get_full_name() or user.username}')
+        canvas.drawString(doc_obj.leftMargin, doc_obj.bottomMargin - 24, f'Exported for {display_name(user)}')
         canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, doc_obj.bottomMargin - 24, f'Page {doc_obj.page}')
         canvas.restoreState()
 
@@ -234,7 +247,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
     story.append(Spacer(1, 0.16 * inch))
 
     header_data = [
-        ['User', user.get_full_name() or user.username],
+        ['User', display_name(user)],
         ['Week', f"{summary_data['week_start_date']} to {summary_data['week_end_date']}"],
         ['Generated', timezone.now().strftime('%Y-%m-%d %H:%M:%S')],
         ['Comparison', 'Included' if comparison_data else 'Not available'],
@@ -422,17 +435,6 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
             spaceAfter=6,
         )))
         story.append(comparison_table)
-
-    def add_page_number(canvas, doc_obj):
-        canvas.saveState()
-        canvas.setStrokeColor(palette['border'])
-        canvas.setLineWidth(0.6)
-        canvas.line(doc_obj.leftMargin, doc_obj.bottomMargin - 10, doc_obj.pagesize[0] - doc_obj.rightMargin, doc_obj.bottomMargin - 10)
-        canvas.setFont('Helvetica', 8)
-        canvas.setFillColor(palette['muted'])
-        canvas.drawString(doc_obj.leftMargin, doc_obj.bottomMargin - 24, f'Exported for {user.get_full_name() or user.username}')
-        canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, doc_obj.bottomMargin - 24, f'Page {doc_obj.page}')
-        canvas.restoreState()
 
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return pdf_buffer.getvalue()

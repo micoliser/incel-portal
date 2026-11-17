@@ -1,7 +1,8 @@
+from unittest.mock import patch
+
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
-from unittest.mock import patch
 
 from accounts.models import StaffProfile
 from organization.models import Department, Role
@@ -22,7 +23,7 @@ class BaseAPITestCase(APITestCase):
         self.role_md = Role.objects.create(name='Managing Director', code='MD', has_global_access=True)
 
         self.dep_eng = Department.objects.create(name='Engineering', code='ENG')
-        self.dep_hr = Department.objects.create(name='Human Resources', code='HR')
+        self.dep_hr = Department.objects.create(name='Human Resources', code='HR', handles_general_support=True)
 
         self.admin_user = User.objects.create_user(
             username='admin@example.com',

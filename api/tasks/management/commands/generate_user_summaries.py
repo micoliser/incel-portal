@@ -43,7 +43,7 @@ class Command(BaseCommand):
         # Calculate the most recent completed week.
         # If today is Monday, the current week is still in progress and should
         # not be generated yet, so start from the previous Monday instead.
-        today = timezone.now().date()
+        today = timezone.localdate()
         days_since_monday = today.weekday()  # Monday is 0
         current_week_monday = today - timedelta(days=days_since_monday)
         most_recent_completed_week_monday = current_week_monday - timedelta(weeks=1)

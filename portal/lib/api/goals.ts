@@ -38,14 +38,14 @@ export interface CreateGoalPayload {
 
 export const goalsAPI = {
   async getGoalsForWeek(weekStartDate?: string): Promise<GoalsWeekResponse> {
-    const { data } = await apiClient.get<GoalsWeekResponse>("/goals/", {
+    const { data } = await apiClient.get<GoalsWeekResponse>("/goals", {
       params: weekStartDate ? { week_start_date: weekStartDate } : undefined,
     });
     return data;
   },
 
   async createGoal(payload: CreateGoalPayload): Promise<GoalRecord> {
-    const { data } = await apiClient.post<GoalRecord>("/goals/", payload);
+    const { data } = await apiClient.post<GoalRecord>("/goals", payload);
     return data;
   },
 };

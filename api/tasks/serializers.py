@@ -1,31 +1,43 @@
+import json
 import logging
-logger = logging.getLogger(__name__)
-
+import math
 import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from django.utils import timezone
+from django.utils import timezone as django_timezone
 from rest_framework import serializers
+
+from common.serializers import UserSummarySerializer
 
 from .models import (
     DailyReport,
     DailyReportComment,
     DailyReportSubreport,
     RecurringSchedule,
+    SummaryExport,
     Task,
     TaskActivity,
     TaskAttachment,
     TaskDraft,
     TodoItem,
-    WeeklySummary,
-    WeeklySummaryUserShare,
-    SummaryExport,
     UserGoal,
 )
 from .s3 import TaskAttachmentStorageError, generate_task_attachment_download_url
+from .services import calculate_user_files_received
+
+logger = logging.getLogger(__name__)
+
+# A request may assign work to at most this many people at once; beyond that
+# one click could notify and email the whole company.
+MAX_ASSIGNEES = 50
+MAX_DRAFT_CONFIG_BYTES = 10_000
+MAX_DRAFTS_PER_USER = 50
 
 
 def _allowed_attachment_content_types() -> set[str]:
@@ -82,6 +94,17 @@ class TaskAttachmentUploadRequestSerializer(serializers.Serializer):
         return _validate_attachment_size(value)
 
 
+class TaskRejectSerializer(serializers.Serializer):
+    """Sending work back: an optional reason, and where the task returns to."""
+
+    reason = serializers.CharField(required=False, allow_blank=True, default='', max_length=2000)
+    target_status = serializers.ChoiceField(choices=['in_progress', 'pending'], default='in_progress')
+
+
+class TodoSnoozeSerializer(serializers.Serializer):
+    minutes = serializers.IntegerField(min_value=1, default=10)
+
+
 class TaskCommentCreateSerializer(serializers.Serializer):
     comment = serializers.CharField(allow_blank=True, trim_whitespace=True)
     attachments = serializers.ListField(child=serializers.DictField(), required=False)
@@ -103,8 +126,6 @@ class TaskCommentCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'links': 'Links must be a list.'})
             if len(raw_links) > 10:
                 raise serializers.ValidationError({'links': 'Maximum 10 links allowed.'})
-            from django.core.validators import URLValidator
-            from django.core.exceptions import ValidationError as DjangoValidationError
             url_validator = URLValidator(schemes=['http', 'https'])
             validated_links = []
             for idx, item in enumerate(raw_links):
@@ -184,17 +205,8 @@ class TaskCommentCreateSerializer(serializers.Serializer):
         return attrs
 
 
-class UserSimpleSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(read_only=True)
-    full_name = serializers.CharField(source='get_full_name', read_only=True)
-
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'full_name', 'email']
-
-
 class TaskActivitySerializer(serializers.ModelSerializer):
-    user = UserSimpleSerializer(read_only=True)
+    user = UserSummarySerializer(read_only=True)
     attachments = serializers.SerializerMethodField()
 
     class Meta:
@@ -246,33 +258,38 @@ class TaskAttachmentSerializer(serializers.ModelSerializer):
 
 
 class RecurringScheduleSerializer(serializers.ModelSerializer):
-    assigned_by = UserSimpleSerializer(read_only=True)
-    assigned_to = UserSimpleSerializer(read_only=True)
+    assigned_by = UserSummarySerializer(read_only=True)
+    assigned_to = UserSummarySerializer(read_only=True)
     assigned_to_id = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
+        queryset=User.objects.filter(is_active=True),
         write_only=True,
         source='assigned_to',
         required=False,
     )
     assigned_to_ids = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
+        queryset=User.objects.filter(is_active=True),
         write_only=True,
         many=True,
         required=False,
     )
-    paused_by = UserSimpleSerializer(read_only=True)
-    ended_by = UserSimpleSerializer(read_only=True)
+    paused_by = UserSummarySerializer(read_only=True)
+    ended_by = UserSummarySerializer(read_only=True)
     weekdays = serializers.ListField(
         child=serializers.IntegerField(min_value=0, max_value=6),
         required=False,
         allow_empty=True,
+        max_length=7,
     )
+    # At most one run an hour.
     times = serializers.ListField(
-        child=serializers.CharField(),
+        child=serializers.CharField(max_length=8),
         required=False,
         allow_empty=False,
+        max_length=24,
     )
-    deadline_offset_minutes = serializers.IntegerField(required=False, min_value=0, default=0)
+    interval = serializers.IntegerField(required=False, min_value=1, max_value=365)
+    # At most a year after the run.
+    deadline_offset_minutes = serializers.IntegerField(required=False, min_value=0, max_value=525_600, default=0)
 
     class Meta:
         model = RecurringSchedule
@@ -366,6 +383,11 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             normalized.append(weekday)
         return normalized
 
+    def validate_assigned_to_ids(self, value):
+        if len(value) > MAX_ASSIGNEES:
+            raise serializers.ValidationError(f'At most {MAX_ASSIGNEES} assignees at once.')
+        return value
+
     def validate(self, attrs):
         request = self.context.get('request')
         current_user = getattr(request, 'user', None)
@@ -416,17 +438,17 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    assigned_by = UserSimpleSerializer(read_only=True)
-    assigned_to = UserSimpleSerializer(read_only=True)
+    assigned_by = UserSummarySerializer(read_only=True)
+    assigned_to = UserSummarySerializer(read_only=True)
     recurrence_schedule = serializers.PrimaryKeyRelatedField(read_only=True)
-    assigned_by_id = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), write_only=True, source='assigned_by', required=False
-    )
+    # The assigner is always the user creating the task, so there is no writable
+    # assigner field. The assignee fields below are accepted on create only;
+    # validate() rejects any attempt to change them on an existing task.
     assigned_to_id = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), write_only=True, source='assigned_to', required=False
+        queryset=User.objects.filter(is_active=True), write_only=True, source='assigned_to', required=False
     )
     assigned_to_ids = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), write_only=True, many=True, required=False
+        queryset=User.objects.filter(is_active=True), write_only=True, many=True, required=False,
     )
     edit_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
     rejection_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -438,7 +460,6 @@ class TaskSerializer(serializers.ModelSerializer):
             'title',
             'description',
             'assigned_by',
-            'assigned_by_id',
             'assigned_to',
             'assigned_to_id',
             'assigned_to_ids',
@@ -462,6 +483,11 @@ class TaskSerializer(serializers.ModelSerializer):
             'recurrence_scheduled_for',
         ]
 
+    def validate_assigned_to_ids(self, value):
+        if len(value) > MAX_ASSIGNEES:
+            raise serializers.ValidationError(f'At most {MAX_ASSIGNEES} assignees at once.')
+        return value
+
     def validate(self, attrs):
         request = self.context.get('request')
         current_user = getattr(request, 'user', None)
@@ -476,20 +502,31 @@ class TaskSerializer(serializers.ModelSerializer):
             if deadline < now:
                 errors['deadline'] = 'Deadline cannot be in the past.'
 
-        assigned_to = attrs.get('assigned_to')
-        assigned_to_ids = attrs.get('assigned_to_ids')
+        if self.instance:
+            # People on a task are fixed once it exists. Without this, the
+            # assignee could reassign the task or make themselves the assigner
+            # and approve their own work. Re-sending the current assignee is
+            # harmless and is ignored.
+            assigned_to = attrs.pop('assigned_to', None)
+            assigned_to_ids = attrs.pop('assigned_to_ids', None)
+            if assigned_to is not None and assigned_to != self.instance.assigned_to:
+                errors['assigned_to_id'] = 'The assignee cannot be changed for an existing task.'
+            if assigned_to_ids and any(user != self.instance.assigned_to for user in assigned_to_ids):
+                errors['assigned_to_ids'] = 'The assignee cannot be changed for an existing task.'
+        else:
+            assigned_to = attrs.get('assigned_to')
+            assigned_to_ids = attrs.get('assigned_to_ids')
 
-        if not self.instance:
             if not assigned_to and not assigned_to_ids:
                 errors['assigned_to_id'] = 'Please select at least one assignee.'
             if assigned_to_ids and not assigned_to:
                 attrs['assigned_to'] = assigned_to_ids[0]
 
-        if current_user:
-            if assigned_to and assigned_to == current_user:
-                errors['assigned_to_id'] = 'You cannot assign a task to yourself.'
-            if assigned_to_ids and current_user in assigned_to_ids:
-                errors['assigned_to_ids'] = 'You cannot assign a task to yourself.'
+            if current_user:
+                if assigned_to and assigned_to == current_user:
+                    errors['assigned_to_id'] = 'You cannot assign a task to yourself.'
+                if assigned_to_ids and current_user in assigned_to_ids:
+                    errors['assigned_to_ids'] = 'You cannot assign a task to yourself.'
 
         if errors:
             raise serializers.ValidationError(errors)
@@ -514,54 +551,25 @@ class TaskSerializer(serializers.ModelSerializer):
                     {'status': 'Completed tasks cannot be modified.'}
                 )
 
-        # Validate task detail editing permissions
-        editable_fields = {'title', 'description', 'priority', 'deadline'}
-        has_detail_changes = any(
-            field in attrs and getattr(self.instance, field) != attrs[field]
-            for field in editable_fields
-        )
-        if has_detail_changes and current_user and current_user != self.instance.assigned_by:
-            raise serializers.ValidationError(
-                {'detail': 'Only the assigner can edit task details.'}
-            )
-
+        # Who may make a change is decided in the view (tasks.permissions.
+        # require_may_change_task). Here: is the status change itself allowed?
         new_status = attrs.get('status')
-        if new_status is None:
-            return attrs
-
         old_status = self.instance.status
-        if new_status == old_status:
+        if new_status is None or new_status == old_status:
             return attrs
 
-        is_assignee = current_user == self.instance.assigned_to
-        is_assigner = current_user == self.instance.assigned_by
-
-        if is_assignee and not is_assigner:
-            if new_status == 'completed':
+        if old_status == 'under_review':
+            if new_status not in ['completed', 'in_progress', 'pending']:
                 raise serializers.ValidationError(
-                    {'status': 'Only the assigner can approve and finalize task completion.'}
+                    {'status': 'Tasks under review can only be approved (completed) or rejected (in progress).'}
                 )
-            if new_status == 'pending' and old_status != 'pending':
-                raise serializers.ValidationError(
-                    {'status': 'Task progress cannot move back to pending once started.'}
-                )
-            if new_status not in ['in_progress', 'under_review']:
-                raise serializers.ValidationError(
-                    {'status': f'Assignee cannot set task status to {new_status}.'}
-                )
-        elif is_assigner and not is_assignee:
-            if old_status == 'under_review':
-                if new_status not in ['completed', 'in_progress', 'pending']:
-                    raise serializers.ValidationError(
-                        {'status': 'Tasks under review can only be approved (completed) or rejected (in progress).'}
-                    )
-            elif new_status != 'completed':
-                raise serializers.ValidationError(
-                    {'status': 'Only the assignee can change task progress.'}
-                )
-        elif not is_assignee and not is_assigner:
+        elif new_status == 'pending':
             raise serializers.ValidationError(
-                {'status': 'You do not have permission to change this task status.'}
+                {'status': 'Task progress cannot move back to pending once started.'}
+            )
+        elif new_status not in ['in_progress', 'under_review', 'completed']:
+            raise serializers.ValidationError(
+                {'status': f'Task status cannot be set to {new_status}.'}
             )
 
         return attrs
@@ -657,9 +665,6 @@ class WeeklySummarySerializer(serializers.Serializer):
             return stored_value
 
         try:
-            from django.utils import timezone as django_timezone
-            from datetime import datetime
-            from .services import calculate_user_files_received
 
             week_start_dt = django_timezone.make_aware(
                 datetime.combine(obj.week_start_date, datetime.min.time())
@@ -692,7 +697,6 @@ class WeeklySummarySerializer(serializers.Serializer):
             return stored_value
 
         try:
-            from .models import DailyReport
 
             daily_reports = (
                 DailyReport.objects.filter(
@@ -732,19 +736,7 @@ class WeeklySummarySerializer(serializers.Serializer):
         return self.get_field_from_summary_data(obj, 'summary_message')
 
 
-class WeeklySummaryListSerializer(serializers.Serializer):
-    """Serializer for listing available weeks"""
-    week_start_date = serializers.DateField()
-    week_end_date = serializers.DateField()
-    created_at = serializers.DateTimeField()
-
-
-class WeeklySummaryShareSerializer(serializers.Serializer):
-    """Serializer for creating a share link"""
-    share_link = serializers.CharField(read_only=True)
-
-
-# PHASE 2 SERIALIZERS
+# Comparison, sharing, export and goal serializers
 
 class WeeklySummaryComparisonSerializer(serializers.Serializer):
     """Serializer for week-over-week comparison data"""
@@ -780,28 +772,17 @@ class SummaryWithComparisonSerializer(WeeklySummarySerializer):
 
 
 class WeeklySummaryUserShareSerializer(serializers.Serializer):
-    """Serializer for user-to-user sharing"""
+    """A summary shared with one colleague. The link itself is never listed: it
+    is sent to the colleague, and returned once when the share is created."""
+
     id = serializers.CharField(read_only=True)
     shared_with = serializers.IntegerField(source='shared_with.id', read_only=True)
-    shared_with_username = serializers.SerializerMethodField()
-    share_token = serializers.CharField(read_only=True, allow_null=True)
-    share_link = serializers.SerializerMethodField()
+    shared_with_username = serializers.CharField(source='shared_with.username', read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
-    
-    def get_shared_with_username(self, obj):
-        try:
-            return obj.shared_with.username
-        except Exception:
-            return None
 
-    def get_share_link(self, obj):
-        try:
-            token = getattr(obj, 'share_token', None)
-            if token:
-                return f"/summaries?token={token}"
-        except Exception as exc:
-            logger.exception("Silent exception caught")
-        return None
+
+class SummaryUserShareCreateSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField(min_value=1)
 
 
 class SummaryExportSerializer(serializers.ModelSerializer):
@@ -818,6 +799,12 @@ class UserGoalCreateSerializer(serializers.Serializer):
     target_value = serializers.FloatField()
     week_start_date = serializers.DateField(required=False)
 
+    def validate_target_value(self, value):
+        # FloatField accepts "nan" and "inf", which cannot be stored or sent back as JSON.
+        if not math.isfinite(value):
+            raise serializers.ValidationError('Target must be a number.')
+        return value
+
 
 class UserGoalSerializer(serializers.ModelSerializer):
     """Serializer for user goals"""
@@ -825,15 +812,6 @@ class UserGoalSerializer(serializers.ModelSerializer):
         model = UserGoal
         fields = ['id', 'metric', 'target_value', 'period_start', 'period_end', 'is_active', 'created_at']
         read_only_fields = ['id', 'created_at']
-
-
-class GoalProgressSerializer(serializers.Serializer):
-    """Serializer for goal progress tracking"""
-    metric = serializers.CharField()
-    target = serializers.FloatField()
-    current = serializers.FloatField()
-    achieved = serializers.BooleanField()
-    difference = serializers.FloatField()
 
 
 class OrganizationSummarySerializer(serializers.Serializer):
@@ -859,7 +837,7 @@ class OrganizationSummarySerializer(serializers.Serializer):
 
 
 class DailyReportCommentSerializer(serializers.ModelSerializer):
-    author = UserSimpleSerializer(read_only=True)
+    author = UserSummarySerializer(read_only=True)
 
     class Meta:
         model = DailyReportComment
@@ -868,7 +846,7 @@ class DailyReportCommentSerializer(serializers.ModelSerializer):
 
 
 class DailyReportSubreportSummarySerializer(serializers.ModelSerializer):
-    created_by = UserSimpleSerializer(read_only=True)
+    created_by = UserSummarySerializer(read_only=True)
     daily_report_id = serializers.SerializerMethodField()
     report_date = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
@@ -919,7 +897,7 @@ class DailyReportSubreportDetailSerializer(DailyReportSubreportSummarySerializer
 
 
 class DailyReportSummarySerializer(serializers.ModelSerializer):
-    creator = UserSimpleSerializer(source='user', read_only=True)
+    creator = UserSummarySerializer(source='user', read_only=True)
     department = serializers.CharField(source='department.name', read_only=True)
     title = serializers.SerializerMethodField()
     subreport_count = serializers.SerializerMethodField()
@@ -1048,14 +1026,31 @@ class TaskDraftSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'assigned_to_users']
 
+    def validate_assigned_to_ids(self, value):
+        if value in (None, ''):
+            return []
+        if not isinstance(value, list) or not all(isinstance(item, int) and item > 0 for item in value):
+            raise serializers.ValidationError('Must be a list of user ids.')
+        if len(value) > MAX_ASSIGNEES:
+            raise serializers.ValidationError(f'At most {MAX_ASSIGNEES} assignees.')
+        return value
+
+    def validate_recurrence_config(self, value):
+        if value is not None and len(json.dumps(value, default=str)) > MAX_DRAFT_CONFIG_BYTES:
+            raise serializers.ValidationError('The recurrence settings are too large.')
+        return value
+
     def get_assigned_to_users(self, obj):
         if not obj.assigned_to_ids:
             return []
         users = User.objects.filter(id__in=obj.assigned_to_ids)
-        return UserSimpleSerializer(users, many=True).data
+        return UserSummarySerializer(users, many=True).data
 
 
 class TodoItemSerializer(serializers.ModelSerializer):
+    reminder_offsets = serializers.ListField(
+        child=serializers.CharField(max_length=32), required=False, max_length=20,
+    )
     is_overdue = serializers.SerializerMethodField()
     status_category = serializers.SerializerMethodField()
 

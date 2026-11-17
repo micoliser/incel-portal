@@ -39,7 +39,7 @@ const refreshClient = axios.create({
   xsrfHeaderName: "X-CSRFToken",
 });
 
-let refreshTokenPromise: Promise<string | null> | null = null;
+let refreshTokenPromise: Promise<boolean> | null = null;
 
 function shouldSkipAuthRefresh(url?: string) {
   return Boolean(
@@ -51,15 +51,10 @@ function shouldSkipAuthRefresh(url?: string) {
 }
 
 async function refreshAccessToken() {
-  const response = await refreshClient.post("/auth/refresh", {});
-
-  const accessToken = response.data?.access as string | undefined;
-  if (!accessToken) {
-    clearStoredTokens();
-    return null;
-  }
-
-  return accessToken;
+  // The new tokens arrive as HttpOnly cookies; the body carries nothing the
+  // page needs. Any 2xx means the session was renewed (a failure throws).
+  await refreshClient.post("/auth/refresh", {});
+  return true;
 }
 
 // The token is now sent automatically via HttpOnly cookies, so we don't
@@ -87,8 +82,8 @@ apiClient.interceptors.response.use(
 
     try {
       refreshTokenPromise ??= refreshAccessToken();
-      const refreshedAccessToken = await refreshTokenPromise;
-      if (!refreshedAccessToken) {
+      const refreshed = await refreshTokenPromise;
+      if (!refreshed) {
         clearStoredTokens();
         redirectToLogin();
         return Promise.reject(error);

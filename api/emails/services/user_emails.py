@@ -1,7 +1,9 @@
+from typing import Any, Dict
+
 from django.conf import settings
-from typing import Dict, Any
-from emails.services.base_email_service import BaseEmailService
+
 from emails.config import EmailType
+from emails.services.base_email_service import BaseEmailService
 
 
 class UserCreatedEmailService(BaseEmailService):
@@ -51,20 +53,22 @@ class UserEmailManager:
     """Manager for user-related emails."""
 
     @staticmethod
-    def send_user_created_email(user: Any, temporary_password: str) -> None:
+    def send_user_created_email(user: Any, setup_url: str, expiry_hours: int) -> None:
         """
-        Send welcome email with account creation details.
+        Send the welcome email, with the link the new user sets their password with.
 
         Args:
             user: User instance
-            temporary_password: Temporary password or reset link
+            setup_url: Link to the set-password page
+            expiry_hours: How long the link stays valid
         """
         context = {
             'user_id': str(user.id),
             'username': user.username,
             'email': user.email,
             'first_name': user.first_name or user.username,
-            'temporary_password': temporary_password,
+            'setup_url': setup_url,
+            'expiry_hours': expiry_hours,
             'login_url': f"{settings.PORTAL_BASE_URL.rstrip('/')}/login",
         }
 
@@ -72,25 +76,19 @@ class UserEmailManager:
         service.send([user.email], context)
 
     @staticmethod
-    def send_password_changed_email(
-        user: Any,
-        action: str = 'changed',
-        temporary_password: str = None,
-    ) -> None:
+    def send_password_changed_email(user: Any, action: str = 'changed') -> None:
         """
         Send email when password is changed or reset.
 
         Args:
             user: User instance
             action: 'changed' or 'reset'
-            temporary_password: Temporary password for reset flows
         """
         context = {
             'username': user.username,
             'email': user.email,
             'first_name': user.first_name or user.username,
             'action': action.lower(),
-            'temporary_password': temporary_password,
         }
 
         service = UserPasswordChangedEmailService()
@@ -116,6 +114,11 @@ class UserEmailManager:
             'first_name': user.first_name or user.username,
             'reset_url': reset_url,
             'expiry_minutes': expiry_minutes,
+            'expiry_text': (
+                f'{expiry_minutes // 60} hours'
+                if expiry_minutes >= 120 and expiry_minutes % 60 == 0
+                else f'{expiry_minutes} minutes'
+            ),
         }
 
         service = UserPasswordResetEmailService()

@@ -1,8 +1,10 @@
 """Utility functions and helpers for email system."""
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from django.contrib.auth import get_user_model
+
 from emails.config import EmailConfig
 
 User = get_user_model()
@@ -111,10 +113,7 @@ class EmailNotificationHelper:
         Returns:
             User instance or None
         """
-        try:
-            return User.objects.get(email=email)
-        except User.DoesNotExist:
-            return None
+        return User.objects.filter(email__iexact=email).first()
 
     @staticmethod
     def format_name(user: User) -> str:
@@ -144,8 +143,8 @@ class EmailNotificationHelper:
         Returns:
             List of user emails
         """
-        from organization.models import Department
         from accounts.models import StaffProfile
+        from organization.models import Department
 
         try:
             Department.objects.get(id=department_id)

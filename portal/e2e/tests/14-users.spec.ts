@@ -2,16 +2,11 @@ import type { Browser, Page } from "@playwright/test";
 
 import { FORMER_USER, PASSWORD, USERS } from "../support/seed";
 import { expect, test } from "../support/fixtures";
-import { choose, expectSequence, main } from "../support/ui";
+import { emailCount, setPasswordFromEmail, signedOutPage } from "../support/mail";
+import { choose, expectSequence, expectToast, main } from "../support/ui";
 
 function userRow(page: Page, email: string) {
   return main(page).getByRole("row").filter({ has: page.getByText(email, { exact: true }) });
-}
-
-/** A browser session with nobody signed in. */
-async function signedOutPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-  return context.newPage();
 }
 
 async function signIn(page: Page, email: string, password: string) {
@@ -21,18 +16,32 @@ async function signIn(page: Page, email: string, password: string) {
   await page.getByRole("button", { name: "Sign in to Workspace" }).click();
 }
 
-async function createUser(page: Page, first: string, last: string, email: string, password = PASSWORD) {
+/** Creates an account. No password is involved: the new user is emailed a link. */
+async function createUser(page: Page, first: string, last: string, email: string) {
   await page.goto("/users");
   await main(page).getByRole("button", { name: "Create User" }).click();
   const dialog = page.getByRole("dialog", { name: "Create User" });
   await dialog.getByRole("textbox", { name: "First Name *" }).fill(first);
   await dialog.getByRole("textbox", { name: "Last Name" }).fill(last);
   await dialog.getByRole("textbox", { name: "Work Email *" }).fill(email);
-  await dialog.getByRole("textbox", { name: "Password *", exact: true }).fill(password);
-  await dialog.getByRole("textbox", { name: "Confirm Password *" }).fill(password);
   await choose(page, dialog.getByRole("combobox", { name: "Department" }), "Finance");
   await dialog.getByRole("button", { name: "Create User" }).click();
   await expect(dialog).toBeHidden();
+}
+
+/** Creates an account and has the new user choose a password from their emailed link. */
+async function createUserWithPassword(
+  page: Page,
+  browser: Browser,
+  first: string,
+  last: string,
+  email: string,
+  password = PASSWORD,
+) {
+  await createUser(page, first, last, email);
+  const fresh = await signedOutPage(browser);
+  await setPasswordFromEmail(fresh, email, password);
+  await fresh.context().close();
 }
 
 test.describe("user directory for an executive (read-only)", () => {
@@ -92,25 +101,22 @@ test.describe("user directory for an executive (read-only)", () => {
 test.describe("managing users as an administrator", () => {
   test.use({ role: "admin" });
 
-  test("rejects mismatched passwords and an email that is already in use", async ({ page }) => {
+  test("asks for no password and rejects an email that is already in use", async ({ page }) => {
     await page.goto("/users");
     await main(page).getByRole("button", { name: "Create User" }).click();
     const dialog = page.getByRole("dialog", { name: "Create User" });
+    await expect(dialog.getByText(/emailed a link to\s+set their own password/)).toBeVisible();
+    await expect(dialog.getByRole("textbox", { name: /password/i })).toHaveCount(0);
+
     await dialog.getByRole("textbox", { name: "First Name *" }).fill("Dup");
     await dialog.getByRole("textbox", { name: "Last Name" }).fill("Licate");
     await dialog.getByRole("textbox", { name: "Work Email *" }).fill(USERS.staff.email);
-    await dialog.getByRole("textbox", { name: "Password *", exact: true }).fill(PASSWORD);
-    await dialog.getByRole("textbox", { name: "Confirm Password *" }).fill(PASSWORD + "x");
-    await dialog.getByRole("button", { name: "Create User" }).click();
-    await expect(dialog.getByText(/do not match/i)).toBeVisible();
-
-    await dialog.getByRole("textbox", { name: "Confirm Password *" }).fill(PASSWORD);
     await dialog.getByRole("button", { name: "Create User" }).click();
     await expect(dialog.getByRole("alert")).toContainText("A user with this email already exists.");
     await expect(dialog).toBeVisible();
   });
 
-  test("creates a user who can then sign in", async ({ page, browser }) => {
+  test("creates a user who sets their own password from the emailed link and signs in", async ({ page, browser }) => {
     const email = `new.hire.${Date.now()}@e2e.test`;
     await createUser(page, "Nia", "Newhire", email);
 
@@ -120,7 +126,12 @@ test.describe("managing users as an administrator", () => {
     await expect(row).toContainText("Finance");
     await expect(row).toContainText("Active");
 
+    // Until the link is used the account has no password, so nothing signs in.
     const fresh = await signedOutPage(browser);
+    await signIn(fresh, email, PASSWORD);
+    await expect(fresh.getByRole("alert").filter({ hasText: "Invalid credentials." })).toBeVisible();
+
+    await setPasswordFromEmail(fresh, email, PASSWORD);
     await signIn(fresh, email, PASSWORD);
     await expect(fresh).toHaveURL("/dashboard");
     await expect(fresh.getByRole("banner").getByText("Nia Newhire")).toBeVisible();
@@ -135,8 +146,6 @@ test.describe("managing users as an administrator", () => {
     await expect(dialog.getByText("Last Name *")).toBeVisible();
     await dialog.getByRole("textbox", { name: "First Name *" }).fill("Mono");
     await dialog.getByRole("textbox", { name: "Work Email *" }).fill(email);
-    await dialog.getByRole("textbox", { name: "Password *", exact: true }).fill(PASSWORD);
-    await dialog.getByRole("textbox", { name: "Confirm Password *" }).fill(PASSWORD);
     await dialog.getByRole("button", { name: "Create User" }).click();
     await expect(dialog.getByText("Last name is required.")).toBeVisible();
     await expect(dialog).toBeVisible();
@@ -185,45 +194,41 @@ test.describe("managing users as an administrator", () => {
     await expect(userRow(page, email)).toContainText("Kemi Keepname");
   });
 
-  test("resets a user's password from the edit dialog", async ({ page, browser }) => {
+  test("sends a reset link from the edit dialog, which the user follows to choose a new password", async ({ page, browser }) => {
     const email = `reset.me.${Date.now()}@e2e.test`;
     const newPassword = "Fresh-Start!2027";
-    await createUser(page, "Rita", "Reset", email);
+    await createUserWithPassword(page, browser, "Rita", "Reset", email);
+    const sentBefore = emailCount(email);
     await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
 
     await userRow(page, email).getByRole("button", { name: "Edit user details" }).click();
     const dialog = page.getByRole("dialog", { name: "Edit User" });
-    await expect(dialog.getByRole("textbox", { name: "New Password" })).toHaveCount(0);
-    await dialog.getByRole("checkbox", { name: "Reset User Password" }).check();
-    await dialog.getByRole("textbox", { name: "New Password" }).fill(newPassword);
-    await dialog.getByRole("textbox", { name: "Confirm New" }).fill(newPassword);
-    await dialog.getByRole("button", { name: "Save Changes" }).click();
-    await expect(dialog).toBeHidden();
+    // An administrator cannot type a password for someone else.
+    await expect(dialog.getByRole("textbox", { name: /password/i })).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Send password reset link" }).click();
+    await expectToast(page, `Password reset link sent to ${email}.`);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect.poll(() => emailCount(email)).toBeGreaterThan(sentBefore);
 
+    // Sending the link changes nothing by itself: the old password still works.
     const fresh = await signedOutPage(browser);
     await signIn(fresh, email, PASSWORD);
-    await expect(fresh.getByRole("alert").filter({ hasText: "Invalid credentials." })).toBeVisible();
-    await signIn(fresh, email, newPassword);
     await expect(fresh).toHaveURL("/dashboard");
     await fresh.context().close();
-  });
 
-  test("refuses a reset whose confirmation does not match", async ({ page }) => {
-    await page.goto("/users");
-    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(USERS.clerk.email);
-    await userRow(page, USERS.clerk.email).getByRole("button", { name: "Edit user details" }).click();
-    const dialog = page.getByRole("dialog", { name: "Edit User" });
-    await dialog.getByRole("checkbox", { name: "Reset User Password" }).check();
-    await dialog.getByRole("textbox", { name: "New Password" }).fill("Fresh-Start!2027");
-    await dialog.getByRole("textbox", { name: "Confirm New" }).fill("Different-Start!2027");
-    await dialog.getByRole("button", { name: "Save Changes" }).click();
-    await expect(dialog.getByText("Passwords do not match.")).toBeVisible();
-    await dialog.getByRole("button", { name: "Cancel" }).click();
+    // Once the user chooses a new password, the old one stops working.
+    const again = await signedOutPage(browser);
+    await setPasswordFromEmail(again, email, newPassword);
+    await signIn(again, email, PASSWORD);
+    await expect(again.getByRole("alert").filter({ hasText: "Invalid credentials." })).toBeVisible();
+    await signIn(again, email, newPassword);
+    await expect(again).toHaveURL("/dashboard");
+    await again.context().close();
   });
 
   test("disables an account, which blocks sign-in, then enables it again", async ({ page, browser }) => {
     const email = `toggle.me.${Date.now()}@e2e.test`;
-    await createUser(page, "Tobi", "Toggle", email);
+    await createUserWithPassword(page, browser, "Tobi", "Toggle", email);
     await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
 
     await userRow(page, email).getByRole("button", { name: "Disable user account" }).click();
@@ -231,8 +236,7 @@ test.describe("managing users as an administrator", () => {
     await expect(disabling).toContainText(`Are you sure you want to disable access for Tobi Toggle (${email})?`);
     await disabling.getByRole("button", { name: "Disable User" }).click();
     await expect(disabling).toBeHidden();
-    await page.reload();
-    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
+    // The row updates without reloading the page.
     await expect(userRow(page, email)).toContainText("Disabled");
 
     const fresh = await signedOutPage(browser);
@@ -243,8 +247,6 @@ test.describe("managing users as an administrator", () => {
     const enabling = page.getByRole("dialog");
     await enabling.getByRole("button", { name: /^Enable/ }).click();
     await expect(enabling).toBeHidden();
-    await page.reload();
-    await main(page).getByRole("textbox", { name: "Search by name or email..." }).fill(email);
     await expect(userRow(page, email)).toContainText("Active");
 
     await signIn(fresh, email, PASSWORD);

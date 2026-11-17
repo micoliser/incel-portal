@@ -20,16 +20,17 @@ function appCard(page: Page, name: string) {
 test.describe("applications for a staff member", () => {
   test.use({ role: "staff" });
 
-  test("lists every application with its status and access scope", async ({ page }) => {
+  test("lists every visible application with its status and access scope", async ({ page }) => {
     await page.goto("/applications");
-    for (const name of Object.values(APPS)) {
+    for (const name of Object.values(APPS).filter((app) => app !== APPS.archive)) {
       await expect(appTitles(page).filter({ hasText: name })).toHaveCount(1);
     }
     await expect(appCard(page, APPS.payroll)).toContainText("Active");
     await expect(appCard(page, APPS.payroll)).toContainText("All Users");
     await expect(appCard(page, APPS.fleet)).toContainText("Restricted");
     await expect(appCard(page, APPS.ledger)).toContainText("Maintenance");
-    await expect(appCard(page, APPS.archive)).toContainText("Inactive");
+    // A hidden application (the retired archive) exists only for administrators.
+    await expect(appTitles(page).filter({ hasText: APPS.archive })).toHaveCount(0);
     await expect(main(page).getByRole("button", { name: "Manage" })).toHaveCount(0);
     await expect(main(page).getByRole("button", { name: "Create New Application" })).toHaveCount(0);
   });
@@ -85,7 +86,9 @@ test.describe("application access rules", () => {
     test.use({ role: "director" });
     test("can use every application but cannot manage them", async ({ page }) => {
       await page.goto("/applications");
-      await expectSequence(main(page), "Accessible to You", 5);
+      // Every application they can see; the hidden archive is not one of them.
+      await expectSequence(main(page), "Accessible to You", 4);
+      await expect(appTitles(page).filter({ hasText: APPS.archive })).toHaveCount(0);
       await expect(main(page).getByRole("button", { name: "Manage" })).toHaveCount(0);
     });
   });
@@ -130,6 +133,8 @@ test.describe("managing applications as an administrator", () => {
     await page.goto("/applications");
     await expect(main(page).getByRole("button", { name: "Create New Application" })).toBeVisible();
     await expect(appCard(page, APPS.payroll).getByRole("button", { name: "Manage" })).toBeVisible();
+    // Administrators also see hidden applications, such as the retired archive.
+    await expect(appCard(page, APPS.archive)).toContainText("Inactive");
 
     await main(page).getByRole("button", { name: "Operations", exact: true }).click();
     await expect(appTitles(page).filter({ hasText: APPS.fleet })).toHaveCount(1);

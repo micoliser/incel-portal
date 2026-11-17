@@ -1,11 +1,12 @@
 """Management command to test the email system."""
 
-from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand, CommandError
+
 from emails.config import EmailConfig
-from emails.services.user_emails import UserEmailManager
-from emails.services.task_emails import TaskEmailManager
 from emails.services.application_emails import ApplicationEmailManager
+from emails.services.task_emails import TaskEmailManager
+from emails.services.user_emails import UserEmailManager
 
 User = get_user_model()
 
@@ -49,7 +50,7 @@ class Command(BaseCommand):
             )
             return
 
-        self.stdout.write(self.style.HTTP_INFO(f'🔍 Testing email system...'))
+        self.stdout.write(self.style.HTTP_INFO('🔍 Testing email system...'))
         self.stdout.write(f'Email Backend: {EmailConfig.get_backend()}')
         self.stdout.write(f'Debug Mode: {EmailConfig.is_debug_mode()}')
         self.stdout.write(f'Async (Celery): {EmailConfig.use_celery()}')
@@ -98,7 +99,11 @@ class Command(BaseCommand):
         self.stdout.write(f'Recipient: {user.email}')
         
         # Send test email
-        UserEmailManager.send_user_created_email(user, 'TempPassword123!')
+        UserEmailManager.send_user_created_email(
+            user,
+            setup_url='https://example.com/reset-password?uid=test&token=test',
+            expiry_hours=72,
+        )
         self.stdout.write(self.style.SUCCESS('✓ User created email sent'))
 
     def _test_password_changed(self, user_id=None, verbose=False):
