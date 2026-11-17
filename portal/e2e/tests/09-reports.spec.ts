@@ -195,7 +195,8 @@ test.describe("writing a daily report", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("textbox").first().fill("finance@e2e.test");
-    await page.keyboard.press("Enter");
+    // Send once. (Enter in the field would also submit the form, and pressing
+    // it before clicking made the test send twice or wait on a closed dialog.)
     await dialog.getByRole("button", { name: /^Send/ }).click();
     await expectToast(page, /forwarded to 1 recipient/i);
   });
