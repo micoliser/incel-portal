@@ -1,8 +1,9 @@
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+from botocore.exceptions import ClientError
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -11,6 +12,7 @@ from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
 from organization.models import Department, Role
 from support.models import SupportAttachment, SupportComment, SupportRequest
+from support.s3 import support_attachment_key_prefix
 from support.services import (
     auto_close_resolved_requests,
     route_support_request,
@@ -22,8 +24,10 @@ class SupportRoutingTests(TestCase):
     """Test category → department routing logic."""
 
     def setUp(self):
-        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
-        self.dep_hr = Department.objects.create(name='HR', code='HR')
+        self.dep_it, _ = Department.objects.get_or_create(
+            name='IT', defaults={'code': 'IT', 'manages_inventory': True, 'handles_it_support': True}
+        )
+        self.dep_hr = Department.objects.create(name='HR', code='HR', handles_general_support=True)
 
     def test_it_support_routes_to_it(self):
         dept = route_support_request('IT_SUPPORT')
@@ -43,7 +47,9 @@ class SupportModelTests(TestCase):
     """Test SupportRequest model basics."""
 
     def setUp(self):
-        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
+        self.dep_it, _ = Department.objects.get_or_create(
+            name='IT', defaults={'code': 'IT', 'manages_inventory': True, 'handles_it_support': True}
+        )
         self.role = Role.objects.create(name='Staff', code='STAFF')
         self.user = User.objects.create_user(username='user1', password='pass')
         StaffProfile.objects.create(user=self.user, role=self.role, department=self.dep_it)
@@ -189,7 +195,9 @@ class SupportAutoCloseTests(TestCase):
     """Test auto-close service."""
 
     def setUp(self):
-        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
+        self.dep_it, _ = Department.objects.get_or_create(
+            name='IT', defaults={'code': 'IT', 'manages_inventory': True, 'handles_it_support': True}
+        )
         self.role = Role.objects.create(name='Staff', code='STAFF')
         self.user = User.objects.create_user(username='user1', password='pass')
         StaffProfile.objects.create(user=self.user, role=self.role, department=self.dep_it)
@@ -247,7 +255,9 @@ class SupportAPITests(BaseAPITestCase):
 
     def setUp(self):
         super().setUp()
-        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
+        self.dep_it, _ = Department.objects.get_or_create(
+            name='IT', defaults={'code': 'IT', 'manages_inventory': True, 'handles_it_support': True}
+        )
         # dep_hr already created by BaseAPITestCase as self.dep_hr
         self.role_lm = Role.objects.create(
             name='Line Manager', code='LINE_MANAGER', has_global_access=False
@@ -288,7 +298,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_authenticated_user_can_create_request(self):
         self._auth(self.staff_user)
-        response = self.client.post('/api/v1/support/requests/', {
+        response = self.client.post('/api/v1/support/requests', {
             'title': 'My PC is broken',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -301,7 +311,7 @@ class SupportAPITests(BaseAPITestCase):
         self.assertIn('department', response.data)
 
     def test_create_requires_authentication(self):
-        response = self.client.post('/api/v1/support/requests/', {
+        response = self.client.post('/api/v1/support/requests', {
             'title': 'Test',
             'category': 'IT_SUPPORT',
             'priority': 'low',
@@ -311,7 +321,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_it_support_routes_to_it_department(self):
         self._auth(self.staff_user)
-        response = self.client.post('/api/v1/support/requests/', {
+        response = self.client.post('/api/v1/support/requests', {
             'title': 'IT Issue',
             'category': 'IT_SUPPORT',
             'priority': 'urgent',
@@ -321,7 +331,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_other_routes_to_hr(self):
         self._auth(self.staff_user)
-        response = self.client.post('/api/v1/support/requests/', {
+        response = self.client.post('/api/v1/support/requests', {
             'title': 'HR Issue',
             'category': 'OTHER',
             'priority': 'medium',
@@ -331,7 +341,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_creation_creates_notification(self):
         self._auth(self.staff_user)
-        response = self.client.post('/api/v1/support/requests/', {
+        response = self.client.post('/api/v1/support/requests', {
             'title': 'Notify Test',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -349,7 +359,7 @@ class SupportAPITests(BaseAPITestCase):
         """Verify _send_support_email is called when a request is created."""
         self._auth(self.staff_user)
         with patch('support.services._send_support_email') as mock_email:
-            response = self.client.post('/api/v1/support/requests/', {
+            response = self.client.post('/api/v1/support/requests', {
                 'title': 'Email Test',
                 'category': 'IT_SUPPORT',
                 'priority': 'high',
@@ -365,7 +375,7 @@ class SupportAPITests(BaseAPITestCase):
     def test_assignment_creates_notification_and_email(self):
         """Assigning sends in-app notification + email to the handler."""
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Assign Notify',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -375,8 +385,8 @@ class SupportAPITests(BaseAPITestCase):
 
         self._auth(self.lm_user)
         with patch('support.services._send_support_email') as mock_email:
-            response = self.client.post(f'/api/v1/support/requests/{req_id}/assign/', {
-                'assigned_to': self.handler_user.id,
+            response = self.client.post(f'/api/v1/support/requests/{req_id}/assign', {
+                'assigned_to_id': self.handler_user.id,
             })
             self.assertEqual(response.status_code, 200)
 
@@ -395,7 +405,7 @@ class SupportAPITests(BaseAPITestCase):
     def test_resolve_creates_notification_and_email(self):
         """Resolving sends in-app notification + email to the requester."""
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Resolve Notify',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -411,7 +421,7 @@ class SupportAPITests(BaseAPITestCase):
 
         self._auth(self.handler_user)
         with patch('support.services._send_support_email') as mock_email:
-            response = self.client.post(f'/api/v1/support/requests/{req_id}/resolve/')
+            response = self.client.post(f'/api/v1/support/requests/{req_id}/resolve')
             self.assertEqual(response.status_code, 200)
 
             # In-app notification for the requester
@@ -429,7 +439,7 @@ class SupportAPITests(BaseAPITestCase):
     def test_confirm_sends_closed_notifications(self):
         """Confirming (requester closes) sends notifications to requester + LM + handler."""
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Close Notify',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -445,7 +455,7 @@ class SupportAPITests(BaseAPITestCase):
         )
 
         self._auth(self.staff_user)
-        response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm/')
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm')
         self.assertEqual(response.status_code, 200)
 
         # Notifications for closed event
@@ -458,7 +468,7 @@ class SupportAPITests(BaseAPITestCase):
     def test_confirm_sends_closed_email(self):
         """Confirming (requester closes) sends email to requester, department LM, and handler."""
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Close Email Notify',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -475,7 +485,7 @@ class SupportAPITests(BaseAPITestCase):
 
         self._auth(self.staff_user)
         with patch('support.services._send_support_email') as mock_email:
-            response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm/')
+            response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm')
             self.assertEqual(response.status_code, 200)
 
             recipients = {call.kwargs['recipient'].id for call in mock_email.call_args_list}
@@ -505,7 +515,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_user_sees_only_own_requests(self):
         self._auth(self.staff_user)
-        self.client.post('/api/v1/support/requests/', {
+        self.client.post('/api/v1/support/requests', {
             'title': 'Staff Issue',
             'category': 'IT_SUPPORT',
             'priority': 'low',
@@ -513,7 +523,7 @@ class SupportAPITests(BaseAPITestCase):
         })
 
         self._auth(self.handler_user)
-        self.client.post('/api/v1/support/requests/', {
+        self.client.post('/api/v1/support/requests', {
             'title': 'Handler Issue',
             'category': 'OTHER',
             'priority': 'low',
@@ -521,7 +531,7 @@ class SupportAPITests(BaseAPITestCase):
         })
 
         self._auth(self.staff_user)
-        response = self.client.get('/api/v1/support/requests/')
+        response = self.client.get('/api/v1/support/requests')
         data = response.data.get('results', response.data) if isinstance(response.data, dict) else response.data
         titles = [item['title'] for item in data]
         self.assertIn('Staff Issue', titles)
@@ -531,7 +541,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_department_manager_can_assign(self):
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Assignable',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -540,15 +550,15 @@ class SupportAPITests(BaseAPITestCase):
         req_id = create_resp.data['id']
 
         self._auth(self.lm_user)
-        response = self.client.post(f'/api/v1/support/requests/{req_id}/assign/', {
-            'assigned_to': self.handler_user.id,
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/assign', {
+            'assigned_to_id': self.handler_user.id,
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['assigned_to']['id'], self.handler_user.id)
 
     def test_non_manager_cannot_assign(self):
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'No Assign',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -557,8 +567,8 @@ class SupportAPITests(BaseAPITestCase):
         req_id = create_resp.data['id']
 
         # Staff cannot assign
-        response = self.client.post(f'/api/v1/support/requests/{req_id}/assign/', {
-            'assigned_to': self.handler_user.id,
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/assign', {
+            'assigned_to_id': self.handler_user.id,
         })
         self.assertEqual(response.status_code, 403)
 
@@ -566,7 +576,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_assigned_handler_can_update_status(self):
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Status Update',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -583,7 +593,7 @@ class SupportAPITests(BaseAPITestCase):
 
         self._auth(self.handler_user)
         response = self.client.post(
-            f'/api/v1/support/requests/{req_id}/update-status/',
+            f'/api/v1/support/requests/{req_id}/status',
             {'status': 'in_progress'},
         )
         self.assertEqual(response.status_code, 200)
@@ -592,7 +602,7 @@ class SupportAPITests(BaseAPITestCase):
     def test_handler_can_resolve(self):
         # Create as staff
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Resolve Test',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -608,7 +618,7 @@ class SupportAPITests(BaseAPITestCase):
         )
 
         self._auth(self.handler_user)
-        response = self.client.post(f'/api/v1/support/requests/{req_id}/resolve/')
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/resolve')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['status'], 'resolved')
         self.assertIsNotNone(response.data['resolved_at'])
@@ -617,7 +627,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_requester_can_confirm_resolution(self):
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Confirm Test',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -629,13 +639,13 @@ class SupportAPITests(BaseAPITestCase):
             status='resolved', resolved_at=timezone.now()
         )
 
-        response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm/')
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/confirm')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['status'], 'closed')
 
     def test_requester_can_reopen(self):
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Reopen Test',
             'category': 'IT_SUPPORT',
             'priority': 'high',
@@ -647,7 +657,7 @@ class SupportAPITests(BaseAPITestCase):
             status='resolved', resolved_at=timezone.now()
         )
 
-        response = self.client.post(f'/api/v1/support/requests/{req_id}/reopen/')
+        response = self.client.post(f'/api/v1/support/requests/{req_id}/reopen')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['status'], 'open')
         self.assertIsNone(response.data['assigned_to'])
@@ -656,7 +666,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_can_add_comment(self):
         self._auth(self.staff_user)
-        create_resp = self.client.post('/api/v1/support/requests/', {
+        create_resp = self.client.post('/api/v1/support/requests', {
             'title': 'Comment Test',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -665,7 +675,7 @@ class SupportAPITests(BaseAPITestCase):
         req_id = create_resp.data['id']
 
         response = self.client.post(
-            f'/api/v1/support/requests/{req_id}/add-comment/',
+            f'/api/v1/support/requests/{req_id}/comments',
             {'body': 'This is a comment'},
         )
         self.assertEqual(response.status_code, 201)
@@ -675,7 +685,7 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_department_manager_can_view_department_requests(self):
         self._auth(self.staff_user)
-        self.client.post('/api/v1/support/requests/', {
+        self.client.post('/api/v1/support/requests', {
             'title': 'Dept List Test',
             'category': 'IT_SUPPORT',
             'priority': 'medium',
@@ -683,7 +693,7 @@ class SupportAPITests(BaseAPITestCase):
         })
 
         self._auth(self.lm_user)
-        response = self.client.get('/api/v1/support/requests/department/')
+        response = self.client.get('/api/v1/support/requests/department')
         self.assertEqual(response.status_code, 200)
         data = response.data.get('results', response.data) if isinstance(response.data, dict) else response.data
         titles = [item['title'] for item in data]
@@ -691,21 +701,26 @@ class SupportAPITests(BaseAPITestCase):
 
     def test_non_manager_cannot_view_department_requests(self):
         self._auth(self.staff_user)
-        response = self.client.get('/api/v1/support/requests/department/')
+        response = self.client.get('/api/v1/support/requests/department')
         self.assertEqual(response.status_code, 403)
 
 class SupportAttachmentKeyTests(TestCase):
     def test_invalid_object_key_rejected(self):
         from support.serializers import SupportAttachmentConfirmSerializer
-        
-        # Valid key (requires 32 hex chars for UUID)
-        serializer = SupportAttachmentConfirmSerializer(data={
-            'object_key': 'support/request/1234567890abcdef1234567890abcdef.pdf',
-            'file_name': 'test.pdf',
-            'content_type': 'application/pdf',
-            'size': 1024
-        })
-        self.assertTrue(serializer.is_valid())
+
+        def is_valid(key):
+            serializer = SupportAttachmentConfirmSerializer(data={
+                'object_key': key,
+                'file_name': 'test.pdf',
+                'content_type': 'application/pdf',
+                'size': 1024
+            })
+            return serializer.is_valid(), serializer.errors
+
+        # <prefix>/<request id>/<32 hex chars>.<extension>
+        request_id = '11111111-2222-3333-4444-555555555555'
+        valid, errors = is_valid(f'support-attachments/{request_id}/1234567890abcdef1234567890abcdef.pdf')
+        self.assertTrue(valid, errors)
 
         # Invalid keys (path traversal, absolute paths, wrong format)
         invalid_keys = [
@@ -713,15 +728,184 @@ class SupportAttachmentKeyTests(TestCase):
             '/support/file.pdf',
             'support/../file.pdf',
             'file.pdf',  # missing folder prefix
-            'support/subfolder/file.pdf'  # too many slashes
+            'support/subfolder/file.pdf',  # not a generated name
+            f'support-attachments/{request_id}/../other/1234567890abcdef1234567890abcdef.pdf',
         ]
-        
+
         for key in invalid_keys:
-            serializer = SupportAttachmentConfirmSerializer(data={
-                'object_key': key,
-                'file_name': 'test.pdf',
-                'content_type': 'application/pdf',
-                'size': 1024
-            })
-            self.assertFalse(serializer.is_valid(), f"Key {key} should be invalid")
-            self.assertIn('object_key', serializer.errors)
+            valid, errors = is_valid(key)
+            self.assertFalse(valid, f"Key {key} should be invalid")
+            self.assertIn('object_key', errors)
+
+
+class SupportAttachmentOwnershipTests(SupportAPITests):
+    """A file can only be attached to the request it was uploaded for, and only
+    after storage confirms what was uploaded."""
+
+    def setUp(self):
+        super().setUp()
+        self.mine = SupportRequest.objects.create(
+            requester=self.staff_user, title='Mine', category='IT_SUPPORT', description='x', department=self.dep_it,
+        )
+        self.theirs = SupportRequest.objects.create(
+            requester=self.handler_user, title='Theirs', category='IT_SUPPORT', description='x',
+            department=self.dep_it,
+        )
+        self.url = f'/api/v1/support/requests/{self.mine.id}/attachments'
+
+    def _body(self, request_obj, **overrides):
+        body = {
+            'object_key': f'{support_attachment_key_prefix(request_obj.id)}{"a" * 32}.pdf',
+            'file_name': 'evidence.pdf',
+            'content_type': 'application/pdf',
+            'size': 100,
+        }
+        body.update(overrides)
+        return body
+
+    def _storage(self, **head):
+        client = MagicMock()
+        if head:
+            client.head_object.return_value = head
+        else:
+            client.head_object.side_effect = ClientError({'Error': {'Code': '404'}}, 'HeadObject')
+        return patch('common.storage.s3_client', return_value=client), client
+
+    def test_a_key_from_another_request_or_another_area_is_refused(self):
+        self._auth(self.staff_user)
+        other_keys = [
+            self._body(self.theirs)['object_key'],
+            f'task-attachments/{self.mine.id}/{"a" * 32}.pdf',
+        ]
+        for key in other_keys:
+            response = self.client.post(self.url, self._body(self.mine, object_key=key))
+            self.assertEqual(response.status_code, 400, key)
+        self.assertEqual(self.mine.attachments.count(), 0)
+
+    def test_unsupported_types_and_oversize_claims_are_refused(self):
+        self._auth(self.staff_user)
+        response = self.client.post(self.url, self._body(self.mine, content_type='application/x-msdownload'))
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post(self.url, self._body(self.mine, size=10 ** 12))
+        self.assertEqual(response.status_code, 400)
+
+    @override_settings(VERIFY_UPLOADS=True)
+    def test_a_file_that_was_never_uploaded_is_refused(self):
+        self._auth(self.staff_user)
+        storage, _client = self._storage()
+        with storage:
+            response = self.client.post(self.url, self._body(self.mine))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('has not been uploaded', str(response.data))
+
+    @override_settings(VERIFY_UPLOADS=True, TASK_ATTACHMENT_MAX_SIZE=1000)
+    def test_what_storage_holds_is_recorded_not_what_the_browser_claims(self):
+        self._auth(self.staff_user)
+        storage, _client = self._storage(ContentLength=640, ContentType='application/pdf')
+        with storage:
+            response = self.client.post(self.url, self._body(self.mine, size=5))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.mine.attachments.get().size, 640)
+
+    @override_settings(VERIFY_UPLOADS=True, TASK_ATTACHMENT_MAX_SIZE=1000)
+    def test_an_oversize_or_disguised_upload_is_refused_and_removed(self):
+        self._auth(self.staff_user)
+        for head in (
+            {'ContentLength': 5000, 'ContentType': 'application/pdf'},
+            {'ContentLength': 100, 'ContentType': 'text/html'},
+        ):
+            storage, client = self._storage(**head)
+            with storage:
+                response = self.client.post(self.url, self._body(self.mine))
+            self.assertEqual(response.status_code, 400, head)
+            client.delete_object.assert_called_once()
+        self.assertEqual(self.mine.attachments.count(), 0)
+
+    def test_the_same_file_cannot_be_attached_twice(self):
+        self._auth(self.staff_user)
+        self.assertEqual(self.client.post(self.url, self._body(self.mine)).status_code, 201)
+        self.assertEqual(self.client.post(self.url, self._body(self.mine)).status_code, 400)
+
+
+class SupportVisibilityTests(SupportAPITests):
+    """Who sees a request follows who manages the department it was routed to
+    and who the requester reports to, not where the viewer's own profile sits."""
+
+    def setUp(self):
+        super().setUp()
+        # The IT line manager's own profile sits in another department.
+        StaffProfile.objects.filter(user=self.lm_user).update(department=self.dep_hr)
+
+        # The requester's own line manager (Engineering), snapshotted on the ticket.
+        self.requester_manager = User.objects.create_user(
+            username='boss@test.com', email='boss@test.com', password='pass'
+        )
+        StaffProfile.objects.create(user=self.requester_manager, role=self.role_lm, department=self.dep_eng)
+
+        self.ticket = SupportRequest.objects.create(
+            requester=self.staff_user,
+            title='Laptop will not start',
+            category='IT_SUPPORT',
+            description='Black screen.',
+            department=self.dep_it,
+            line_manager=self.requester_manager,
+        )
+        self.detail = f'/api/v1/support/requests/{self.ticket.id}'
+
+    def test_department_manager_sees_the_queue_wherever_their_profile_sits(self):
+        self._auth(self.lm_user)
+
+        self.assertEqual(self.client.get(self.detail).status_code, 200)
+        queue = self.client.get('/api/v1/support/requests/department')
+        self.assertEqual(queue.status_code, 200)
+        self.assertEqual([item['id'] for item in queue.data['results']], [str(self.ticket.id)])
+
+        assigned = self.client.post(f'{self.detail}/assign', {'assigned_to_id': self.handler_user.id})
+        self.assertEqual(assigned.status_code, 200)
+
+    def test_requesters_line_manager_can_look_but_not_act(self):
+        self._auth(self.requester_manager)
+
+        listing = self.client.get('/api/v1/support/requests')
+        self.assertEqual([item['id'] for item in listing.data['results']], [str(self.ticket.id)])
+        detail = self.client.get(self.detail)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data['line_manager']['id'], self.requester_manager.id)
+
+        for action, body in (
+            ('assign', {'assigned_to_id': self.handler_user.id}),
+            ('status', {'status': 'in_progress'}),
+            ('resolve', {}),
+            ('confirm', {}),
+            ('reopen', {}),
+            ('comments', {'body': 'Any update?'}),
+        ):
+            response = self.client.post(f'{self.detail}/{action}', body)
+            self.assertEqual(response.status_code, 403, action)
+
+    def test_an_unrelated_user_cannot_see_the_request(self):
+        self._auth(self.admin_user)  # an executive, but not involved in this ticket
+        self.assertEqual(self.client.get(self.detail).status_code, 404)
+
+    def test_a_handler_cannot_close_a_request_on_the_requesters_behalf(self):
+        self.ticket.assigned_to = self.handler_user
+        self.ticket.status = 'resolved'
+        self.ticket.save()
+
+        self._auth(self.handler_user)
+        response = self.client.post(f'{self.detail}/status', {'status': 'closed'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('status', response.data['error']['details'])
+
+        # The requester confirming is what closes it.
+        self._auth(self.staff_user)
+        self.assertEqual(self.client.post(f'{self.detail}/confirm').data['status'], 'closed')
+
+    def test_list_filter_rejects_an_unknown_status(self):
+        self._auth(self.staff_user)
+        self.assertEqual(self.client.get('/api/v1/support/requests', {'status': 'bogus'}).status_code, 400)
+
+    def test_requests_cannot_be_edited_or_deleted_directly(self):
+        self._auth(self.staff_user)
+        for method in ('put', 'patch', 'delete'):
+            self.assertEqual(getattr(self.client, method)(self.detail, {}).status_code, 405, method)

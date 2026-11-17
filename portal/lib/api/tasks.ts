@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client";
+import type { Paginated } from "@/lib/api/types";
 
 export interface Task {
   id: string;
@@ -207,12 +208,7 @@ export interface TaskCommentAttachmentPayload {
   size: number;
 }
 
-export interface TaskListResponse {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: Task[];
-}
+export type TaskListResponse = Paginated<Task>;
 
 export interface TaskDashboardBucket {
   count: number;
@@ -237,12 +233,7 @@ export interface TaskDashboardSummaryResponse {
   };
 }
 
-export interface RecurringScheduleListResponse {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: RecurringSchedule[];
-}
+export type RecurringScheduleListResponse = Paginated<RecurringSchedule>;
 
 function extractListResults<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) {
@@ -262,7 +253,7 @@ function extractListResults<T>(payload: unknown): T[] {
 export async function getTasks(
   params?: GetTasksParams,
 ): Promise<TaskListResponse> {
-  const response = await apiClient.get("/tasks/", {
+  const response = await apiClient.get("/tasks", {
     params: {
       view: params?.view,
       status: params?.status?.length ? params.status.join(",") : undefined,
@@ -273,57 +264,41 @@ export async function getTasks(
     },
   });
 
-  if (Array.isArray(response.data)) {
-    return {
-      count: response.data.length,
-      next: null,
-      previous: null,
-      results: response.data,
-    };
-  }
-
   return response.data;
 }
 
 export async function getTaskDashboardSummary(): Promise<TaskDashboardSummaryResponse> {
-  const response = await apiClient.get("/tasks/dashboard/");
+  const response = await apiClient.get("/tasks/dashboard");
   return response.data;
 }
 
 export async function getTaskDetail(id: string): Promise<Task> {
-  const response = await apiClient.get(`/tasks/${id}/`);
+  const response = await apiClient.get(`/tasks/${id}`);
   return response.data;
 }
 
-export async function createTask(payload: CreateTaskPayload): Promise<Task> {
-  const response = await apiClient.post("/tasks/", payload);
-  return response.data;
+/** Creates one task per assignee and returns them all. */
+export async function createTask(payload: CreateTaskPayload): Promise<Task[]> {
+  const response = await apiClient.post<{ count: number; results: Task[] }>("/tasks", payload);
+  return response.data.results;
 }
 
 export async function getRecurringSchedules(): Promise<RecurringScheduleListResponse> {
-  const response = await apiClient.get("/recurring-schedules/");
-  const results = extractListResults<RecurringSchedule>(response.data);
-
-  if (Array.isArray(response.data)) {
-    return {
-      count: results.length,
-      next: null,
-      previous: null,
-      results,
-    };
-  }
-
-  return {
-    ...(response.data as RecurringScheduleListResponse),
-    results,
-  };
+  const response = await apiClient.get<RecurringScheduleListResponse>("/recurring-schedules", {
+    params: { page_size: 100 },
+  });
+  return response.data;
 }
 
+/** Creates one schedule per assignee and returns them all. */
 export async function createRecurringSchedule(
   payload: CreateRecurringSchedulePayload,
-): Promise<RecurringSchedule> {
-  const response = await apiClient.post("/recurring-schedules/", payload);
-  return response.data;
+): Promise<RecurringSchedule[]> {
+  const response = await apiClient.post<{ count: number; results: RecurringSchedule[] }>(
+    "/recurring-schedules",
+    payload,
+  );
+  return response.data.results;
 }
 
 export async function updateRecurringSchedule(
@@ -331,7 +306,7 @@ export async function updateRecurringSchedule(
   payload: Partial<CreateRecurringSchedulePayload>,
 ): Promise<RecurringSchedule> {
   const response = await apiClient.patch(
-    `/recurring-schedules/${id}/`,
+    `/recurring-schedules/${id}`,
     payload,
   );
   return response.data;
@@ -340,28 +315,28 @@ export async function updateRecurringSchedule(
 export async function getRecurringScheduleDetail(
   id: string,
 ): Promise<RecurringSchedule> {
-  const response = await apiClient.get(`/recurring-schedules/${id}/`);
+  const response = await apiClient.get(`/recurring-schedules/${id}`);
   return response.data;
 }
 
 export async function endRecurringSchedule(
   id: string,
 ): Promise<RecurringSchedule> {
-  const response = await apiClient.post(`/recurring-schedules/${id}/end/`);
+  const response = await apiClient.post(`/recurring-schedules/${id}/end`);
   return response.data;
 }
 
 export async function pauseRecurringSchedule(
   id: string,
 ): Promise<RecurringSchedule> {
-  const response = await apiClient.post(`/recurring-schedules/${id}/pause/`);
+  const response = await apiClient.post(`/recurring-schedules/${id}/pause`);
   return response.data;
 }
 
 export async function resumeRecurringSchedule(
   id: string,
 ): Promise<RecurringSchedule> {
-  const response = await apiClient.post(`/recurring-schedules/${id}/resume/`);
+  const response = await apiClient.post(`/recurring-schedules/${id}/resume`);
   return response.data;
 }
 
@@ -379,12 +354,12 @@ export async function updateTask(
   id: string,
   payload: UpdateTaskPayload,
 ): Promise<Task> {
-  const response = await apiClient.patch(`/tasks/${id}/`, payload);
+  const response = await apiClient.patch(`/tasks/${id}`, payload);
   return response.data;
 }
 
 export async function approveTask(id: string): Promise<Task> {
-  const response = await apiClient.post(`/tasks/${id}/approve/`);
+  const response = await apiClient.post(`/tasks/${id}/approve`);
   return response.data;
 }
 
@@ -393,7 +368,7 @@ export async function rejectTask(
   reason: string,
   targetStatus: "in_progress" | "pending" = "in_progress",
 ): Promise<Task> {
-  const response = await apiClient.post(`/tasks/${id}/reject/`, {
+  const response = await apiClient.post(`/tasks/${id}/reject`, {
     reason,
     target_status: targetStatus,
   });
@@ -404,14 +379,14 @@ export async function updateTaskStatus(
   id: string,
   status: string,
 ): Promise<Task> {
-  const response = await apiClient.patch(`/tasks/${id}/`, { status });
+  const response = await apiClient.patch(`/tasks/${id}`, { status });
   return response.data;
 }
 
 export async function getTaskActivities(
   taskId: string,
 ): Promise<TaskActivity[]> {
-  const response = await apiClient.get(`/tasks/${taskId}/activities/`);
+  const response = await apiClient.get(`/tasks/${taskId}/activities`);
   return response.data;
 }
 
@@ -420,7 +395,7 @@ export async function getTaskAttachmentUploadUrl(
   payload: TaskAttachmentUploadRequest,
 ): Promise<TaskAttachmentUploadResponse> {
   const response = await apiClient.post(
-    `/tasks/${taskId}/attachment-upload-url/`,
+    `/tasks/${taskId}/attachment-upload-url`,
     payload,
   );
   return response.data;
@@ -432,7 +407,7 @@ export async function addTaskComment(
   attachments?: TaskCommentAttachmentPayload[],
   links?: TaskActivityLink[],
 ): Promise<TaskActivity> {
-  const response = await apiClient.post(`/tasks/${taskId}/comments/`, {
+  const response = await apiClient.post(`/tasks/${taskId}/comments`, {
     comment,
     ...(attachments ? { attachments } : {}),
     ...(links && links.length > 0 ? { links } : {}),
@@ -448,14 +423,14 @@ export async function getUsers(params?: GetUsersParams): Promise<UserOption[]> {
 }
 
 export async function getTaskDrafts(): Promise<TaskDraft[]> {
-  const response = await apiClient.get("/task-drafts/");
+  const response = await apiClient.get("/task-drafts");
   return extractListResults<TaskDraft>(response.data);
 }
 
 export async function createTaskDraft(
   data: Partial<TaskDraft>,
 ): Promise<TaskDraft> {
-  const response = await apiClient.post("/task-drafts/", data);
+  const response = await apiClient.post("/task-drafts", data);
   return response.data;
 }
 
@@ -463,11 +438,11 @@ export async function updateTaskDraft(
   id: string,
   data: Partial<TaskDraft>,
 ): Promise<TaskDraft> {
-  const response = await apiClient.patch(`/task-drafts/${id}/`, data);
+  const response = await apiClient.patch(`/task-drafts/${id}`, data);
   return response.data;
 }
 
 export async function deleteTaskDraft(id: string): Promise<void> {
-  await apiClient.delete(`/task-drafts/${id}/`);
+  await apiClient.delete(`/task-drafts/${id}`);
 }
 

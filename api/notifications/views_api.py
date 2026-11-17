@@ -1,5 +1,4 @@
 from django.conf import settings
-from django.core.paginator import Paginator
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -7,12 +6,15 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.pagination import page_size, paginate
 from notifications.models import Notification, PushSubscription
 from notifications.serializers import (
     NotificationSerializer,
     PushSubscriptionSerializer,
     PushSubscriptionWriteSerializer,
 )
+
+NotificationPagination = page_size(20, maximum=50)
 
 
 class NotificationListView(APIView):
@@ -21,33 +23,7 @@ class NotificationListView(APIView):
     def get(self, request):
         queryset = Notification.objects.filter(recipient=request.user).order_by('-created_at')
 
-        page = request.query_params.get('page', '1')
-        page_size = request.query_params.get('page_size', '20')
-
-        try:
-            page_number = max(int(page), 1)
-        except (TypeError, ValueError):
-            page_number = 1
-
-        try:
-            per_page = min(max(int(page_size), 1), 50)
-        except (TypeError, ValueError):
-            per_page = 20
-
-        paginator = Paginator(queryset, per_page)
-        page_obj = paginator.get_page(page_number)
-
-        return Response(
-            {
-                'count': paginator.count,
-                'page': page_obj.number,
-                'page_size': per_page,
-                'total_pages': paginator.num_pages,
-                'next_page': page_obj.next_page_number() if page_obj.has_next() else None,
-                'previous_page': page_obj.previous_page_number() if page_obj.has_previous() else None,
-                'results': NotificationSerializer(page_obj.object_list, many=True).data,
-            }
-        )
+        return paginate(queryset, request, NotificationSerializer, pagination_class=NotificationPagination, view=self)
 
 
 class NotificationUnreadCountView(APIView):
@@ -86,7 +62,7 @@ class NotificationMarkAllReadView(APIView):
             is_read=True,
             read_at=now,
         )
-        return Response({'updated': updated})
+        return Response({'count': updated})
 
 
 class NotificationDeleteView(APIView):
@@ -107,7 +83,7 @@ class NotificationClearAllView(APIView):
 
     def delete(self, request):
         deleted, _details = Notification.objects.filter(recipient=request.user).delete()
-        return Response({'deleted': deleted})
+        return Response({'count': deleted})
 
 
 class PushPublicKeyView(APIView):
@@ -154,6 +130,7 @@ class PushSubscriptionListCreateView(APIView):
                 .order_by('-updated_at', '-id')
             )
 
+            created = not subscriptions
             if subscriptions:
                 subscription = subscriptions[0]
                 if len(subscriptions) > 1:
@@ -172,7 +149,7 @@ class PushSubscriptionListCreateView(APIView):
 
         return Response(
             PushSubscriptionSerializer(subscription).data,
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
 

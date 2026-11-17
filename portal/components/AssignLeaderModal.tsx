@@ -57,8 +57,8 @@ export function AssignLeaderModal({
   const submitAction = async () => {
     try {
       setIsSubmitting(true);
-      await apiClient.patch(`/admin/organization/${entityType}s/${entityId}/`, {
-        [leaderField]: selectedUserId || null
+      await apiClient.patch(`/organization/${entityType}s/${entityId}`, {
+        [`${leaderField}_id`]: selectedUserId || null
       });
       toast.success(`Successfully assigned ${leaderLabel.toLowerCase()}.`);
       onSuccess();
@@ -86,7 +86,7 @@ export function AssignLeaderModal({
             <UserCombobox
               value={selectedUserId}
               onChange={(val) => setSelectedUserId(val)}
-              apiEndpoint="/admin/users"
+              apiEndpoint="/users"
               additionalParams={{ [`${entityType}_id`]: entityId }}
               placeholder={`Search for a ${leaderLabel.toLowerCase()}...`}
             />

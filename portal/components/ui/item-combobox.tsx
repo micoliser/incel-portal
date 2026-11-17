@@ -40,7 +40,7 @@ interface ItemComboboxProps {
 export function ItemCombobox({
   value,
   onChange,
-  apiEndpoint = "/inventory/items/",
+  apiEndpoint = "/inventory/items",
   additionalParams = {},
   placeholder = "Select an item...",
   disabled = false,

@@ -4,7 +4,8 @@
 # begins from the same data. Database host, user and password come from api/.env.
 set -euo pipefail
 
-cd "$(dirname "$0")/../../../api"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../../../api"
 
 PYTHON="${E2E_PYTHON:-.venv/bin/python}"
 WEB_ORIGIN="http://localhost:${E2E_WEB_PORT:-3100}"
@@ -16,10 +17,17 @@ export CORS_ALLOWED_ORIGINS="$WEB_ORIGIN"
 export CSRF_TRUSTED_ORIGINS="$WEB_ORIGIN"
 export PORTAL_BASE_URL="$WEB_ORIGIN"
 
-# Emails are rendered and logged, never sent, and never queued to Celery.
+# Emails are never sent and never queued to Celery. They are written as files
+# to a mailbox directory, which the tests read (for example to follow the
+# set-password link a new user is emailed). The mailbox is emptied on each start.
+MAILBOX="$SCRIPT_DIR/../.mail"
+rm -rf "$MAILBOX"
+mkdir -p "$MAILBOX"
 export EMAIL_ENABLED=True
-export EMAIL_DEBUG=True
+export EMAIL_DEBUG=False
 export SEND_EMAILS_CELERY=False
+export EMAIL_BACKEND=django.core.mail.backends.filebased.EmailBackend
+export EMAIL_FILE_PATH="$MAILBOX"
 
 # No browser push and no real object storage: the endpoint below is unroutable,
 # so any accidental S3 call fails immediately instead of reaching a real bucket.
@@ -30,6 +38,9 @@ export AWS_S3_ENDPOINT_URL=http://127.0.0.1:9
 export AWS_S3_CUSTOM_DOMAIN=
 export AWS_ACCESS_KEY_ID=e2e
 export AWS_SECRET_ACCESS_KEY=e2e
+# There is no storage to ask about an upload, so uploads are not verified.
+export VERIFY_UPLOADS=False
+export SEND_PUSH_CELERY=False
 
 "$PYTHON" manage.py migrate --noinput
 "$PYTHON" manage.py seed_e2e

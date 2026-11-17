@@ -90,15 +90,17 @@ class RecurringScheduleApiTests(BaseAPITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['assigned_by']['id'], self.admin_user.id)
-        self.assertEqual(response.data['assigned_to']['id'], self.staff_user.id)
+        self.assertEqual(response.data['count'], 1)
+        created = response.data['results'][0]
+        self.assertEqual(created['assigned_by']['id'], self.admin_user.id)
+        self.assertEqual(created['assigned_to']['id'], self.staff_user.id)
         response_next_run_at = datetime.fromisoformat(
-            response.data['next_run_at'].replace('Z', '+00:00')
+            created['next_run_at'].replace('Z', '+00:00')
         )
         self.assertEqual(response_next_run_at, expected_next_run_at)
         mock_next_run.assert_called_once()
 
-        schedule = RecurringSchedule.objects.get(id=response.data['id'])
+        schedule = RecurringSchedule.objects.get(id=created['id'])
         self.assertEqual(schedule.assigned_by, self.admin_user)
         self.assertEqual(schedule.next_run_at, expected_next_run_at)
 
@@ -324,8 +326,8 @@ class RecurringScheduleApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('detail', response.data)
-        self.assertIn('expired', response.data['detail'])
+        self.assertEqual(response.data['error']['type'], 'validation_error')
+        self.assertIn('expired', str(response.data['error']['details']))
 
     def test_end_schedule_clears_pause_state_and_blocks_future_runs(self):
         schedule = self.create_schedule_record(

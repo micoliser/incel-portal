@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Loader2,
+  X,
   Paperclip,
   Send,
   Download,
@@ -117,6 +118,9 @@ function formatFullDateTime(dateStr?: string | null) {
   }
 }
 
+// Files that can go with one reply.
+const MAX_REPLY_FILES = 5;
+
 export default function SupportDetailPage({
   params,
 }: {
@@ -128,6 +132,8 @@ export default function SupportDetailPage({
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
+  // Files chosen for the next reply. Nothing is uploaded until it is sent.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [assignUserId, setAssignUserId] = useState<string>("");
 
@@ -152,14 +158,56 @@ export default function SupportDetailPage({
     if (!commentText.trim() || !request) return;
     try {
       setSubmittingComment(true);
+
+      // 1. Put the files in storage first. If any fails, nothing is posted and
+      //    the reply (text and files) stays as it is, ready to send again.
+      const uploaded: { file: File; objectKey: string }[] = [];
+      for (const file of pendingFiles) {
+        const { upload_url, object_key } = await getUploadUrl(request.id, {
+          file_name: file.name,
+          content_type: file.type || "application/octet-stream",
+          size: file.size,
+        });
+        const response = await fetch(upload_url, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+        });
+        if (!response.ok) throw new Error(`Could not upload ${file.name}.`);
+        uploaded.push({ file, objectKey: object_key });
+      }
+
+      // 2. Post the reply, then 3. attach the files to it.
       const comment = await addComment(request.id, commentText.trim());
-      setRequest((prev) =>
-        prev ? { ...prev, comments: [...prev.comments, comment] } : prev,
-      );
+      const failed: string[] = [];
+      for (const { file, objectKey } of uploaded) {
+        try {
+          await confirmUpload(request.id, {
+            object_key: objectKey,
+            file_name: file.name,
+            content_type: file.type || "application/octet-stream",
+            size: file.size,
+            comment_id: comment.id,
+          });
+        } catch {
+          failed.push(file.name);
+        }
+      }
+
       setCommentText("");
-      toast.success("Comment added.");
+      setPendingFiles([]);
+      if (failed.length > 0) {
+        toast.error(`Reply sent, but these files could not be attached: ${failed.join(", ")}`);
+      } else {
+        toast.success(uploaded.length > 0 ? "Reply and files sent." : "Comment added.");
+      }
+      void loadData();
     } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Failed to add comment."));
+      toast.error(
+        err instanceof Error && !("isAxiosError" in err)
+          ? err.message
+          : extractApiErrorMessage(err, "Failed to add comment."),
+      );
     } finally {
       setSubmittingComment(false);
     }
@@ -220,39 +268,27 @@ export default function SupportDetailPage({
     }
   }
 
-  async function handleFileAttach(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !request) return;
+  async function handleFileChoose(e: React.ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (chosen.length === 0) return;
 
-    try {
-      const processedFile = await processAndValidateFile(file);
-      const { upload_url } = await getUploadUrl(request.id, {
-        file_name: processedFile.name,
-        content_type: processedFile.type || "application/octet-stream",
-        size: processedFile.size,
-      });
-
-      await fetch(upload_url, {
-        method: "PUT",
-        body: processedFile,
-        headers: { "Content-Type": processedFile.type || "application/octet-stream" },
-      });
-
-      const url = new URL(upload_url);
-      const objectKey = decodeURIComponent(url.pathname.split("/").pop() || "");
-
-      await confirmUpload(request.id, {
-        object_key: objectKey,
-        file_name: processedFile.name,
-        content_type: processedFile.type || "application/octet-stream",
-        size: processedFile.size,
-      });
-
-      toast.success("File attached.");
-      void loadData();
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Failed to attach file."));
+    const ready: File[] = [];
+    for (const file of chosen) {
+      try {
+        // Checks type and size now, so a bad file is reported straight away.
+        ready.push(await processAndValidateFile(file));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `Cannot attach ${file.name}.`);
+      }
     }
+    setPendingFiles((current) => {
+      const combined = [...current, ...ready];
+      if (combined.length > MAX_REPLY_FILES) {
+        toast.error(`You can attach up to ${MAX_REPLY_FILES} files to one reply.`);
+      }
+      return combined.slice(0, MAX_REPLY_FILES);
+    });
   }
 
   if (loading) {
@@ -478,19 +514,45 @@ export default function SupportDetailPage({
                   rows={3}
                   className="rounded-lg bg-card"
                 />
+                {pendingFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {pendingFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs text-foreground"
+                      >
+                        <Paperclip className="size-3 text-muted-foreground" />
+                        <span className="truncate max-w-[180px] font-medium">{file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPendingFiles((current) => current.filter((_, i) => i !== index))
+                          }
+                          disabled={submittingComment}
+                          className="text-muted-foreground hover:text-foreground"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <div>
                     <input
                       id="attach-file"
                       type="file"
+                      multiple
                       className="hidden"
-                      onChange={handleFileAttach}
+                      onChange={handleFileChoose}
                     />
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={() => document.getElementById("attach-file")?.click()}
+                      disabled={submittingComment || pendingFiles.length >= MAX_REPLY_FILES}
                       className="rounded-lg text-xs font-medium"
                     >
                       <Paperclip className="mr-1.5 size-3.5" />

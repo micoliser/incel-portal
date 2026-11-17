@@ -84,7 +84,7 @@ class StaffProfileModelTests(TestCase):
         self.assertEqual(profile_analyst.display_title, 'Staff')
 
     def test_clean_validation_hierarchy_mismatch(self):
-        other_dept = Department.objects.create(name='HR', code='HR')
+        other_dept = Department.objects.create(name='HR', code='HR', handles_general_support=True)
         other_unit = Unit.objects.create(name='Recruiting', code='REC', department=other_dept)
 
         # Team unit mismatch

@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from accounts.models import ServiceApiKey
+from accounts.models import SERVICE_API_SCOPES, ServiceApiKey
 
 
 class Command(BaseCommand):
@@ -13,6 +13,12 @@ class Command(BaseCommand):
             required=True,
             help='Descriptive name of the external application or service.',
         )
+        parser.add_argument(
+            '--scope',
+            action='append',
+            choices=[scope for scope, _label in SERVICE_API_SCOPES],
+            help='What the key may do. Repeat for several. Default: users:read.',
+        )
 
     def handle(self, *args, **options):
         name = options['name'].strip()
@@ -20,11 +26,12 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR("Name cannot be empty."))
             return
 
-        instance, raw_key = ServiceApiKey.generate_key(name=name)
+        instance, raw_key = ServiceApiKey.generate_key(name=name, scopes=options['scope'] or ['users:read'])
 
         self.stdout.write(self.style.SUCCESS(f"Successfully generated Service API Key for: '{name}'"))
         self.stdout.write(f"Key ID: {instance.id}")
         self.stdout.write(f"Prefix: {instance.prefix}")
+        self.stdout.write(f"Scopes: {', '.join(instance.scopes)}")
         self.stdout.write(self.style.WARNING("=" * 60))
         self.stdout.write(self.style.SUCCESS(f"BEARER TOKEN: {raw_key}"))
         self.stdout.write(self.style.WARNING("=" * 60))

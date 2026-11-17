@@ -63,22 +63,25 @@ export function CreateSupportRequestModal() {
       for (const file of files) {
         const processedFile = await processAndValidateFile(file);
         try {
-          const { upload_url } = await getUploadUrl(request.id, {
+          const { upload_url, object_key } = await getUploadUrl(request.id, {
             file_name: processedFile.name,
             content_type: processedFile.type || "application/octet-stream",
             size: processedFile.size,
           });
 
-          await fetch(upload_url, {
+          const uploaded = await fetch(upload_url, {
             method: "PUT",
             body: processedFile,
             headers: {
               "Content-Type": processedFile.type || "application/octet-stream",
             },
           });
+          if (!uploaded.ok) throw new Error(`Upload failed with status ${uploaded.status}`);
 
+          // The full storage key comes from the API; the last part of the
+          // upload URL is only the file name.
           await confirmUpload(request.id, {
-            object_key: upload_url.split("?")[0].split("/").pop() || "",
+            object_key,
             file_name: processedFile.name,
             content_type: processedFile.type || "application/octet-stream",
             size: processedFile.size,

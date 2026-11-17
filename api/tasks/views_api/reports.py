@@ -16,7 +16,8 @@ from rest_framework.views import APIView
 
 from applications.audit import log_audit
 from applications.audit_actions import AuditAction
-from common.params import uuid_param
+from common.exceptions import BadGateway, ServiceUnavailable
+from common.params import int_param, uuid_param
 from common.permissions import has_global_access
 from emails.config import EmailConfig
 from emails.services.daily_report_emails import DailyReportEmailManager
@@ -273,37 +274,25 @@ class DepartmentReportsAllView(APIView):
                     | Q(user__last_name__icontains=q)
                 )
 
-        distinct_dates = list(
-            qs.order_by('-report_date')
-            .values_list('report_date', flat=True)
-            .distinct()
-        )
-        total_dates = len(distinct_dates)
-
-        page_str = request.query_params.get('page', '1')
-        try:
-            page = int(page_str)
-        except (TypeError, ValueError):
-            page = 1
-
-        if page < 1:
-            page = 1
-
+        # One page per calendar day, newest first. The day for the requested
+        # page is found in the database, without loading every date.
+        dates = qs.order_by('-report_date').values_list('report_date', flat=True).distinct()
+        total_dates = qs.values('report_date').distinct().count()
+        page = int_param(request.query_params, 'page', default=1, minimum=1)
         total_reports = qs.count()
 
-        if total_dates == 0 or page > total_dates:
-            return Response({
-                'current_date': None,
-                'page': page,
-                'total_pages': total_dates,
-                'total_dates': total_dates,
-                'total_reports': total_reports,
-                'has_next': False,
-                'next_page': None,
-                'results': [],
-            })
+        envelope = {
+            'count': total_dates,
+            'page': page,
+            'page_size': 1,
+            'total_pages': total_dates,
+            'total_reports': total_reports,
+        }
 
-        target_date = distinct_dates[page - 1]
+        if total_dates == 0 or page > total_dates:
+            return Response({**envelope, 'current_date': None, 'results': []})
+
+        target_date = dates[page - 1]
         reports_for_date = (
             qs.filter(report_date=target_date)
             .select_related('user__staff_profile__department', 'department')
@@ -315,17 +304,9 @@ class DepartmentReportsAllView(APIView):
             .order_by('user__first_name', 'user__last_name', 'user__username')
         )
 
-        has_next = page < total_dates
-        next_page = page + 1 if has_next else None
-
         return Response({
+            **envelope,
             'current_date': str(target_date),
-            'page': page,
-            'total_pages': total_dates,
-            'total_dates': total_dates,
-            'total_reports': total_reports,
-            'has_next': has_next,
-            'next_page': next_page,
             'results': DailyReportDetailSerializer(reports_for_date, many=True).data,
         })
 
@@ -380,10 +361,7 @@ class DailyReportSubreportCreateView(APIView):
             raise PermissionDenied('Forbidden')
 
         if report.report_date != timezone.localdate():
-            return Response(
-                {'error': 'You can only add reports on the current day.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('You can only add reports on the current day.')
 
         subreport = DailyReportSubreport.objects.create(
             daily_report=report,
@@ -440,10 +418,7 @@ class DailyReportSubreportCommentView(APIView):
             raise PermissionDenied('Forbidden')
 
         if subreport.daily_report.report_date != timezone.localdate():
-            return Response(
-                {'error': 'You can only add comments on the current day.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('You can only add comments on the current day.')
 
         comment = DailyReportComment.objects.create(
             subreport=subreport,
@@ -470,10 +445,7 @@ class DailyReportSendEmailView(APIView):
 
     def post(self, request, report_id):
         if not EmailConfig.is_enabled():
-            return Response(
-                {'error': 'Email sending is disabled.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+            raise ServiceUnavailable('Email sending is disabled.')
 
         try:
             report = self.get_report(report_id)
@@ -489,10 +461,7 @@ class DailyReportSendEmailView(APIView):
 
         existing_users_count = User.objects.filter(email__in=recipients, is_active=True).count()
         if existing_users_count != len(recipients):
-            return Response(
-                {'error': 'One or more recipient email addresses are not registered active users.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ValidationError('One or more recipient email addresses are not registered active users.')
 
         sent = DailyReportEmailManager.send_forward(
             report=report,
@@ -500,10 +469,7 @@ class DailyReportSendEmailView(APIView):
             recipients=recipients,
         )
         if not sent:
-            return Response(
-                {'error': 'Failed to send email. Please try again later.'},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+            raise BadGateway('Failed to send email. Please try again later.')
 
         recipient_count = len(recipients)
         detail = (
@@ -511,4 +477,4 @@ class DailyReportSendEmailView(APIView):
             if recipient_count == 1
             else f'Report forwarded to {recipient_count} recipients.'
         )
-        return Response({'detail': detail}, status=status.HTTP_200_OK)
+        return Response({'detail': detail})

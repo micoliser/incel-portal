@@ -90,6 +90,13 @@ test.describe("sharing a weekly summary", () => {
     await expect(finance.getByRole("main").getByText("Shared Report")).toBeVisible();
     await expect(finance.getByRole("main").getByRole("button", { name: "Create Public Share Link" })).toHaveCount(0);
 
+    // The link is shown only when it is created. After a reload the page says
+    // that one exists, without revealing it.
+    await page.reload();
+    await expect(body.getByText(/A public share link is active until/)).toBeVisible();
+    await expect(body.locator('input[value*="token="]')).toHaveCount(0);
+    await expect(body.getByRole("button", { name: "Create New Link" })).toBeVisible();
+
     await body.getByRole("button", { name: "Revoke Link" }).click();
     const revoking = page.getByRole("dialog", { name: "Revoke Share Link" });
     await revoking.getByRole("button", { name: "Revoke Link" }).click();

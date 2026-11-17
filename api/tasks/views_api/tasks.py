@@ -9,14 +9,16 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from applications.audit import log_audit
 from applications.audit_actions import AuditAction
+from common.exceptions import Conflict
+from common.params import list_param
 from common.permissions import has_global_access
+from common.uploads import checked_upload
 from common.users import display_name
 from emails.services.task_emails import TaskEmailManager
 from notifications.models import Notification
@@ -29,17 +31,19 @@ from ..models import (
     TaskAttachment,
     TaskDraft,
 )
-from ..permissions import IsTaskAssignedOrAssigner
+from ..permissions import IsTaskAssignedOrAssigner, IsTaskAssigner, require_may_change_task
 from ..s3 import (
     TaskAttachmentStorageError,
     build_task_attachment_key_prefix,
     generate_task_attachment_upload_url,
 )
 from ..serializers import (
+    MAX_DRAFTS_PER_USER,
     TaskActivitySerializer,
     TaskAttachmentUploadRequestSerializer,
     TaskCommentCreateSerializer,
     TaskDraftSerializer,
+    TaskRejectSerializer,
     TaskSerializer,
 )
 from ..services import create_task_with_side_effects
@@ -54,17 +58,24 @@ def _comment_preview(comment_text: str, words: int = 3) -> str:
     return "..."
 
 
-class TaskPagination(PageNumberPagination):
-    page_size = 20
+def _choice_of(choices):
+    allowed = {value for value, _label in choices}
+
+    def cast(value):
+        if value not in allowed:
+            raise ValueError(value)
+        return value
+
+    return cast
 
 
 class TaskViewSet(ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = TaskPagination
     # No DELETE: tasks are a record of assigned work. Deleting one would also
     # remove its activity history and attachments, with nothing in the audit log.
-    http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    lookup_value_converter = 'uuid'
 
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
@@ -184,37 +195,30 @@ class TaskViewSet(ModelViewSet):
         elif self.action == 'list' and not view_filter:
             queryset = queryset.filter(models.Q(assigned_to=user) | models.Q(assigned_by=user))
 
-        statuses_raw = (self.request.query_params.get('status') or '').strip()
-        if statuses_raw:
-            status_values = [value.strip() for value in statuses_raw.split(',') if value.strip()]
-            allowed_statuses = {choice[0] for choice in Task.STATUS_CHOICES}
-            valid_statuses = [value for value in status_values if value in allowed_statuses]
-            if valid_statuses:
-                queryset = queryset.filter(status__in=valid_statuses)
+        params = self.request.query_params
+        statuses = list_param(params, 'status', _choice_of(Task.STATUS_CHOICES))
+        if statuses:
+            queryset = queryset.filter(status__in=statuses)
 
-        priorities_raw = (self.request.query_params.get('priority') or '').strip()
-        if priorities_raw:
-            priority_values = [value.strip() for value in priorities_raw.split(',') if value.strip()]
-            allowed_priorities = {choice[0] for choice in Task.PRIORITY_CHOICES}
-            valid_priorities = [value for value in priority_values if value in allowed_priorities]
-            if valid_priorities:
-                queryset = queryset.filter(priority__in=valid_priorities)
+        priorities = list_param(params, 'priority', _choice_of(Task.PRIORITY_CHOICES))
+        if priorities:
+            queryset = queryset.filter(priority__in=priorities)
 
         return queryset
 
     def get_permissions(self):
         if self.action in ['list', 'create']:
             return [IsAuthenticated()]
+        if self.action in ['approve', 'reject']:
+            return [IsAuthenticated(), IsTaskAssigner()]
         return [IsAuthenticated(), IsTaskAssignedOrAssigner()]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        assignees = serializer.validated_data.get('assigned_to_ids')
-        if not assignees:
-            single = serializer.validated_data.get('assigned_to')
-            assignees = [single] if single else []
+        # `assigned_to_ids` for several people, or `assigned_to_id` for one.
+        assignees = serializer.validated_data.get('assigned_to_ids') or [serializer.validated_data['assigned_to']]
 
         with transaction.atomic():
             created_tasks = []
@@ -230,18 +234,19 @@ class TaskViewSet(ModelViewSet):
                 )
                 created_tasks.append(task)
 
-        headers = self.get_success_headers(serializer.data)
+        # One task per assignee, so the response is always a list.
         serialized = TaskSerializer(created_tasks, many=True, context={'request': request}).data
-        if len(created_tasks) == 1 and 'assigned_to_ids' not in request.data:
-            return Response(serialized[0], status=status.HTTP_201_CREATED, headers=headers)
-        return Response({
-            'count': len(created_tasks),
-            'tasks': serialized,
-            'id': serialized[0]['id'] if serialized else None,
-        }, status=status.HTTP_201_CREATED, headers=headers)
+        return Response({'count': len(serialized), 'results': serialized}, status=status.HTTP_201_CREATED)
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        old_task = self.get_object()
+        # The task row is locked for the whole update, so two people acting at
+        # once (say, approving while the assignee withdraws) cannot both win,
+        # and the history written below always matches the change made.
+        old_task = Task.objects.select_for_update().get(pk=serializer.instance.pk)
+        if old_task.status != serializer.instance.status:
+            raise Conflict('This task was just changed by someone else. Reload it and try again.')
+        require_may_change_task(self.request.user, old_task, serializer.validated_data)
         old_status = old_task.status
         old_deadline = old_task.deadline
         old_priority = old_task.priority
@@ -430,10 +435,8 @@ class TaskViewSet(ModelViewSet):
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         task = self.get_object()
-        if request.user != task.assigned_by:
-            return Response({'error': 'Only the assigner can approve task completion.'}, status=status.HTTP_403_FORBIDDEN)
         if task.status != 'under_review':
-            return Response({'error': 'Only tasks under review can be approved.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Only tasks under review can be approved.')
 
         serializer = self.get_serializer(task, data={'status': 'completed'}, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -443,20 +446,20 @@ class TaskViewSet(ModelViewSet):
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
         task = self.get_object()
-        if request.user != task.assigned_by:
-            return Response({'error': 'Only the assigner can reject task completion.'}, status=status.HTTP_403_FORBIDDEN)
         if task.status != 'under_review':
-            return Response({'error': 'Only tasks under review can be rejected.'}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError('Only tasks under review can be rejected.')
 
-        reason = request.data.get('reason') or ''
-        if not isinstance(reason, str):
-            raise ValidationError({'reason': 'Must be text.'})
-        reason = reason.strip()
-        target_status = request.data.get('target_status', 'in_progress')
-        if target_status not in ['in_progress', 'pending']:
-            target_status = 'in_progress'
+        rejection = TaskRejectSerializer(data=request.data)
+        rejection.is_valid(raise_exception=True)
 
-        serializer = self.get_serializer(task, data={'status': target_status, 'rejection_reason': reason}, partial=True)
+        serializer = self.get_serializer(
+            task,
+            data={
+                'status': rejection.validated_data['target_status'],
+                'rejection_reason': rejection.validated_data['reason'],
+            },
+            partial=True,
+        )
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
         return Response(TaskSerializer(task, context={'request': request}).data)
@@ -493,20 +496,19 @@ class TaskViewSet(ModelViewSet):
         attachments_data = serializer.validated_data.get('attachments')
         if attachments_data:
             expected_prefix = build_task_attachment_key_prefix(task.id)
-            # Accept either configured prefix (which may include env prefix) or the bare 'task-attachments/<id>/'
-            alt_prefix = None
-            if '/' in expected_prefix:
-                alt_prefix = expected_prefix.split('/', 1)[-1]
-                if not alt_prefix.endswith('/'):
-                    alt_prefix = alt_prefix + '/'
             for attachment_data in attachments_data:
                 key = str(attachment_data['object_key'])
-                ok = key.startswith(expected_prefix) or (alt_prefix and key.startswith(alt_prefix))
-                if not ok:
-                    return Response(
-                        {'attachments': ['One or more attachment keys do not belong to this task.']},
-                        status=status.HTTP_400_BAD_REQUEST,
+                if not key.startswith(expected_prefix):
+                    raise ValidationError(
+                        {'attachments': ['One or more attachment keys do not belong to this task.']}
                     )
+                # Record what storage holds, not what the browser claims.
+                attachment_data['size'], attachment_data['content_type'] = checked_upload(
+                    key,
+                    field='attachments',
+                    claimed_size=attachment_data['size'],
+                    claimed_type=attachment_data['content_type'],
+                )
 
         links_data = serializer.validated_data.get('links', [])
         activity = TaskActivity.objects.create(
@@ -555,12 +557,18 @@ class TaskViewSet(ModelViewSet):
 
 
 class TaskDraftViewSet(ModelViewSet):
+    """A user's own unfinished task forms. A short personal list, shown whole."""
+
     serializer_class = TaskDraftSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    lookup_value_converter = 'uuid'
 
     def get_queryset(self):
         return TaskDraft.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
+        if TaskDraft.objects.filter(user=self.request.user).count() >= MAX_DRAFTS_PER_USER:
+            raise ValidationError(f'You can keep at most {MAX_DRAFTS_PER_USER} drafts. Delete some first.')
         serializer.save(user=self.request.user)

@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import Link from "next/link";
 import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -171,9 +172,9 @@ export default function AllReportsPage() {
           page: pageToFetch,
         });
 
-        setTotalDates(data.total_dates);
+        setTotalDates(data.count);
         setTotalReports(data.total_reports);
-        setHasNextPage(data.has_next);
+        setHasNextPage(pageHasNext(data));
         setCurrentPage(data.page);
 
         if (data.current_date && data.results.length > 0) {

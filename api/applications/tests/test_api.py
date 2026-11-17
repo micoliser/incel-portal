@@ -116,7 +116,7 @@ class ApplicationEmailAPITest(APITestCase):
             'department_ids': [str(self.dep_eng.id), str(self.dep_hr.id)],
         }
 
-        response = self.client.post(reverse('admin-applications-create'), payload, format='json')
+        response = self.client.post(reverse('applications-list'), payload, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(mock_send.called)
@@ -138,7 +138,7 @@ class ApplicationEmailAPITest(APITestCase):
         payload = {
             'department_ids': [str(self.dep_eng.id), str(self.dep_hr.id)],
         }
-        response = self.client.put(reverse('admin-applications-departments', kwargs={'application_id': app.id}), payload, format='json')
+        response = self.client.patch(reverse('applications-detail', kwargs={'application_id': app.id}), payload, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(mock_send.called)
@@ -161,10 +161,142 @@ class ApplicationEmailAPITest(APITestCase):
         payload = {
             'department_ids': [str(self.dep_eng.id)],
         }
-        response = self.client.put(reverse('admin-applications-departments', kwargs={'application_id': app.id}), payload, format='json')
+        response = self.client.patch(reverse('applications-detail', kwargs={'application_id': app.id}), payload, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(mock_send.called)
         called_app, recipients = mock_send.call_args.args
         self.assertEqual(called_app.id, app.id)
         self.assertEqual(set(recipients), {'hr@example.com'})
+
+
+class ApplicationVisibilityTests(APITestCase):
+    """Who can see which applications, and who gets their address."""
+
+    def setUp(self):
+        from organization.models import Department
+
+        self.staff_role = Role.objects.create(name='Staff', code='STAFF', has_global_access=False)
+        self.dep_eng = Department.objects.create(name='Engineering', code='ENG')
+        self.dep_hr = Department.objects.create(name='Human Resources', code='HR', handles_general_support=True)
+
+        self.staff = User.objects.create_user(username='staff@example.com', email='staff@example.com')
+        StaffProfile.objects.create(user=self.staff, role=self.staff_role, department=self.dep_eng)
+        self.root = User.objects.create_superuser('root@example.com', 'root@example.com', 'RootStrongPass123!')
+
+        A = InternalApplication
+        self.open_app = A.objects.create(
+            name='Open', slug='open', app_url='https://open.example.com',
+            access_scope=A.AccessScope.ALL_AUTHENTICATED,
+        )
+        self.hr_app = A.objects.create(
+            name='HR Only', slug='hr-only', app_url='https://hr.example.com', access_scope=A.AccessScope.RESTRICTED,
+        )
+        self.hr_app.departments.add(self.dep_hr)
+        self.hidden_app = A.objects.create(
+            name='Hidden', slug='hidden', app_url='https://hidden.example.com',
+            access_scope=A.AccessScope.ALL_AUTHENTICATED, visibility_scope=A.VisibilityScope.HIDDEN,
+        )
+        self.inactive_app = A.objects.create(
+            name='Switched Off', slug='switched-off', app_url='https://off.example.com',
+            access_scope=A.AccessScope.ALL_AUTHENTICATED, status=A.Status.INACTIVE,
+        )
+
+    def _list(self, user, **params):
+        self.client.force_authenticate(user)
+        response = self.client.get(reverse('applications-list'), params)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def test_list_is_always_paginated(self):
+        data = self._list(self.staff)
+        self.assertEqual(set(data), {'count', 'page', 'page_size', 'total_pages', 'results'})
+        self.assertEqual(data['page_size'], 15)
+        self.assertEqual(self._list(self.staff, page_size=2)['page_size'], 2)
+
+    def test_hidden_applications_exist_only_for_administrators(self):
+        names = {item['name'] for item in self._list(self.staff)['results']}
+        self.assertEqual(names, {'Open', 'HR Only', 'Switched Off'})
+
+        names = {item['name'] for item in self._list(self.root)['results']}
+        self.assertIn('Hidden', names)
+
+        self.client.force_authenticate(self.staff)
+        hidden = {'application_id': self.hidden_app.id}
+        self.assertEqual(self.client.get(reverse('applications-detail', kwargs=hidden)).status_code, 404)
+        self.assertEqual(self.client.get(reverse('applications-can-access', kwargs=hidden)).status_code, 404)
+        self.assertEqual(self.client.post(reverse('applications-open', kwargs=hidden)).status_code, 404)
+
+    def test_deleting_an_application_removes_it_for_everyone_but_administrators(self):
+        self.client.force_authenticate(self.root)
+        detail = reverse('applications-detail', kwargs={'application_id': self.open_app.id})
+        self.assertEqual(self.client.delete(detail).status_code, status.HTTP_204_NO_CONTENT)
+
+        self.assertNotIn('Open', {item['name'] for item in self._list(self.staff)['results']})
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.get(detail).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(
+            self.client.post(reverse('applications-open', kwargs={'application_id': self.open_app.id})).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_address_is_only_given_to_someone_who_may_open_the_application(self):
+        by_name = {item['name']: item for item in self._list(self.staff)['results']}
+        self.assertEqual(by_name['Open']['app_url'], 'https://open.example.com')
+        self.assertTrue(by_name['Open']['can_access'])
+        self.assertIsNone(by_name['HR Only']['app_url'])
+        self.assertFalse(by_name['HR Only']['can_access'])
+        self.assertIsNone(by_name['Switched Off']['app_url'])
+
+        # An administrator edits applications, so sees every address.
+        by_name = {item['name']: item for item in self._list(self.root)['results']}
+        self.assertEqual(by_name['HR Only']['app_url'], 'https://hr.example.com')
+
+    def test_an_inactive_application_cannot_be_opened(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.post(reverse('applications-open', kwargs={'application_id': self.inactive_app.id}))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['error']['message'], 'This application is inactive.')
+
+    def test_accessible_filter_and_search(self):
+        names = [item['name'] for item in self._list(self.staff, accessible='true')['results']]
+        self.assertEqual(names, ['Open', 'Switched Off'])
+        names = [item['name'] for item in self._list(self.staff, search='hr')['results']]
+        self.assertEqual(names, ['HR Only'])
+
+    def test_listing_does_not_query_per_application(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.force_authenticate(self.staff)
+        with CaptureQueriesContext(connection) as before:
+            self.client.get(reverse('applications-list'))
+        for index in range(8):
+            app = InternalApplication.objects.create(
+                name=f'Extra {index}', slug=f'extra-{index}', app_url='https://x.example.com',
+            )
+            app.departments.add(self.dep_hr)
+        with CaptureQueriesContext(connection) as after:
+            self.client.get(reverse('applications-list'))
+        self.assertLessEqual(len(after), len(before))
+
+    def test_only_administrators_can_create_edit_or_delete(self):
+        self.client.force_authenticate(self.staff)
+        detail = reverse('applications-detail', kwargs={'application_id': self.open_app.id})
+        payload = {'name': 'New', 'slug': 'new', 'app_url': 'https://new.example.com'}
+        self.assertEqual(self.client.post(reverse('applications-list'), payload).status_code, 403)
+        self.assertEqual(self.client.patch(detail, {'name': 'Renamed'}).status_code, 403)
+        self.assertEqual(self.client.delete(detail).status_code, 403)
+
+    def test_setting_an_exception_twice_updates_it(self):
+        self.client.force_authenticate(self.root)
+        url = reverse('applications-overrides', kwargs={'application_id': self.hr_app.id})
+
+        first = self.client.post(url, {'user_id': self.staff.id, 'effect': 'ALLOW'})
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data['user']['id'], self.staff.id)
+        self.assertEqual(str(first.data['application_id']), str(self.hr_app.id))
+
+        second = self.client.post(url, {'user_id': self.staff.id, 'effect': 'DENY'})
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data['effect'], 'DENY')

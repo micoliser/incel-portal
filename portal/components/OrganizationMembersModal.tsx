@@ -75,7 +75,7 @@ export function OrganizationMembersModal({
   const fetchMembers = useCallback(async () => {
     try {
       setLoading(true);
-      const resp = await apiClient.get("/admin/users", {
+      const resp = await apiClient.get("/users", {
         params: { [`${entityType}_id`]: entityId }
       });
       setMembers(resp.data.results || resp.data);
@@ -94,7 +94,7 @@ export function OrganizationMembersModal({
       const params: Record<string, string | number> = { page_size: 50 };
       
       if (searchQuery) {
-        params.q = searchQuery;
+        params.search = searchQuery;
       }
       
       if (entityType === "department") {
@@ -105,7 +105,7 @@ export function OrganizationMembersModal({
         params.unit_id = parentEntityId;
       }
       
-      const resp = await apiClient.get("/admin/users", { params });
+      const resp = await apiClient.get("/users", { params });
       let data: User[] = resp.data.results || resp.data;
       
       // Filter out users who are ALREADY exactly in this entity
@@ -181,7 +181,7 @@ export function OrganizationMembersModal({
 
     try {
       setIsSubmitting(true);
-      await apiClient.post(`/admin/organization/${entityType}s/${entityId}/bulk_members/`, {
+      await apiClient.post(`/organization/${entityType}s/${entityId}/members`, {
         user_ids: Array.from(selectedUserIds),
         action: mode
       });

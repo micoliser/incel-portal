@@ -94,17 +94,18 @@ export default function InventoryItemDetail() {
     try {
       setLoading(true);
       const [itemRes, meRes, permsRes] = await Promise.all([
-        apiClient.get(`/inventory/items/${id}/`),
+        apiClient.get(`/inventory/items/${id}`),
         apiClient.get("/me"),
         apiClient.get("/me/permissions")
       ]);
       setItem(itemRes.data);
 
-      const meData = meRes.data as { department_code?: string | null };
+      const meData = meRes.data as { can_manage_inventory?: boolean };
       const permsData = permsRes.data as { is_superuser?: boolean; role_code?: string | null };
       
       const isAdmin = Boolean(permsData.is_superuser) || String(permsData.role_code ?? "").toUpperCase() === "ADMIN";
-      const isIT = String(meData.department_code ?? "").toUpperCase() === "IT";
+      // Members of a department responsible for company assets.
+        const isIT = Boolean(meData.can_manage_inventory);
       
       setHasWriteAccess(isAdmin || isIT);
       setError(null);
@@ -127,8 +128,8 @@ export default function InventoryItemDetail() {
       setIsSubmitting(true);
       // This dialog only assigns to a person; department assignment is done
       // from the inventory list.
-      await apiClient.post(`/inventory/items/${id}/assign/`, {
-        assigned_to: assignForm.assigned_to,
+      await apiClient.post(`/inventory/items/${id}/assign`, {
+        assigned_to_id: assignForm.assigned_to,
         condition_notes: assignForm.condition_notes,
       });
       toast.success("Item assigned successfully");
@@ -147,7 +148,7 @@ export default function InventoryItemDetail() {
 
     try {
       setIsSubmitting(true);
-      await apiClient.post(`/inventory/items/${id}/return_item/`, returnForm);
+      await apiClient.post(`/inventory/items/${id}/return`, returnForm);
       toast.success("Item returned successfully");
       setIsReturnOpen(false);
       setReturnForm({ condition_notes: "" });

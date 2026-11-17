@@ -113,10 +113,7 @@ class EmailNotificationHelper:
         Returns:
             User instance or None
         """
-        try:
-            return User.objects.get(email=email)
-        except User.DoesNotExist:
-            return None
+        return User.objects.filter(email__iexact=email).first()
 
     @staticmethod
     def format_name(user: User) -> str:

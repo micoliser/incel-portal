@@ -87,8 +87,10 @@ class Seeder:
         self.role_md = Role.objects.create(name='MD', code='MD', has_global_access=True)
 
         self.dept_ops = Department.objects.create(name='Operations', code='OPS')
-        self.dept_it = Department.objects.create(name='IT', code='IT')
-        self.dept_hr = Department.objects.create(name='Human Resources', code='HR')
+        self.dept_it = Department.objects.create(
+            name='IT', code='IT', manages_inventory=True, handles_it_support=True,
+        )
+        self.dept_hr = Department.objects.create(name='Human Resources', code='HR', handles_general_support=True)
         self.dept_finance = Department.objects.create(name='Finance', code='FIN')
 
         self.unit_logistics = Unit.objects.create(department=self.dept_ops, name='Logistics', code='OPS-LOG')

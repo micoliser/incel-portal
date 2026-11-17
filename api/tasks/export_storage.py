@@ -1,3 +1,5 @@
+import logging
+
 """PDF export storage helpers for weekly summaries."""
 
 import io
@@ -9,6 +11,8 @@ from django.utils import timezone
 
 from common.users import display_name
 from tasks.s3 import _s3_client
+
+logger = logging.getLogger(__name__)
 
 
 def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict | None = None) -> bytes:
@@ -88,6 +92,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
             computed = calculate_user_weekly_summary(user, week_start, week_end)
             return computed.get('daily_reports') or []
         except Exception:
+            logger.exception('Could not compute daily reports for the summary export')
             return []
 
     def pct_text(value):

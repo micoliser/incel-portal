@@ -1,3 +1,4 @@
+import type { Paginated } from "@/lib/api/types";
 import { apiClient } from "@/lib/api-client";
 
 export type NotificationItem = {
@@ -6,22 +7,14 @@ export type NotificationItem = {
   title: string;
   body: string;
   link_url: string;
-  payload_json: Record<string, unknown>;
+  payload: Record<string, unknown>;
   is_read: boolean;
   read_at: string | null;
   created_at: string;
   actor_username: string | null;
 };
 
-export type NotificationListResponse = {
-  count: number;
-  page: number;
-  page_size: number;
-  total_pages: number;
-  next_page: number | null;
-  previous_page: number | null;
-  results: NotificationItem[];
-};
+export type NotificationListResponse = Paginated<NotificationItem>;
 
 export type PushSubscriptionRecord = {
   id: string;
@@ -55,7 +48,7 @@ export async function markNotificationRead(
 
 export async function markAllNotificationsRead(): Promise<number> {
   const response = await apiClient.post("/notifications/read-all");
-  return Number(response.data?.updated || 0);
+  return Number(response.data?.count || 0);
 }
 
 export async function clearNotification(id: string): Promise<void> {
@@ -64,7 +57,7 @@ export async function clearNotification(id: string): Promise<void> {
 
 export async function clearAllNotifications(): Promise<number> {
   const response = await apiClient.delete("/notifications/clear-all");
-  return Number(response.data?.deleted || 0);
+  return Number(response.data?.count || 0);
 }
 
 export async function getPushPublicKey(): Promise<string> {

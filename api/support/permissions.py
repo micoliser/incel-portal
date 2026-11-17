@@ -18,7 +18,9 @@ class CanManageDepartmentRequests(BasePermission):
 
 
 class CanViewRequest(BasePermission):
-    """User can view the request: requester, assigned handler, or dept manager."""
+    """User can view the request: requester, assigned handler, the manager of
+    the department handling it, or the requester's own line manager (who is
+    notified about it, and may look but not act)."""
 
     def has_object_permission(self, request, view, obj: SupportRequest):
         if obj.requester == request.user:
@@ -27,7 +29,7 @@ class CanViewRequest(BasePermission):
             return True
         if _is_department_manager(request.user, obj):
             return True
-        return False
+        return obj.line_manager_id == request.user.id
 
 
 class CanComment(BasePermission):

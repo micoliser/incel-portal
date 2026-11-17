@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client";
+import type { Paginated } from "@/lib/api/types";
 
 export interface TodoItem {
   id: string;
@@ -58,12 +59,7 @@ export interface UpdateTodoPayload {
   is_completed?: boolean;
 }
 
-export interface PaginatedResponse<T> {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
-}
+export type PaginatedResponse<T> = Paginated<T>;
 
 export interface GetTodosParams {
   view?: "all" | "today" | "upcoming" | "overdue" | "completed";
@@ -74,49 +70,41 @@ export interface GetTodosParams {
 
 export async function getTodos(params?: GetTodosParams): Promise<PaginatedResponse<TodoItem>> {
   const queryParams = { page: 1, ...params };
-  const res = await apiClient.get<PaginatedResponse<TodoItem> | TodoItem[]>("/todos/", { params: queryParams });
-  if (Array.isArray(res.data)) {
-    return {
-      count: res.data.length,
-      next: null,
-      previous: null,
-      results: res.data,
-    };
-  }
+  const res = await apiClient.get<PaginatedResponse<TodoItem>>("/todos", { params: queryParams });
   return res.data;
 }
 
 export async function getTodoStats(): Promise<TodoStats> {
-  const res = await apiClient.get<TodoStats>("/todos/stats/");
+  const res = await apiClient.get<TodoStats>("/todos/stats");
   return res.data;
 }
 
 export async function createTodo(payload: CreateTodoPayload): Promise<TodoItem> {
-  const res = await apiClient.post<TodoItem>("/todos/", payload);
+  const res = await apiClient.post<TodoItem>("/todos", payload);
   return res.data;
 }
 
 export async function updateTodo(id: string, payload: UpdateTodoPayload): Promise<TodoItem> {
-  const res = await apiClient.patch<TodoItem>(`/todos/${id}/`, payload);
+  const res = await apiClient.patch<TodoItem>(`/todos/${id}`, payload);
   return res.data;
 }
 
 export async function toggleTodoComplete(id: string): Promise<TodoItem> {
-  const res = await apiClient.post<TodoItem>(`/todos/${id}/toggle-complete/`);
+  const res = await apiClient.post<TodoItem>(`/todos/${id}/toggle-complete`);
   return res.data;
 }
 
 export async function snoozeTodo(id: string, minutes: number = 15): Promise<TodoItem> {
-  const res = await apiClient.post<TodoItem>(`/todos/${id}/snooze/`, { minutes });
+  const res = await apiClient.post<TodoItem>(`/todos/${id}/snooze`, { minutes });
   return res.data;
 }
 
 export async function deleteTodo(id: string): Promise<void> {
-  await apiClient.delete(`/todos/${id}/`);
+  await apiClient.delete(`/todos/${id}`);
 }
 
-export async function clearCompletedTodos(): Promise<{ deleted_count: number }> {
-  const res = await apiClient.post<{ deleted_count: number }>("/todos/clear-completed/");
+export async function clearCompletedTodos(): Promise<{ count: number }> {
+  const res = await apiClient.post<{ count: number }>("/todos/clear-completed");
   return res.data;
 }
 

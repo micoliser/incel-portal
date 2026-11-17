@@ -3,9 +3,28 @@ import secrets
 
 from django import forms
 from django.contrib import admin, messages
-from django.utils.safestring import mark_safe
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.models import User
+from django.utils.html import format_html
 
-from .models import ServiceApiKey, StaffProfile
+from .models import SERVICE_API_SCOPES, ServiceApiKey, StaffProfile
+
+# Generated keys are 43 random characters; a hand-chosen one must not be weaker
+# than something guessable.
+MIN_CUSTOM_KEY_LENGTH = 32
+
+
+class UserAdmin(DjangoUserAdmin):
+    """Users cannot be deleted from the admin site. Their tasks, reports and
+    requests reference them, so leavers are deactivated instead (Users page in
+    the portal, or the Active box here)."""
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+admin.site.unregister(User)
+admin.site.register(User, UserAdmin)
 
 
 @admin.register(StaffProfile)
@@ -26,9 +45,25 @@ class ServiceApiKeyAdminForm(forms.ModelForm):
         help_text="Leave blank to automatically generate a random token, or provide your own custom token string.",
     )
 
+    scopes = forms.MultipleChoiceField(
+        choices=SERVICE_API_SCOPES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text='What this key may do. A key with no scope is accepted nowhere.',
+    )
+
     class Meta:
         model = ServiceApiKey
-        fields = ('name', 'is_active', 'expires_at', 'created_by')
+        fields = ('name', 'scopes', 'is_active', 'expires_at', 'created_by')
+
+    def clean_custom_key(self):
+        value = (self.cleaned_data.get('custom_key') or '').strip()
+        if value and len(value) < MIN_CUSTOM_KEY_LENGTH:
+            raise forms.ValidationError(
+                f'A custom token must be at least {MIN_CUSTOM_KEY_LENGTH} characters, or leave it blank '
+                'to generate a strong one.'
+            )
+        return value
 
 
 @admin.register(ServiceApiKey)
@@ -41,6 +76,7 @@ class ServiceApiKeyAdmin(admin.ModelAdmin):
     fields = (
         'name',
         'custom_key',
+        'scopes',
         'is_active',
         'expires_at',
         'created_by',
@@ -92,29 +128,19 @@ class ServiceApiKeyAdmin(admin.ModelAdmin):
         border_color = "#22c55e" if is_new else "#eab308"
         text_color = "#15803d" if is_new else "#854d0e"
         subtext_color = "#166534" if is_new else "#713f12"
-        btn_color = "#16a34a" if is_new else "#ca8a04"
 
-        msg = mark_safe(
-            f"""
-            <div style="background: {bg_color}; border: 2px solid {border_color}; border-radius: 8px; padding: 16px; margin: 12px 0;">
-                <div style="font-weight: 700; color: {text_color}; font-size: 15px; margin-bottom: 6px;">
-                    🔑 {title}: <code>{obj.name}</code>
-                </div>
-                <div style="color: {subtext_color}; font-size: 13px; margin-bottom: 10px;">
-                    <strong>Copy your raw Bearer token now:</strong> For security reasons, the database only stores the SHA-256 hash. <u>You will not be able to view this full token again</u>.
-                </div>
-                <div style="display: flex; gap: 8px; align-items: center; max-width: 650px;">
-                    <input type="text" id="raw-key-input-{obj.id}" value="{raw_key}" readonly
-                           style="flex: 1; font-family: monospace; font-size: 13px; font-weight: 600; padding: 8px 12px; border: 1px solid {border_color}; border-radius: 6px; background: #ffffff; color: #111827;"
-                           onclick="this.select();" />
-                    <button type="button"
-                            onclick="navigator.clipboard.writeText(document.getElementById('raw-key-input-{obj.id}').value); alert('API Key copied to clipboard!');"
-                            style="background: {btn_color}; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; white-space: nowrap;">
-                        Copy Token
-                    </button>
-                </div>
-            </div>
-            """
+        msg = format_html(
+            '<div style="background: {}; border: 2px solid {}; border-radius: 8px; padding: 16px; margin: 12px 0;">'
+            '<div style="font-weight: 700; color: {}; font-size: 15px; margin-bottom: 6px;">'
+            '🔑 {}: <code>{}</code></div>'
+            '<div style="color: {}; font-size: 13px; margin-bottom: 10px;">'
+            '<strong>Copy your raw Bearer token now:</strong> For security reasons, the database only stores '
+            'the SHA-256 hash. <u>You will not be able to view this full token again</u>.</div>'
+            '<input type="text" value="{}" readonly onclick="this.select();" '
+            'style="width: 100%; max-width: 650px; font-family: monospace; font-size: 13px; font-weight: 600; '
+            'padding: 8px 12px; border: 1px solid {}; border-radius: 6px; background: #ffffff; color: #111827;" />'
+            '</div>',
+            bg_color, border_color, text_color, title, obj.name, subtext_color, raw_key, border_color,
         )
         messages.success(request, msg)
 
@@ -127,26 +153,16 @@ class ServiceApiKeyAdmin(admin.ModelAdmin):
             obj.hashed_key = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
             obj.save(update_fields=['prefix', 'hashed_key', 'updated_at'])
 
-            msg = mark_safe(
-                f"""
-                <div style="background: #fefce8; border: 2px solid #eab308; border-radius: 8px; padding: 16px; margin: 12px 0;">
-                    <div style="font-weight: 700; color: #854d0e; font-size: 15px; margin-bottom: 6px;">
-                        🔄 Key Regenerated for: <code>{obj.name}</code>
-                    </div>
-                    <div style="color: #713f12; font-size: 13px; margin-bottom: 10px;">
-                        <strong>Copy your new Bearer token now:</strong> The previous key is now revoked.
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: center; max-width: 650px;">
-                        <input type="text" id="regen-key-{obj.id}" value="{raw_key}" readonly
-                               style="flex: 1; font-family: monospace; font-size: 13px; font-weight: 600; padding: 8px 12px; border: 1px solid #eab308; border-radius: 6px; background: #ffffff; color: #111827;"
-                               onclick="this.select();" />
-                        <button type="button"
-                                onclick="navigator.clipboard.writeText(document.getElementById('regen-key-{obj.id}').value); alert('New API Key copied to clipboard!');"
-                                style="background: #ca8a04; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; white-space: nowrap;">
-                            Copy New Token
-                        </button>
-                    </div>
-                </div>
-                """
+            msg = format_html(
+                '<div style="background: #fefce8; border: 2px solid #eab308; border-radius: 8px; padding: 16px; '
+                'margin: 12px 0;"><div style="font-weight: 700; color: #854d0e; font-size: 15px; margin-bottom: 6px;">'
+                '🔄 Key Regenerated for: <code>{}</code></div>'
+                '<div style="color: #713f12; font-size: 13px; margin-bottom: 10px;">'
+                '<strong>Copy your new Bearer token now:</strong> The previous key is now revoked.</div>'
+                '<input type="text" value="{}" readonly onclick="this.select();" '
+                'style="width: 100%; max-width: 650px; font-family: monospace; font-size: 13px; font-weight: 600; '
+                'padding: 8px 12px; border: 1px solid #eab308; border-radius: 6px; background: #ffffff; '
+                'color: #111827;" /></div>',
+                obj.name, raw_key,
             )
             messages.warning(request, msg)

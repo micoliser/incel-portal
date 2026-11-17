@@ -70,7 +70,7 @@ class TaskOwnershipTests(AccessControlTestCase):
 
         response = self.client.patch(self.url, {'status': 'completed'}, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, 'pending')
         self.assertIsNone(self.task.completed_at)
@@ -149,7 +149,9 @@ class SupportTicketWorkflowBypassTests(AccessControlTestCase):
 
     def setUp(self):
         super().setUp()
-        self.dep_it, _ = Department.objects.get_or_create(name='IT', defaults={'code': 'IT'})
+        self.dep_it, _ = Department.objects.get_or_create(
+            name='IT', defaults={'code': 'IT', 'manages_inventory': True, 'handles_it_support': True}
+        )
         self.ticket = SupportRequest.objects.create(
             requester=self.staff_user,
             title='Laptop will not start',
@@ -218,10 +220,10 @@ class AuditLogAccessTests(AccessControlTestCase):
             application=self.application, user=self.other_user,
             effect=ApplicationAccessOverride.Effect.ALLOW, reason='Covering',
         )
-        self.list_url = reverse('admin-audit-logs-list')
-        self.detail_url = reverse('admin-audit-logs-detail', kwargs={'log_id': self.log.id})
+        self.list_url = reverse('audit-logs-list')
+        self.detail_url = reverse('audit-logs-detail', kwargs={'log_id': self.log.id})
         self.overrides_url = reverse(
-            'admin-applications-overrides-create', kwargs={'application_id': self.application.id},
+            'applications-overrides', kwargs={'application_id': self.application.id},
         )
 
     def test_ordinary_staff_cannot_read_audit_logs(self):
@@ -270,12 +272,10 @@ class ShareTokenAuditTests(AccessControlTestCase):
     def test_creating_a_share_link_does_not_log_the_token(self):
         self.act_as(self.staff_user)
 
-        response = self.client.post(
-            reverse('weekly-summary-share'), {'week_start_date': str(self.week_start)}, format='json',
-        )
+        response = self.client.post(reverse('summary-share', kwargs={'week': self.week_start}))
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        token = response.data['share_token']
+        token = response.data['share_link'].split('token=')[1]
         log = AuditLog.objects.get(action='WEEKLY_SUMMARY_SHARED')
         self.assertNotIn('share_token', log.metadata_json)
         self.assertNotIn(token, str(log.metadata_json))

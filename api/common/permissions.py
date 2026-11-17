@@ -9,13 +9,12 @@ def has_global_access(user):
         return True
 
     profile = getattr(user, 'staff_profile', None)
-    if not profile or not profile.role:
+    if not profile or not profile.role or not profile.role.is_active:
         return False
 
-    if profile.role.has_global_access:
-        return True
-
-    return profile.role.code in {'ED', 'MD'}
+    # Set on the role itself (migration organization/0004 set it for ED and
+    # MD), so a role's rights come from its record, not from its code.
+    return profile.role.has_global_access
 
 
 def has_admin_access(user):
@@ -26,10 +25,24 @@ def has_admin_access(user):
         return True
 
     profile = getattr(user, 'staff_profile', None)
-    if not profile or not profile.role:
+    if not profile or not profile.role or not profile.role.is_active:
         return False
 
     return profile.role.code == 'ADMIN'
+
+
+def can_manage_user(actor, target):
+    """Whether `actor` may edit, re-role, deactivate or reset `target`.
+
+    Superusers and executives (global access) can only be managed by a
+    superuser. Without this, any administrator could reset an executive's
+    password and sign in as them.
+    """
+    if not has_admin_access(actor):
+        return False
+    if actor.is_superuser:
+        return True
+    return not (target.is_superuser or has_global_access(target))
 
 
 class IsAdminUser(BasePermission):

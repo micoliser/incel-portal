@@ -74,7 +74,7 @@ export function UserCombobox({
           const response = await apiClient.get(apiEndpoint, {
             params: {
               ...additionalParams,
-              q: search,
+              search,
               page_size: 20, // Just get top 20 matches
             },
           })

@@ -1,9 +1,10 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+
+from common.routers import ApiRouter
 
 from .views_api import SupportRequestViewSet
 
-router = DefaultRouter()
+router = ApiRouter()
 router.register(r'requests', SupportRequestViewSet, basename='support-request')
 
 urlpatterns = [

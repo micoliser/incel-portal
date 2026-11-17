@@ -1,7 +1,10 @@
 import datetime
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -74,10 +77,11 @@ class ExternalUserAPITests(TestCase):
             is_active=True,
         )
 
-        # Inactive user matching email (should NOT be returned because is_active=False)
+        # Inactive user (should NOT be returned by default). Email addresses are
+        # unique, so it has its own.
         self.inactive_user = User.objects.create_user(
             username='inactive_samuel@gmail.com',
-            email='samueliwelumo@gmail.com',
+            email='inactive_samuel@gmail.com',
             first_name='Inactive',
             last_name='Samuel',
             password='password123',
@@ -169,3 +173,58 @@ class ExternalUserAPITests(TestCase):
         self.assertEqual(data[0]['username'], 'inactive_samuel@gmail.com')
         self.assertFalse(data[0]['is_active'])
 
+
+
+class ServiceApiKeyHardeningTests(TestCase):
+    def setUp(self):
+        self.url = reverse('external-users-list')
+
+    def _get(self, raw_key):
+        return self.client.get(self.url, HTTP_AUTHORIZATION=f'Bearer {raw_key}')
+
+    def test_a_key_without_the_scope_is_refused(self):
+        _key, raw = ServiceApiKey.generate_key(name='No scope', scopes=[])
+        self.assertEqual(self._get(raw).status_code, 403)
+
+        _key, raw = ServiceApiKey.generate_key(name='Directory reader')
+        self.assertEqual(self._get(raw).status_code, 200)
+
+    def test_last_used_is_recorded_at_most_once_a_minute(self):
+        key, raw = ServiceApiKey.generate_key(name='Busy client')
+        with CaptureQueriesContext(connection) as first:
+            self._get(raw)
+        key.refresh_from_db()
+        self.assertIsNotNone(key.last_used_at)
+        with CaptureQueriesContext(connection) as second:
+            self._get(raw)
+        updates = [q for q in second.captured_queries if q['sql'].startswith('UPDATE')]
+        self.assertEqual(updates, [])
+        self.assertTrue(any(q['sql'].startswith('UPDATE') for q in first.captured_queries))
+
+    def test_admin_form_refuses_a_short_custom_key(self):
+        from accounts.admin import ServiceApiKeyAdminForm
+
+        form = ServiceApiKeyAdminForm(data={'name': 'Weak', 'custom_key': 'password123', 'is_active': True})
+        self.assertFalse(form.is_valid())
+        self.assertIn('custom_key', form.errors)
+
+        form = ServiceApiKeyAdminForm(data={'name': 'Strong', 'custom_key': 'x' * 40, 'is_active': True})
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_admin_banner_escapes_the_key_name(self):
+        from django.contrib.admin.sites import site
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from accounts.admin import ServiceApiKeyAdmin
+
+        key, _raw = ServiceApiKey.generate_key(name='<script>alert(1)</script>')
+        request = RequestFactory().get('/')
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        request._generated_raw_api_key = 'raw-key'
+        ServiceApiKeyAdmin(ServiceApiKey, site)._append_key_banner(request, key)
+
+        rendered = str(list(request._messages)[0])
+        self.assertNotIn('<script>', rendered)
+        self.assertIn('&lt;script&gt;', rendered)

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import timedelta
 
 from celery import shared_task
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.db import transaction
@@ -56,9 +57,12 @@ def generate_recurring_task_occurrences() -> dict[str, int]:
     for schedule_id in due_schedule_ids:
         try:
             with transaction.atomic():
+                # Re-checked under the lock: the schedule may have been paused
+                # or ended since the list above was read.
                 schedule = RecurringSchedule.objects.select_for_update(skip_locked=True).get(
                     id=schedule_id,
                     is_active=True,
+                    is_paused=False,
                     next_run_at__isnull=False,
                     next_run_at__lte=now,
                 )
@@ -106,6 +110,17 @@ def _process_schedule(*, schedule: RecurringSchedule, now) -> int:
         start_after=start_after,
         end_at=now,
     )
+
+    # After an outage many runs may be overdue at once. Creating a task for
+    # each would bury the assignee, so only the most recent ones are created.
+    due_times = list(due_times)
+    limit = settings.RECURRING_MAX_CATCH_UP_RUNS
+    if len(due_times) > limit:
+        logger.warning(
+            'Recurring schedule %s: skipping %s missed runs, creating the latest %s',
+            schedule.id, len(due_times) - limit, limit,
+        )
+        due_times = due_times[-limit:]
 
     for scheduled_for in due_times:
         occurrence, _ = RecurrenceOccurrence.objects.get_or_create(
@@ -159,7 +174,7 @@ def generate_weekly_summaries() -> dict[str, int]:
     """Generate weekly summaries for all users every Monday at 00:00"""
     
     # Calculate the previous week (Monday to Sunday)
-    today = date.today()
+    today = timezone.localdate()
     # Monday is 0, Sunday is 6
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday + 7)  # Start of last week
@@ -204,13 +219,15 @@ def send_weekly_summary_emails() -> dict[str, int]:
     """Send weekly summary emails to users every Monday at 8 AM"""
     
     # Find summaries from last week
-    today = timezone.now().date()
+    today = timezone.localdate()
     last_week_start = today - timedelta(days=(today.weekday() + 7))  # Last Monday
     
+    # Deactivated accounts are not emailed.
     summaries = WeeklySummary.objects.filter(
-        week_start_date=last_week_start
-    )
-    
+        week_start_date=last_week_start,
+        user__is_active=True,
+    ).select_related('user')
+
     emails_sent = 0
     errors = 0
     
@@ -235,16 +252,19 @@ def send_weekly_summary_emails() -> dict[str, int]:
 
 @shared_task(name='tasks.calculate_weekly_comparisons')
 def calculate_weekly_comparisons() -> dict[str, int]:
-    """Calculate week-over-week comparisons for all users"""
-    
+    """Compare the week that has just finished with the one before it, for every user.
+
+    Runs on Monday after the weekly summaries are generated; those are for the
+    week that ended on Sunday, so that is the week compared here.
+    """
+
     comparisons_created = 0
     errors = 0
-    
-    # Get all current week summaries
-    today = timezone.now().date()
-    current_week_start = today - timedelta(days=today.weekday())  # Monday of current week
+
+    today = timezone.localdate()
+    current_week_start = today - timedelta(days=today.weekday() + 7)  # Monday of the finished week
     previous_week_start = current_week_start - timedelta(days=7)
-    
+
     current_summaries = WeeklySummary.objects.filter(
         week_start_date=current_week_start
     )

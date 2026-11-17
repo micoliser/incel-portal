@@ -40,7 +40,8 @@ Barry,Nwachukwu,Ogbu,barry@example.com,Incel@123,Male,Tourism
         self.assertEqual(staff_role.name, "Staff")
 
         aileen = User.objects.get(username="aileen@example.com")
-        self.assertTrue(aileen.check_password("Incel@123"))
+        # No password is set, and a password column in the file is ignored.
+        self.assertFalse(aileen.has_usable_password())
         self.assertEqual(aileen.first_name, "Aileen")
         self.assertEqual(aileen.last_name, "Lamberte")
 

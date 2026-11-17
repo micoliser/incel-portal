@@ -12,11 +12,12 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 import sys
-from pathlib import Path
 from datetime import timedelta
+from pathlib import Path
 
-from dotenv import load_dotenv
 from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -74,6 +75,10 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'portalapi.urls'
 
+# API routes have no trailing slash. A wrong form gets a plain 404, never a
+# redirect (which would drop the body of a POST).
+APPEND_SLASH = False
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -98,22 +103,43 @@ WSGI_APPLICATION = 'portalapi.wsgi.application'
 # Check if running tests
 IS_TESTING = 'test' in sys.argv and 'pytest' not in sys.modules
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3' if IS_TESTING else 'django.db.backends.postgresql',
-        'NAME': '/tmp/test_incel_portal.db' if IS_TESTING else os.getenv('DB_NAME', 'incel_portal_db'),
-        **(
-            {
-                'USER': os.getenv('DB_USER', 'incel_portal_user'),
-                'PASSWORD': os.getenv('DB_PASSWORD', 'change-this-password'),
-                'HOST': os.getenv('DB_HOST', '127.0.0.1'),
-                'PORT': os.getenv('DB_PORT', '5432'),
-            }
-            if not IS_TESTING
-            else {}
-        ),
+# The built-in fallbacks for the signing key and the database password are
+# public, so they are only acceptable for local development and tests. Anywhere
+# else a missing value must stop the process: tokens signed with a known key
+# can be forged.
+_PLACEHOLDER_SECRET_KEY = 'change-me-in-env'
+_PLACEHOLDER_DB_PASSWORD = 'change-this-password'
+if not DEBUG and not IS_TESTING:
+    if SECRET_KEY == _PLACEHOLDER_SECRET_KEY or not SECRET_KEY:
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is not true.')
+    if os.getenv('DB_PASSWORD', _PLACEHOLDER_DB_PASSWORD) in ('', _PLACEHOLDER_DB_PASSWORD):
+        raise ImproperlyConfigured('DB_PASSWORD must be set when DJANGO_DEBUG is not true.')
+
+# Test runs use SQLite unless TEST_USE_SQLITE=false, which CI sets so the
+# suite also runs against Postgres (constraints, row locks and case rules
+# differ). TEST_DB_NAME names the Postgres test database; with --keepdb an
+# existing database can be reused when the role may not create databases.
+USE_SQLITE = IS_TESTING and os.getenv('TEST_USE_SQLITE', 'true').lower() == 'true'
+
+if USE_SQLITE:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': '/tmp/test_incel_portal.db',
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'incel_portal_db'),
+            'USER': os.getenv('DB_USER', 'incel_portal_user'),
+            'PASSWORD': os.getenv('DB_PASSWORD', 'change-this-password'),
+            'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+            'TEST': {'NAME': os.getenv('TEST_DB_NAME') or None},
+        }
+    }
 
 
 # Password validation
@@ -135,12 +161,38 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+# Cache
+# Sign-in lockouts, rate limits and job locks are kept in the cache, so every
+# API worker and Celery process must share one. Set CACHE_URL to a Redis
+# database (not the one Celery uses), for example redis://:password@host:6379/1.
+# Without it each process keeps its own in-memory cache, which is only suitable
+# for local development and tests.
+CACHE_URL = '' if IS_TESTING else os.getenv('CACHE_URL', '')
+if CACHE_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': CACHE_URL,
+            'KEY_PREFIX': 'portal',
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+
+
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# The zone the business works in. It decides what "today" is (daily reports,
+# reminders) and when the scheduled jobs below run. Timestamps are still
+# stored in UTC.
+TIME_ZONE = os.getenv('APP_TIME_ZONE', 'Africa/Lagos')
 
 USE_I18N = True
 
@@ -174,8 +226,35 @@ AWS_S3_OBJECT_ACL = os.getenv('AWS_S3_OBJECT_ACL', 'private')
 WEB_PUSH_VAPID_PUBLIC_KEY = os.getenv('WEB_PUSH_VAPID_PUBLIC_KEY', '')
 WEB_PUSH_VAPID_PRIVATE_KEY = os.getenv('WEB_PUSH_VAPID_PRIVATE_KEY', '')
 WEB_PUSH_VAPID_SUBJECT = os.getenv('WEB_PUSH_VAPID_SUBJECT', 'mailto:admin@localhost')
+# The only places a browser push subscription may point. A subscription is a
+# URL the server posts to, so anything else would let a user aim the server at
+# an address of their choosing. An entry starting with a dot matches subdomains.
+WEB_PUSH_ALLOWED_HOSTS = [
+    host.strip().lower()
+    for host in os.getenv(
+        'WEB_PUSH_ALLOWED_HOSTS',
+        'fcm.googleapis.com,updates.push.services.mozilla.com,.push.apple.com,.notify.windows.com',
+    ).split(',')
+    if host.strip()
+]
+WEB_PUSH_TIMEOUT_SECONDS = int(os.getenv('WEB_PUSH_TIMEOUT_SECONDS', '10'))
+
+# Number of reverse proxies between the internet and this API that append to
+# X-Forwarded-For (CapRover's nginx is one). The client address is read that
+# many entries from the right of the header; see common/network.py. Use 0 when
+# the API is reached directly.
+TRUSTED_PROXY_COUNT = int(os.getenv('TRUSTED_PROXY_COUNT', '1'))
 
 REST_FRAMEWORK = {
+    # Rate limits use the same client address as the rest of the API.
+    'NUM_PROXIES': TRUSTED_PROXY_COUNT,
+    # JSON only. Browsers can send form-encoded bodies to another site without
+    # a CORS preflight; refusing them closes that route for forged requests.
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+    ],
+    # The test client sends JSON unless a test says otherwise, like the portal.
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'common.authentication.CookieJWTAuthentication',
     ],
@@ -183,6 +262,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
+    # Every list endpoint is paginated in the same shape (common/pagination.py).
+    # A view that returns a short, complete list sets pagination_class = None.
+    'DEFAULT_PAGINATION_CLASS': 'common.pagination.StandardPagination',
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
@@ -196,6 +278,7 @@ REST_FRAMEWORK = {
         'email': '25/hour',
         'support': '100/minute',
         'uploads': '100/minute',
+        'service': '120/minute',
     },
 }
 
@@ -213,6 +296,13 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
+# A job that hangs is stopped, so one stuck task cannot hold a worker forever.
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '540'))
+CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '600'))
+# No code reads task results. Not storing them keeps task arguments (which can
+# include links sent by email) out of the result backend.
+CELERY_TASK_IGNORE_RESULT = True
+# Times below are in TIME_ZONE.
 CELERY_BEAT_SCHEDULE = {
     'send-eod-daily-reports': {
         'task': 'tasks.send_eod_daily_reports',
@@ -230,6 +320,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'tasks.generate_weekly_summaries',
         'schedule': crontab(hour=0, minute=0, day_of_week=1),  # Every Monday at 00:00
     },
+    'calculate-weekly-comparisons': {
+        'task': 'tasks.calculate_weekly_comparisons',
+        'schedule': crontab(hour=0, minute=15, day_of_week=1),  # Every Monday at 00:15
+    },
     'cache-organization-summaries': {
         'task': 'tasks.cache_organization_summaries',
         'schedule': crontab(hour=0, minute=30, day_of_week=1),  # Every Monday at 00:30
@@ -237,6 +331,14 @@ CELERY_BEAT_SCHEDULE = {
     'send-weekly-summary-emails': {
         'task': 'tasks.send_weekly_summary_emails',
         'schedule': crontab(hour=8, minute=0, day_of_week=1),  # Every Monday at 08:00
+    },
+    'flush-expired-tokens': {
+        'task': 'accounts.flush_expired_tokens',
+        'schedule': crontab(hour=2, minute=0),  # Daily at 02:00
+    },
+    'prune-auth-failure-audit-logs': {
+        'task': 'accounts.prune_auth_failure_audit_logs',
+        'schedule': crontab(hour=2, minute=30),  # Daily at 02:30
     },
     'auto-close-support-requests': {
         'task': 'support.auto_close_resolved_requests',
@@ -246,6 +348,13 @@ CELERY_BEAT_SCHEDULE = {
 
 
 SUPPORT_AUTO_CLOSE_DAYS = int(os.getenv('SUPPORT_AUTO_CLOSE_DAYS', '7'))
+
+# How many overdue runs of a recurring task are created when the scheduler
+# catches up after downtime. Older missed runs are skipped.
+RECURRING_MAX_CATCH_UP_RUNS = int(os.getenv('RECURRING_MAX_CATCH_UP_RUNS', '1'))
+
+# How long a public link to a weekly summary keeps working.
+SUMMARY_SHARE_LINK_DAYS = int(os.getenv('SUMMARY_SHARE_LINK_DAYS', '30'))
 
 
 def _env_list(name: str, default: str = ''):
@@ -264,6 +373,11 @@ TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_UPLOAD_UR
 TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '60'))
 TASK_ATTACHMENT_MAX_SIZE = int(os.getenv('TASK_ATTACHMENT_MAX_SIZE', str(10 * 1024 * 1024)))
 TASK_ATTACHMENT_MAX_FILES = int(os.getenv('TASK_ATTACHMENT_MAX_FILES', '10'))
+# Uploaded files are checked against storage before they are recorded
+# (common/storage.verify_upload). Off only where there is no storage to ask:
+# test runs, and the end-to-end stack (which sets VERIFY_UPLOADS=False).
+VERIFY_UPLOADS = (not IS_TESTING) and os.getenv('VERIFY_UPLOADS', 'True').lower() == 'true'
+MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '300'))
 TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES = _env_list(
     'TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES',
     'image/png,image/jpeg,image/webp,application/pdf,text/plain,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -295,8 +409,39 @@ if not DEBUG and 'test' not in sys.argv:
     SECURE_SSL_REDIRECT = True
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
+
+# ===== LOGGING =====
+# Everything goes to the console, where CapRover (and docker logs) collect it.
+# LOG_LEVEL sets the level for this project's code; Django itself logs warnings
+# and above.
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+_PROJECT_LOGGERS = (
+    'accounts', 'applications', 'common', 'emails', 'inventory', 'notifications',
+    'organization', 'portalapi', 'support', 'tasks',
+)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'standard'},
+    },
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {
+        'django': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+        # One line per request from the development server (runserver).
+        'django.server': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        **{name: {'handlers': ['console'], 'level': LOG_LEVEL, 'propagate': False} for name in _PROJECT_LOGGERS},
+    },
+}
+if IS_TESTING:
+    # Tests trigger errors on purpose; their log lines would bury the results.
+    for _logger in LOGGING['loggers'].values():
+        _logger['level'] = 'CRITICAL'
+    LOGGING['root']['level'] = 'CRITICAL'
 
 # ===== EMAIL CONFIGURATION =====
 # Email backend configuration
@@ -304,6 +449,8 @@ EMAIL_BACKEND = os.getenv(
     'EMAIL_BACKEND',
     'django.core.mail.backends.smtp.EmailBackend'
 )
+# Only used by the file-based backend (the end-to-end suite reads sent mail from it).
+EMAIL_FILE_PATH = os.getenv('EMAIL_FILE_PATH', str(BASE_DIR / 'sent-mail'))
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
@@ -325,6 +472,14 @@ if IS_TESTING:
 # A test that needs the Celery path patches EmailConfig.use_celery.
 SEND_EMAILS_CELERY = (not IS_TESTING) and os.getenv('SEND_EMAILS_CELERY', 'True').lower() == 'true'
 EMAIL_SENDER_NAME = os.getenv('EMAIL_SENDER_NAME', 'Incel Portal')
+# An email triggered inside a database transaction is held until it commits.
+# Tests run each case inside a transaction that never commits, so they send
+# straight away; the tests of this behaviour switch it back on.
+EMAIL_SEND_ON_COMMIT = not IS_TESTING
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '15'))
+# Browser pushes go through Celery too, so a slow push service never holds up
+# a request. Test runs and stacks without a worker send in-process.
+SEND_PUSH_CELERY = (not IS_TESTING) and os.getenv('SEND_PUSH_CELERY', 'True').lower() == 'true'
 
 # Portal frontend URL
 PORTAL_BASE_URL = os.getenv(
@@ -335,4 +490,21 @@ FRONTEND_URL = PORTAL_BASE_URL
 
 # Password reset token timeout (in seconds, e.g. 1 hour = 3600)
 PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
+# Links an administrator sends (new account, admin-requested reset) last longer,
+# because the recipient is not waiting for them.
+ACCOUNT_SETUP_LINK_TIMEOUT = int(os.getenv('ACCOUNT_SETUP_LINK_TIMEOUT', str(72 * 3600)))
+# Reset emails one account can be sent per hour, whoever asks.
+PASSWORD_RESET_EMAILS_PER_HOUR = int(os.getenv('PASSWORD_RESET_EMAILS_PER_HOUR', '3'))
+
+# Sign-in protection. A client address gets LOGIN_MAX_ATTEMPTS wrong passwords
+# for one account before it is locked out of that account for the lockout
+# period. The per-account ceiling counts failures from every address, so
+# guessing spread over many addresses is also stopped, without letting one
+# outsider lock a colleague out after a handful of attempts.
+LOGIN_MAX_ATTEMPTS = int(os.getenv('LOGIN_MAX_ATTEMPTS', '10'))
+LOGIN_LOCKOUT_SECONDS = int(os.getenv('LOGIN_LOCKOUT_SECONDS', str(15 * 60)))
+LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR = int(os.getenv('LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR', '50'))
+
+# Failed sign-in and failed reset rows in the audit log are deleted after this.
+AUDIT_AUTH_FAILURE_RETENTION_DAYS = int(os.getenv('AUDIT_AUTH_FAILURE_RETENTION_DAYS', '90'))
 

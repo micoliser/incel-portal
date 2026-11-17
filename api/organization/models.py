@@ -32,6 +32,18 @@ class Department(TimeStampedModel):
         related_name='managed_departments'
     )
     is_active = models.BooleanField(default=True)
+    # What the department is responsible for. These replace rules that looked
+    # at the department's name or code, so renaming a department no longer
+    # grants or removes rights.
+    manages_inventory = models.BooleanField(
+        default=False, help_text='Members may create, edit, assign and retire company assets.',
+    )
+    handles_it_support = models.BooleanField(
+        default=False, help_text='IT support requests are routed to this department.',
+    )
+    handles_general_support = models.BooleanField(
+        default=False, help_text='Support requests that are not IT are routed to this department.',
+    )
 
     class Meta:
         ordering = ['name']

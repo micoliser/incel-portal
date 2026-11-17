@@ -1,10 +1,11 @@
 from django.contrib.auth.models import User
-from rest_framework.test import APITestCase
-from rest_framework import status
 from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
 
-from organization.models import Department, Unit, Team, Role
 from accounts.models import StaffProfile
+from organization.models import Department, Role, Team, Unit
+
 
 class BulkMemberAssignmentTests(APITestCase):
     def setUp(self):
@@ -32,7 +33,7 @@ class BulkMemberAssignmentTests(APITestCase):
         StaffProfile.objects.create(user=self.user3, role=self.role_admin, department=self.dept2)
 
     def test_bulk_add_to_department(self):
-        url = reverse('admin-departments-bulk-members', kwargs={'pk': self.dept.id})
+        url = reverse('department-members', kwargs={'pk': self.dept.id})
         data = {'user_ids': [self.user1.id, self.user2.id], 'action': 'add'}
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -43,7 +44,7 @@ class BulkMemberAssignmentTests(APITestCase):
         self.assertEqual(self.user2.staff_profile.department, self.dept)
 
     def test_bulk_add_to_unit(self):
-        url = reverse('admin-units-bulk-members', kwargs={'pk': self.unit.id})
+        url = reverse('unit-members', kwargs={'pk': self.unit.id})
         data = {'user_ids': [self.user1.id, self.user2.id], 'action': 'add'}
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -58,7 +59,7 @@ class BulkMemberAssignmentTests(APITestCase):
         self.user1.staff_profile.unit = self.unit
         self.user1.staff_profile.save()
 
-        url = reverse('admin-units-bulk-members', kwargs={'pk': self.unit.id})
+        url = reverse('unit-members', kwargs={'pk': self.unit.id})
         data = {'user_ids': [self.user1.id], 'action': 'remove'}
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -68,7 +69,7 @@ class BulkMemberAssignmentTests(APITestCase):
         self.assertIsNone(self.user1.staff_profile.team)
 
     def test_bulk_add_to_team(self):
-        url = reverse('admin-teams-bulk-members', kwargs={'pk': self.team.id})
+        url = reverse('team-members', kwargs={'pk': self.team.id})
         data = {'user_ids': [self.user3.id], 'action': 'add'}
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -84,7 +85,7 @@ class BulkMemberAssignmentTests(APITestCase):
         self.user3.staff_profile.team = self.team
         self.user3.staff_profile.save()
 
-        url = reverse('admin-teams-bulk-members', kwargs={'pk': self.team.id})
+        url = reverse('team-members', kwargs={'pk': self.team.id})
         data = {'user_ids': [self.user3.id], 'action': 'remove'}
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -101,13 +102,13 @@ class BulkMemberAssignmentTests(APITestCase):
         StaffProfile.objects.create(user=normal_user, role=role_staff)
         
         self.client.force_authenticate(user=normal_user)
-        url = reverse('admin-departments-bulk-members', kwargs={'pk': self.dept.id})
+        url = reverse('department-members', kwargs={'pk': self.dept.id})
         data = {'user_ids': [self.user1.id], 'action': 'add'}
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_bulk_add_invalid_user_id(self):
-        url = reverse('admin-teams-bulk-members', kwargs={'pk': self.team.id})
+        url = reverse('team-members', kwargs={'pk': self.team.id})
         data = {'user_ids': [99999], 'action': 'add'}
         response = self.client.post(url, data, format='json')
         # Serializer now correctly validates and returns 400 Bad Request

@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import StaffProfile
+from accounts.services import send_account_setup_link
 from organization.models import Department, Role
 
 
@@ -15,6 +16,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("csv_file", type=str, help="Path to the CSV file")
+        parser.add_argument(
+            "--send-links",
+            action="store_true",
+            help="Email each newly created user a link to set their password.",
+        )
 
     def handle(self, *args, **options):
         csv_path = Path(options["csv_file"])
@@ -57,6 +63,7 @@ class Command(BaseCommand):
         )
 
         created_users = 0
+        new_users = []
         skipped_rows = 0
         updated_profiles = 0
 
@@ -68,7 +75,6 @@ class Command(BaseCommand):
 
             first_name = (row.get("First Name") or "").strip()
             last_name = (row.get("Last Name") or "").strip()
-            password = (row.get("Passwords") or "Incel@123").strip()
             department_name = (row.get("Departments") or "").strip()
             department = department_map.get(department_name)
 
@@ -81,9 +87,12 @@ class Command(BaseCommand):
                 },
             )
             if created:
-                user.set_password(password)
+                # No password is set: the user chooses one through a link
+                # (--send-links, or "Forgot password" on the sign-in page).
+                user.set_unusable_password()
                 user.save()
                 created_users += 1
+                new_users.append(user)
             else:
                 changed = False
                 if user.email != email:
@@ -108,7 +117,17 @@ class Command(BaseCommand):
                 profile.save(update_fields=["role", "department"])
                 updated_profiles += 1
 
+        links_sent = 0
+        if options["send_links"]:
+            for user in new_users:
+                try:
+                    send_account_setup_link(user)
+                    links_sent += 1
+                except Exception as exc:
+                    self.stderr.write(f"Could not email {user.email}: {exc}")
+
         self.stdout.write(self.style.SUCCESS("Import complete."))
+        self.stdout.write(f"Set-password links sent: {links_sent}")
         self.stdout.write(f"Departments created: {created_departments}")
         self.stdout.write(f"Users created: {created_users}")
         self.stdout.write(f"Rows skipped due to blank email: {skipped_rows}")

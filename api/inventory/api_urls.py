@@ -1,5 +1,6 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+
+from common.routers import ApiRouter
 
 from .views_api import (
     InventoryCategoryViewSet,
@@ -8,12 +9,12 @@ from .views_api import (
     MyInventoryView,
 )
 
-router = DefaultRouter()
+router = ApiRouter()
 router.register(r'inventory/categories', InventoryCategoryViewSet, basename='inventory-category')
 router.register(r'inventory/items', InventoryItemViewSet, basename='inventory-item')
 router.register(r'inventory/maintenance-logs', InventoryMaintenanceLogViewSet, basename='inventory-maintenance-log')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('me/inventory/', MyInventoryView.as_view(), name='my-inventory'),
+    path('me/inventory', MyInventoryView.as_view(), name='my-inventory'),
 ]

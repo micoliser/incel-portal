@@ -2,6 +2,9 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
+from django.core import mail
+from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
@@ -15,6 +18,7 @@ from common.test_utils import BaseAPITestCase
 class PasswordResetApiTests(BaseAPITestCase):
     def setUp(self):
         super().setUp()
+        cache.clear()
         self.inactive_user = User.objects.create_user(
             username='inactive.user@example.com',
             email='inactive.user@example.com',
@@ -30,44 +34,48 @@ class PasswordResetApiTests(BaseAPITestCase):
             is_active=False,
         )
 
-    def test_request_reset_nonexistent_email_returns_404_ux_transparency(self):
+    def test_request_reset_answers_the_same_for_every_email(self):
+        """The response must not reveal whether an email has an account or its status."""
         url = reverse('auth-password-reset-request')
-        response = self.client.post(url, {'email': 'nobody@incelgroup.com'}, format='json')
+        responses = [
+            self.client.post(url, {'email': email}, format='json')
+            for email in ('nobody@incelgroup.com', 'inactive.user@example.com', self.staff_user.email)
+        ]
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn('No account found with this email address', response.data['detail'])
+        for response in responses:
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data, responses[0].data)
 
-        audit = AuditLog.objects.filter(action='AUTH_PASSWORD_RESET_FAILED').first()
-        self.assertIsNotNone(audit)
-        self.assertEqual(audit.metadata_json.get('reason'), 'user_not_found')
+        # Only the real, active account is sent anything.
+        self.assertEqual([message.to for message in mail.outbox], [[self.staff_user.email]])
 
-    def test_request_reset_inactive_user_returns_403_ux_transparency(self):
-        url = reverse('auth-password-reset-request')
-        response = self.client.post(url, {'email': 'inactive.user@example.com'}, format='json')
+        reasons = set(
+            AuditLog.objects.filter(action='AUTH_PASSWORD_RESET_FAILED').values_list('metadata_json__reason', flat=True)
+        )
+        self.assertEqual(reasons, {'user_not_found', 'user_inactive'})
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn('currently deactivated', response.data['detail'])
-
-        audit = AuditLog.objects.filter(action='AUTH_PASSWORD_RESET_FAILED').first()
-        self.assertIsNotNone(audit)
-        self.assertEqual(audit.metadata_json.get('reason'), 'user_inactive')
-
-    @patch('accounts.views_api.UserEmailManager.send_password_reset_email')
-    def test_request_reset_valid_user_sends_email_and_logs_audit(self, mock_send_email):
+    def test_request_reset_valid_user_sends_email_and_logs_audit(self):
         url = reverse('auth-password-reset-request')
         response = self.client.post(url, {'email': self.staff_user.email}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('reset link has been sent', response.data['detail'])
 
-        mock_send_email.assert_called_once()
-        args, kwargs = mock_send_email.call_args
-        self.assertEqual(kwargs['user'], self.staff_user)
-        self.assertIn('reset-password?uid=', kwargs['reset_url'])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('reset-password?uid=', mail.outbox[0].body + str(mail.outbox[0].alternatives))
 
         audit = AuditLog.objects.filter(action='AUTH_PASSWORD_RESET_REQUESTED').first()
         self.assertIsNotNone(audit)
         self.assertEqual(audit.target_id, str(self.staff_user.id))
+
+    @override_settings(PASSWORD_RESET_EMAILS_PER_HOUR=3)
+    def test_one_account_is_sent_a_limited_number_of_reset_emails(self):
+        url = reverse('auth-password-reset-request')
+        for _ in range(5):
+            response = self.client.post(url, {'email': self.staff_user.email}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(len(mail.outbox), 3)
 
     def test_validate_token_success(self):
         uid = urlsafe_base64_encode(force_bytes(self.staff_user.pk))
@@ -130,7 +138,7 @@ class PasswordResetApiTests(BaseAPITestCase):
         response = self.client.post(url, payload, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('invalid or has expired', response.data['detail'])
+        self.assertIn('invalid or has expired', str(response.data['error']['details']))
 
     def test_confirm_reset_weak_password_rejected(self):
         uid = urlsafe_base64_encode(force_bytes(self.staff_user.pk))

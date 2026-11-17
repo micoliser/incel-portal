@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core import mail
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -24,12 +26,18 @@ from tasks.models import (
 )
 from tasks.services import calculate_weekly_comparison, check_user_goals
 from tasks.tasks import cache_organization_summaries
+from tasks.views_api.summaries import hash_share_token
+
+
+def _share_emails():
+    return [message for message in mail.outbox if 'shared' in message.subject.lower()]
 
 
 class BaseAPITestCase(TestCase):
     """Base test case with common setup"""
     
     def setUp(self):
+        cache.clear()
         """Set up test users and client"""
         self.client = APIClient()
         self.user1 = User.objects.create_user(
@@ -166,30 +174,62 @@ class UserSharingTests(BaseAPITestCase):
         )
         
         self.client.force_authenticate(user=self.user1)
-        response = self.client.post(
-            '/api/v1/summaries/share-with-user/',
-            {
-                'week_start_date': str(week_start),
-                'user_id': self.user2.id
-            }
-        )
-        
+        url = f'/api/v1/summaries/weeks/{week_start}/user-shares'
+        response = self.client.post(url, {'user_id': self.user2.id})
+
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         share = WeeklySummaryUserShare.objects.get(
             summary=summary,
             shared_with=self.user2
         )
         self.assertEqual(share.shared_by, self.user1)
+
+        # The link is returned once, and only its hash is stored.
+        token = response.data['share_link'].split('token=')[1]
+        self.assertEqual(share.share_token, hash_share_token(token))
+        self.assertEqual(len(_share_emails()), 1)
+
+        # Listing shares never reveals a link.
+        listed = self.client.get(url)
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(listed.data[0]['shared_with'], self.user2.id)
+        self.assertNotIn('share_link', listed.data[0])
+        self.assertNotIn('share_token', listed.data[0])
+
+        # Sharing again straight away does not email the colleague again.
+        again = self.client.post(url, {'user_id': self.user2.id})
+        self.assertEqual(again.status_code, status.HTTP_200_OK)
+        self.assertNotIn('share_link', again.data)
+        self.assertEqual(len(_share_emails()), 1)
+
+        # The recipient opens it with the emailed link.
+        self.client.force_authenticate(user=self.user2)
+        opened = self.client.get(f'/api/v1/summaries/shared/{token}')
+        self.assertEqual(opened.status_code, status.HTTP_200_OK)
+
+    def test_cannot_share_with_an_inactive_user_or_yourself(self):
+        week_start = date(2024, 5, 13)
+        WeeklySummary.objects.create(
+            user=self.user1,
+            week_start_date=week_start,
+            week_end_date=week_start + timedelta(days=6),
+            summary_data=self.build_summary_data()
+        )
+        self.user2.is_active = False
+        self.user2.save(update_fields=['is_active'])
+        url = f'/api/v1/summaries/weeks/{week_start}/user-shares'
+
+        self.client.force_authenticate(user=self.user1)
+        self.assertEqual(self.client.post(url, {'user_id': self.user2.id}).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.post(url, {'user_id': self.user1.id}).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(len(_share_emails()), 0)
     
     def test_cannot_share_nonexistent_summary(self):
         """Test sharing non-existent summary returns error"""
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(
-            '/api/v1/summaries/share-with-user/',
-            {
-                'week_start_date': '2020-01-01',
-                'user_id': self.user2.id
-            }
+            '/api/v1/summaries/weeks/2020-01-06/user-shares',
+            {'user_id': self.user2.id},
         )
         
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -208,11 +248,8 @@ class UserSharingTests(BaseAPITestCase):
         
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(
-            '/api/v1/summaries/share-with-user/',
-            {
-                'week_start_date': str(week_start),
-                'user_id': 99999
-            }
+            f'/api/v1/summaries/weeks/{week_start}/user-shares',
+            {'user_id': 99999},
         )
         
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -239,13 +276,7 @@ class ExportTests(BaseAPITestCase):
         fake_s3_client.generate_presigned_url.return_value = 'https://example.com/export.pdf'
 
         with patch('tasks.export_storage._s3_client', return_value=fake_s3_client):
-            response = self.client.post(
-                '/api/v1/summaries/export/',
-                {
-                    'week_start_date': str(week_start),
-                    'format': 'pdf'
-                }
-            )
+            response = self.client.post(f'/api/v1/summaries/weeks/{week_start}/export')
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['format'], 'pdf')
@@ -272,7 +303,7 @@ class GoalTests(BaseAPITestCase):
         week_start = date(2024, 5, 13)
         
         response = self.client.post(
-            '/api/v1/goals/',
+            '/api/v1/goals',
             {
                 'metric': 'files_attached',
                 'target_value': 85.0,
@@ -306,7 +337,7 @@ class GoalTests(BaseAPITestCase):
         
         self.client.force_authenticate(user=self.user1)
         response = self.client.get(
-            '/api/v1/goals/',
+            '/api/v1/goals',
             {'week_start_date': str(week_start)}
         )
         
@@ -360,7 +391,7 @@ class GoalTests(BaseAPITestCase):
         )
 
         self.client.force_authenticate(user=self.user1)
-        response = self.client.delete(f'/api/v1/goals/{goal.id}/')
+        response = self.client.delete(f'/api/v1/goals/{goal.id}')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         goal.refresh_from_db()
@@ -374,7 +405,7 @@ class OrganizationTests(BaseAPITestCase):
         """Test organization summary endpoint requires admin access"""
         self.client.force_authenticate(user=self.user1)
         response = self.client.get(
-            reverse('weekly-summary-organization-summary'),
+            reverse('summary-organization'),
             {'week_start_date': '2024-05-13'}
         )
         
@@ -404,7 +435,7 @@ class OrganizationTests(BaseAPITestCase):
         
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.get(
-            reverse('weekly-summary-organization-summary'),
+            reverse('summary-organization'),
             {'week_start_date': str(week_start)}
         )
         
@@ -515,7 +546,7 @@ class OrganizationTests(BaseAPITestCase):
         with patch('tasks.services.calculate_organization_summary') as mock_calculate:
             mock_calculate.side_effect = AssertionError('live calculation should not run')
             response = self.client.get(
-                reverse('weekly-summary-organization-summary'),
+                reverse('summary-organization'),
                 {'week_start_date': str(week_start)}
             )
 
@@ -544,7 +575,7 @@ class OrganizationTests(BaseAPITestCase):
 
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.get(
-            reverse('weekly-summary-organization-summary'),
+            reverse('summary-organization'),
             {'week_start_date': str(week_start)}
         )
 
@@ -643,36 +674,30 @@ class PublicShareTests(BaseAPITestCase):
             summary_data=summary_data
         )
 
+        share_url = f'/api/v1/summaries/weeks/{week_start}/share'
         self.client.force_authenticate(user=self.user1)
-        response = self.client.post(
-            '/api/v1/summaries/share/',
-            {'week_start_date': str(week_start)}
-        )
+        response = self.client.post(share_url)
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        share_token = response.data.get('share_token')
+        share_token = response.data['share_link'].split('token=')[1]
         self.assertTrue(share_token)
 
-        # share_status should report shared
-        status_resp = self.client.get(f'/api/v1/summaries/share-status/?week_start_date={week_start}')
+        status_resp = self.client.get(share_url)
         self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
         self.assertTrue(status_resp.data.get('shared'))
 
-        # Shared view requires authentication in this app
-        self.client.force_authenticate(user=self.user1)
-        shared_resp = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        # Any signed-in user can open a public link.
+        self.client.force_authenticate(user=self.user2)
+        shared_resp = self.client.get(f'/api/v1/summaries/shared/{share_token}')
         self.assertEqual(shared_resp.status_code, status.HTTP_200_OK)
         self.assertIn('summary', shared_resp.data)
         self.assertIn('historical', shared_resp.data)
 
-        # Revoke the public share
         self.client.force_authenticate(user=self.user1)
-        revoke_resp = self.client.post('/api/v1/summaries/revoke_share/', {'week_start_date': str(week_start)})
-        self.assertEqual(revoke_resp.status_code, status.HTTP_200_OK)
-        self.assertTrue(revoke_resp.data.get('revoked'))
+        revoke_resp = self.client.delete(share_url)
+        self.assertEqual(revoke_resp.status_code, status.HTTP_204_NO_CONTENT)
 
-        # Now share_status should report not shared
-        status_resp2 = self.client.get(f'/api/v1/summaries/share-status/?week_start_date={week_start}')
+        status_resp2 = self.client.get(share_url)
         self.assertEqual(status_resp2.status_code, status.HTTP_200_OK)
         self.assertFalse(status_resp2.data.get('shared'))
 
@@ -694,22 +719,22 @@ class UserScopedShareTests(BaseAPITestCase):
             summary=summary,
             shared_by=self.user1,
             shared_with=self.user2,
-            share_token=share_token
+            share_token=hash_share_token(share_token)
         )
 
         # Unauthenticated should be rejected by auth middleware
         self.client.force_authenticate(user=None)
-        resp = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        resp = self.client.get(f'/api/v1/summaries/shared/{share_token}')
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
 
         # Wrong authenticated user should be forbidden
         self.client.force_authenticate(user=self.admin_user)
-        resp2 = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        resp2 = self.client.get(f'/api/v1/summaries/shared/{share_token}')
         self.assertEqual(resp2.status_code, status.HTTP_403_FORBIDDEN)
 
         # Intended recipient can view
         self.client.force_authenticate(user=self.user2)
-        resp3 = self.client.get(f'/api/v1/summaries/shared/?token={share_token}')
+        resp3 = self.client.get(f'/api/v1/summaries/shared/{share_token}')
         self.assertEqual(resp3.status_code, status.HTTP_200_OK)
         self.assertIn('summary', resp3.data)
 
@@ -775,13 +800,13 @@ class FilesTests(BaseAPITestCase):
 
         # Owner can list files
         self.client.force_authenticate(user=self.user1)
-        owner_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=sent')
+        owner_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files?view=sent')
         self.assertEqual(owner_resp.status_code, status.HTTP_200_OK)
         self.assertIn('tasks', owner_resp.data)
 
         # Other user without token is forbidden
         self.client.force_authenticate(user=self.user2)
-        other_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=sent')
+        other_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files?view=sent')
         self.assertEqual(other_resp.status_code, status.HTTP_403_FORBIDDEN)
 
         # Give user2 a user-scoped share token and access with token param
@@ -790,10 +815,10 @@ class FilesTests(BaseAPITestCase):
             summary=summary,
             shared_by=self.user1,
             shared_with=self.user2,
-            share_token=token
+            share_token=hash_share_token(token)
         )
 
-        token_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files/?view=received&token={token}')
+        token_resp = self.client.get(f'/api/v1/summaries/{summary.id}/files?view=received&token={token}')
         self.assertEqual(token_resp.status_code, status.HTTP_200_OK)
         self.assertTrue(len(token_resp.data.get('tasks', [])) >= 1)
 
@@ -818,6 +843,8 @@ class RevokeUserShareTests(BaseAPITestCase):
         )
 
         self.client.force_authenticate(user=self.user1)
-        resp = self.client.post('/api/v1/summaries/revoke-user-share/', {'week_start_date': str(week_start), 'user_id': self.user2.id})
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertTrue(resp.data.get('revoked'))
+        url = f'/api/v1/summaries/weeks/{week_start}/user-shares/{self.user2.id}'
+        resp = self.client.delete(url)
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(WeeklySummaryUserShare.objects.filter(summary=summary).exists())
+        self.assertEqual(self.client.delete(url).status_code, status.HTTP_404_NOT_FOUND)

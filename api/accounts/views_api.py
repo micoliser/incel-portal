@@ -2,19 +2,13 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.contrib.auth.tokens import default_token_generator
-from django.core.cache import cache
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
 from django.utils import timezone
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import permissions, status
-from rest_framework.exceptions import AuthenticationFailed, NotFound, ValidationError
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -31,24 +25,39 @@ from accounts.serializers import (
     PasswordResetRequestSerializer,
     PasswordResetValidateSerializer,
     UpdateAdminUserSerializer,
-    UpdateUserDepartmentSerializer,
-    UpdateUserRoleSerializer,
-    UpdateUserStatusSerializer,
     UserWithProfileSerializer,
+    with_profile,
+)
+from accounts.services import (
+    LoginGuard,
+    burn_password_check,
+    revoke_user_sessions,
+    send_account_setup_link,
+    send_admin_password_reset_link,
+    send_self_service_reset_link,
+    should_log_unknown_login,
+    user_for_password_link,
 )
 from applications.audit import log_audit
 from applications.audit_actions import AuditAction
-from applications.models import InternalApplication
-from common.access import can_user_access_application
 from common.authentication import (
     HasValidServiceApiKey,
     PublicEndpointAuthentication,
     ServiceApiKeyAuthentication,
 )
-from common.params import uuid_param
-from common.permissions import IsAdminOrGlobalReadOnly, has_global_access
+from common.exceptions import AccountLocked, Conflict
+from common.network import client_ip
+from common.pagination import paginate
+from common.params import bool_param, uuid_param
+from common.permissions import (
+    IsAdminOrGlobalReadOnly,
+    can_manage_user,
+    has_admin_access,
+    has_global_access,
+)
 from emails.services.user_emails import UserEmailManager
 from organization.models import Department, Role, Team, Unit
+from organization.services import clear_leadership_left_behind
 
 logger = logging.getLogger(__name__)
 
@@ -87,23 +96,26 @@ def _jwt_payload_for_user(user):
 
 
 def _set_jwt_cookies(response, tokens):
-    max_age_access = settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()
-    max_age_refresh = settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()
-    
+    """Tokens travel only in HttpOnly cookies, never in a response body, so
+    script running in the page cannot read them."""
+    secure = not settings.DEBUG
     response.set_cookie(
         'access_token',
         tokens['access'],
-        max_age=max_age_access,
+        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
         httponly=True,
-        samesite='Lax'
+        secure=secure,
+        samesite='Lax',
     )
-    response.set_cookie(
-        'refresh_token',
-        tokens['refresh'],
-        max_age=max_age_refresh,
-        httponly=True,
-        samesite='Lax'
-    )
+    if 'refresh' in tokens:
+        response.set_cookie(
+            'refresh_token',
+            tokens['refresh'],
+            max_age=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
+            httponly=True,
+            secure=secure,
+            samesite='Lax',
+        )
     return response
 
 
@@ -125,26 +137,39 @@ class LoginView(APIView):
 
         email = serializer.validated_data['email'].strip().lower()
         password = serializer.validated_data['password']
+        ip = client_ip(request)
 
-        lockout_key = f"login_lockout_{email}"
-        fails_key = f"login_fails_{email}"
-
-        if cache.get(lockout_key):
-            return Response(
-                {'detail': 'Account is temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.'},
-                status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
+        guard = LoginGuard(email, ip)
+        if guard.is_locked():
+            raise AccountLocked(wait=settings.LOGIN_LOCKOUT_SECONDS)
 
         user = User.objects.filter(email__iexact=email).first()
-        if not user:
+        if user is None:
+            burn_password_check(password)
+            if should_log_unknown_login(email, ip):
+                log_audit(
+                    action=AuditAction.AUTH_LOGIN_FAILED,
+                    request=request,
+                    target_type='User',
+                    metadata={'email': email},
+                )
+            raise AuthenticationFailed(
+                {'detail': 'Invalid credentials.', 'attempts_remaining': guard.record_failure()}
+            )
+
+        # The password is checked before the account status, so only someone
+        # who knows the password learns that an account is disabled.
+        if not user.check_password(password):
             log_audit(
                 action=AuditAction.AUTH_LOGIN_FAILED,
                 request=request,
                 target_type='User',
+                target_id=user.id,
                 metadata={'email': email},
             )
-            remaining = self._handle_failed_attempt(fails_key, lockout_key)
-            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': remaining})
+            raise AuthenticationFailed(
+                {'detail': 'Invalid credentials.', 'attempts_remaining': guard.record_failure()}
+            )
 
         if not user.is_active:
             log_audit(
@@ -154,69 +179,51 @@ class LoginView(APIView):
                 target_id=user.id,
                 metadata={'email': email, 'reason': 'disabled_account'},
             )
-            return Response(
-                {'detail': 'This account has been disabled, contact HR or Admin.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            raise PermissionDenied('This account has been disabled, contact HR or Admin.')
 
-        authenticated = authenticate(request=request, username=user.username, password=password)
-        if authenticated is None:
-            log_audit(
-                action=AuditAction.AUTH_LOGIN_FAILED,
-                request=request,
-                target_type='User',
-                target_id=user.id,
-                metadata={'email': email},
-            )
-            remaining = self._handle_failed_attempt(fails_key, lockout_key)
-            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': remaining})
+        guard.record_success()
 
-        # Success - clear the failure counter
-        cache.delete(fails_key)
-
-        tokens = _jwt_payload_for_user(authenticated)
+        tokens = _jwt_payload_for_user(user)
         log_audit(
             action=AuditAction.AUTH_LOGIN_SUCCESS,
             request=request,
-            actor_user=authenticated,
+            actor_user=user,
             target_type='User',
-            target_id=authenticated.id,
+            target_id=user.id,
         )
-        response = Response({'tokens': tokens, 'user': UserWithProfileSerializer(authenticated).data})
+        response = Response({'user': UserWithProfileSerializer(user).data})
         return _set_jwt_cookies(response, tokens)
 
-    def _handle_failed_attempt(self, fails_key, lockout_key):
-        fails = cache.get(fails_key, 0) + 1
-        if fails >= 10:
-            cache.set(lockout_key, True, 15 * 60)
-            cache.delete(fails_key)
-            return 0
-        else:
-            cache.set(fails_key, fails, 15 * 60)
-            return 10 - fails
 
 class LogoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    """Signing out must work even when the access token has already expired,
+    so this endpoint identifies the session by its refresh token alone."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = [PublicEndpointAuthentication]
 
     def post(self, request):
-        # The refresh token may arrive in the body or, for browsers, in its HttpOnly cookie.
-        refresh_token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
-        if not refresh_token:
-            return _clear_jwt_cookies(Response(status=status.HTTP_204_NO_CONTENT))
-            
-        try:
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-        except Exception:
-            raise ValidationError('Invalid refresh token.')
+        body = request.data if isinstance(request.data, dict) else {}
+        refresh_token = body.get('refresh') or request.COOKIES.get('refresh_token')
 
-        log_audit(
-            action=AuditAction.AUTH_LOGOUT,
-            request=request,
-            actor_user=request.user,
-            target_type='User',
-            target_id=request.user.id,
-        )
+        if isinstance(refresh_token, str) and refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                user = User.objects.filter(pk=token.get('user_id')).first()
+                token.blacklist()
+            except TokenError:
+                # Already expired or revoked: there is nothing left to end.
+                user = None
+
+            if user is not None:
+                log_audit(
+                    action=AuditAction.AUTH_LOGOUT,
+                    request=request,
+                    actor_user=user,
+                    target_type='User',
+                    target_id=user.id,
+                )
+
         return _clear_jwt_cookies(Response(status=status.HTTP_204_NO_CONTENT))
 
 
@@ -227,60 +234,66 @@ class RefreshTokenView(APIView):
     throttle_scope = 'refresh'
 
     def post(self, request):
-        refresh_token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
-        if not refresh_token:
+        body = request.data if isinstance(request.data, dict) else {}
+        refresh_token = body.get('refresh') or request.COOKIES.get('refresh_token')
+        if not isinstance(refresh_token, str) or not refresh_token:
             raise AuthenticationFailed('Refresh token required.')
-        
-        # Enforce server-side inactivity timeout: if the user has not been
-        # active for more than 1 hour, reject the refresh and blacklist the
-        # presented refresh token to force a full re-login.
+
         try:
-            if refresh_token:
-                token = RefreshToken(refresh_token)
-                user_id = token.get('user_id') or token.get('user') or None
-                if user_id:
-                    try:
-                        user = User.objects.get(pk=user_id)
-                        profile = getattr(user, 'staff_profile', None)
-                        if profile is not None:
-                            last = profile.last_activity_at
-                            if last is None:
-                                profile.last_activity_at = timezone.now()
-                                profile.save(update_fields=['last_activity_at'])
-                            elif (timezone.now() - last > timedelta(hours=1)):
-                                try:
-                                    token.blacklist()
-                                except Exception:
-                                    logger.debug("Failed to blacklist token during inactivity check")
-                                raise AuthenticationFailed('Session expired due to inactivity.')
-                    except User.DoesNotExist:
-                        pass
-        except AuthenticationFailed:
-            raise
-        except Exception:
-            logger.exception("Silent exception caught")
+            token = RefreshToken(refresh_token)
+        except TokenError:
+            return self._rejected('Invalid or blacklisted refresh token.')
+
+        user = User.objects.filter(pk=token.get('user_id')).select_related('staff_profile').first()
+        if user is None or not user.is_active:
+            self._blacklist(token)
+            return self._rejected('Invalid or blacklisted refresh token.')
+
+        # Server-side inactivity timeout: after an hour without activity the
+        # session ends and a full sign-in is required.
+        profile = _profile_or_none(user)
+        if profile is not None:
+            last = profile.last_activity_at
+            if last is None:
+                profile.last_activity_at = timezone.now()
+                profile.save(update_fields=['last_activity_at'])
+            elif timezone.now() - last > timedelta(hours=1):
+                self._blacklist(token)
+                return self._rejected('Session expired due to inactivity.')
 
         serializer = TokenRefreshSerializer(data={'refresh': refresh_token})
         try:
             serializer.is_valid(raise_exception=True)
-        except TokenError:
-            return _clear_jwt_cookies(Response({'detail': 'Invalid or blacklisted refresh token.'}, status=status.HTTP_401_UNAUTHORIZED))
+        except (TokenError, AuthenticationFailed):
+            return self._rejected('Invalid or blacklisted refresh token.')
 
-        response = Response(serializer.validated_data)
+        response = Response({'detail': 'Session refreshed.'})
         return _set_jwt_cookies(response, serializer.validated_data)
+
+    @staticmethod
+    def _blacklist(token):
+        try:
+            token.blacklist()
+        except TokenError:
+            pass
+
+    @staticmethod
+    def _rejected(message):
+        response = Response(
+            {'error': {'type': 'authentication_error', 'message': message}},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+        return _clear_jwt_cookies(response)
 
 
 class HeartbeatView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        try:
-            profile = getattr(request.user, 'staff_profile', None)
-            if profile is not None:
-                profile.last_activity_at = timezone.now()
-                profile.save(update_fields=['last_activity_at'])
-        except Exception:
-            logger.exception("Silent exception caught")
+        profile = _profile_or_none(request.user)
+        if profile is not None:
+            profile.last_activity_at = timezone.now()
+            profile.save(update_fields=['last_activity_at'])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -310,13 +323,13 @@ class ChangePasswordView(APIView):
         request.user.set_password(new_password)
         request.user.save(update_fields=['password'])
 
+        # Every other session ends; this browser gets a fresh one below.
+        revoke_user_sessions(request.user)
+
         try:
-            UserEmailManager.send_password_changed_email(
-                request.user,
-                action='changed',
-            )
-        except Exception as exc:
-            logger.error("Failed to send password changed email: %s", str(exc))
+            UserEmailManager.send_password_changed_email(request.user, action='changed')
+        except Exception:
+            logger.exception('Failed to send password changed email')
 
         tokens = _jwt_payload_for_user(request.user)
         log_audit(
@@ -326,65 +339,54 @@ class ChangePasswordView(APIView):
             target_type='User',
             target_id=request.user.id,
         )
-        response = Response({'detail': 'Password changed.', 'tokens': tokens})
+        response = Response({'detail': 'Password changed.'})
         return _set_jwt_cookies(response, tokens)
 
 
 class PasswordResetRequestView(APIView):
+    """The response is the same whether or not the email has an account, so the
+    endpoint cannot be used to find out which staff emails exist."""
+
     permission_classes = [permissions.AllowAny]
     authentication_classes = [PublicEndpointAuthentication]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
 
+    RESPONSE = {'detail': 'If an account exists for this email, a password reset link has been sent.'}
+
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data['email']
+        ip = client_ip(request)
 
         user = User.objects.filter(email__iexact=email).first()
-        if user is None:
-            log_audit(
-                action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
-                request=request,
-                target_type='User',
-                metadata={'reason': 'user_not_found', 'email': email},
-            )
-            return Response(
-                {'detail': 'No account found with this email address. Please check your spelling or contact your administrator.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        if user is None or not user.is_active:
+            if should_log_unknown_login(f'reset:{email}', ip):
+                log_audit(
+                    action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
+                    request=request,
+                    target_type='User',
+                    target_id=user.id if user else '',
+                    metadata={'reason': 'user_inactive' if user else 'user_not_found', 'email': email},
+                )
+            return Response(self.RESPONSE)
 
-        if not user.is_active:
+        try:
+            sent = send_self_service_reset_link(user)
+        except Exception:
+            logger.exception('Failed to send password reset email')
+            sent = True
+
+        if not sent:
             log_audit(
                 action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
                 request=request,
                 target_type='User',
                 target_id=user.id,
-                metadata={'reason': 'user_inactive', 'email': email},
+                metadata={'reason': 'too_many_requests', 'email': user.email},
             )
-            return Response(
-                {'detail': 'This account is currently deactivated. Please contact your administrator.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        portal_base_url = getattr(settings, 'PORTAL_BASE_URL', 'http://localhost:3000').rstrip('/')
-        reset_url = f"{portal_base_url}/reset-password?uid={uid}&token={token}"
-        expiry_minutes = int(getattr(settings, 'PASSWORD_RESET_TIMEOUT', 3600) // 60)
-
-        if settings.DEBUG or getattr(settings, 'EMAIL_DEBUG', False):
-            print(f"\n{'=' * 70}\n[DEVELOPMENT PASSWORD RESET LINK for {user.email}]\n{reset_url}\n{'=' * 70}\n")
-            logger.info("[DEVELOPMENT PASSWORD RESET LINK for %s]: %s", user.email, reset_url)
-
-        try:
-            UserEmailManager.send_password_reset_email(
-                user=user,
-                reset_url=reset_url,
-                expiry_minutes=expiry_minutes,
-            )
-        except Exception as exc:
-            logger.error("Failed to send password reset email: %s", str(exc))
+            return Response(self.RESPONSE)
 
         log_audit(
             action=AuditAction.AUTH_PASSWORD_RESET_REQUESTED,
@@ -393,10 +395,7 @@ class PasswordResetRequestView(APIView):
             target_id=user.id,
             metadata={'email': user.email},
         )
-        return Response(
-            {'detail': 'A password reset link has been sent to your email.'},
-            status=status.HTTP_200_OK,
-        )
+        return Response(self.RESPONSE)
 
 
 class PasswordResetValidateView(APIView):
@@ -405,22 +404,11 @@ class PasswordResetValidateView(APIView):
 
     def get(self, request):
         serializer = PasswordResetValidateSerializer(data=request.query_params)
-        if not serializer.is_valid():
-            return Response(
-                {'valid': False, 'detail': 'This password reset link is invalid or has expired.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        user = None
+        if serializer.is_valid():
+            user = user_for_password_link(serializer.validated_data['uid'], serializer.validated_data['token'])
 
-        raw_uid = serializer.validated_data['uid']
-        token = serializer.validated_data['token']
-
-        try:
-            uid = force_str(urlsafe_base64_decode(raw_uid))
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            user = None
-
-        if user is None or not user.is_active or not default_token_generator.check_token(user, token):
+        if user is None:
             return Response(
                 {'valid': False, 'detail': 'This password reset link is invalid or has expired.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -434,7 +422,7 @@ class PasswordResetValidateView(APIView):
         else:
             masked_email = '***'
 
-        return Response({'valid': True, 'email': masked_email}, status=status.HTTP_200_OK)
+        return Response({'valid': True, 'email': masked_email})
 
 
 class PasswordResetConfirmView(APIView):
@@ -444,33 +432,24 @@ class PasswordResetConfirmView(APIView):
     throttle_scope = 'login'
 
     def post(self, request):
-        raw_uid = request.data.get('uid')
-        token = request.data.get('token')
+        body = request.data if isinstance(request.data, dict) else {}
+        user = user_for_password_link(body.get('uid'), body.get('token'))
 
-        try:
-            uid = force_str(urlsafe_base64_decode(raw_uid))
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            user = None
-
-        if user is None or not user.is_active or not default_token_generator.check_token(user, token):
+        if user is None:
             log_audit(
                 action=AuditAction.AUTH_PASSWORD_RESET_FAILED,
                 request=request,
                 target_type='User',
                 metadata={'reason': 'invalid_or_expired_token'},
             )
-            return Response(
-                {'detail': 'This password reset link is invalid or has expired.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('This password reset link is invalid or has expired.')
 
         serializer = PasswordResetConfirmSerializer(data=request.data, context={'user': user})
         serializer.is_valid(raise_exception=True)
 
-        new_password = serializer.validated_data['new_password']
-        user.set_password(new_password)
+        user.set_password(serializer.validated_data['new_password'])
         user.save(update_fields=['password'])
+        revoke_user_sessions(user)
 
         log_audit(
             action=AuditAction.AUTH_PASSWORD_RESET_COMPLETED,
@@ -482,12 +461,11 @@ class PasswordResetConfirmView(APIView):
 
         try:
             UserEmailManager.send_password_changed_email(user, action='reset')
-        except Exception as exc:
-            logger.error("Failed to send password changed email: %s", str(exc))
+        except Exception:
+            logger.exception('Failed to send password changed email')
 
         return Response(
-            {'detail': 'Your password has been successfully reset. You can now log in with your new password.'},
-            status=status.HTTP_200_OK,
+            {'detail': 'Your password has been successfully reset. You can now log in with your new password.'}
         )
 
 
@@ -516,69 +494,64 @@ class MePermissionsView(APIView):
         )
 
 
-class MeApplicationsView(APIView):
+def _save_unique_email(user, **kwargs):
+    """Save, turning a clash on the unique email index (two requests at once
+    for the same address) into the same message the serializer gives."""
+    try:
+        with transaction.atomic():
+            user.save(**kwargs)
+    except IntegrityError:
+        raise ValidationError({'email': ['A user with this email already exists.']})
+
+
+def _can_see_all_users(user):
+    return has_admin_access(user) or has_global_access(user)
+
+
+def _default_staff_role():
+    role, _created = Role.objects.get_or_create(
+        code='STAFF',
+        defaults={'name': 'Staff', 'has_global_access': False, 'is_active': True},
+    )
+    return role
+
+
+def _require_can_manage(request, target):
+    if can_manage_user(request.user, target):
+        return
+    log_audit(
+        action=AuditAction.ADMIN_USER_ACTION_DENIED,
+        request=request,
+        actor_user=request.user,
+        target_type='User',
+        target_id=target.id,
+        metadata={'email': target.email, 'reason': 'target_outranks_actor'},
+    )
+    raise PermissionDenied('Only a superuser can manage this account.')
+
+
+class UserListView(APIView):
+    """The staff directory, and user creation.
+
+    GET: every signed-in user can list active users. Administrators and
+    executives may add `include_inactive=true` to see deactivated accounts too.
+    POST: administrators only.
+    """
+
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
-        applications = InternalApplication.objects.all().order_by('name')
-        payload = []
-        for app in applications:
-            can_access, reason = can_user_access_application(request.user, app)
-            payload.append(
-                {
-                    'id': app.id,
-                    'name': app.name,
-                    'slug': app.slug,
-                    'status': app.status,
-                    'access_scope': app.access_scope,
-                    'visibility_scope': app.visibility_scope,
-                    'can_access': can_access,
-                    'reason': reason,
-                }
-            )
-        return Response(payload)
-
-
-class AuthenticatedUserListView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    def get_throttles(self):
+        if self.request.method == 'POST':
+            self.throttle_scope = 'admin'
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
 
     def get(self, request):
-        users = User.objects.select_related(
-            'staff_profile__role',
-            'staff_profile__department',
-        ).filter(is_active=True)
+        users = with_profile(User.objects.all())
 
-        department_id = uuid_param(request.query_params, 'department_id')
-        if department_id:
-            users = users.filter(staff_profile__department_id=department_id)
-
-        search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
-        if search:
-            users = users.filter(_user_search_query(search))
-
-        users = users.order_by(Lower('username'))
-        
-        paginator = AdminUserPagination()
-        page = paginator.paginate_queryset(users, request, view=self)
-        if page is not None:
-            serializer = UserWithProfileSerializer(page, many=True)
-            return paginator.get_paginated_response(serializer.data)
-            
-        return Response(UserWithProfileSerializer(users, many=True).data)
-
-
-class AdminUserListView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'admin'
-
-    def get(self, request):
-        users = User.objects.all().select_related(
-            'staff_profile__role',
-            'staff_profile__department',
-            'staff_profile__unit',
-            'staff_profile__team'
-        )
+        include_inactive = bool_param(request.query_params, 'include_inactive')
+        if not (include_inactive and _can_see_all_users(request.user)):
+            users = users.filter(is_active=True)
 
         department_id = uuid_param(request.query_params, 'department_id')
         if department_id:
@@ -599,61 +572,45 @@ class AdminUserListView(APIView):
             users = users.filter(staff_profile__unit__isnull=True)
         elif unassigned == 'team':
             users = users.filter(staff_profile__team__isnull=True)
+        elif unassigned:
+            raise ValidationError({'unassigned': 'Use department, unit or team.'})
 
-        # Support 'q' param for admin search to mirror other list endpoints
-        search = (request.query_params.get('q') or '').strip()
+        search = (request.query_params.get('search') or '').strip()
         if search:
             users = users.filter(_user_search_query(search))
 
         users = users.order_by(Lower('username'))
 
-        paginator = AdminUserPagination()
-        page = paginator.paginate_queryset(users, request, view=self)
-        if page is not None:
-            serializer = UserWithProfileSerializer(page, many=True)
-            return paginator.get_paginated_response(serializer.data)
-
-        return Response(UserWithProfileSerializer(users, many=True).data)
+        return paginate(users, request, UserWithProfileSerializer, view=self)
 
     @transaction.atomic
     def post(self, request):
+        if not has_admin_access(request.user):
+            raise PermissionDenied()
 
         serializer = AdminCreateUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
 
-        email = serializer.validated_data['email']
-        
-        department_id = serializer.validated_data.get('department_id')
-        department = Department.objects.filter(id=department_id).first() if department_id else None
-        
-        unit_id = serializer.validated_data.get('unit_id')
-        unit = Unit.objects.filter(id=unit_id).first() if unit_id else None
-        
-        team_id = serializer.validated_data.get('team_id')
-        team = Team.objects.filter(id=team_id).first() if team_id else None
-
-        role = None
-        role_id = serializer.validated_data.get('role_id')
-        if role_id:
-            role = Role.objects.filter(id=role_id).first()
+        email = data['email']
+        department = Department.objects.filter(id=data['department_id']).first() if data.get('department_id') else None
+        unit = Unit.objects.filter(id=data['unit_id']).first() if data.get('unit_id') else None
+        team = Team.objects.filter(id=data['team_id']).first() if data.get('team_id') else None
+        role = Role.objects.filter(id=data['role_id']).first() if data.get('role_id') else None
         if not role:
-            role, _created = Role.objects.get_or_create(
-                code='STAFF',
-                defaults={
-                    'name': 'Staff',
-                    'has_global_access': False,
-                    'is_active': True,
-                },
-            )
+            role = _default_staff_role()
 
-        user = User.objects.create_user(
+        # No password is set here. The new user chooses their own through the
+        # link emailed below, so no one else ever knows it.
+        user = User(
             username=email,
             email=email,
-            password=serializer.validated_data['password'],
-            first_name=serializer.validated_data['first_name'].strip(),
-            last_name=serializer.validated_data['last_name'].strip(),
+            first_name=data['first_name'],
+            last_name=data['last_name'],
             is_active=True,
         )
+        user.set_unusable_password()
+        _save_unique_email(user)
 
         StaffProfile.objects.create(
             user=user,
@@ -665,13 +622,11 @@ class AdminUserListView(APIView):
         )
 
         try:
-            UserEmailManager.send_user_created_email(
-                user,
-                serializer.validated_data['password'],
-            )
+            send_account_setup_link(user)
         except Exception:
-            # User creation should not fail if email delivery fails.
-            pass
+            # User creation should not fail if email delivery fails; an
+            # administrator can send the link again from the edit dialog.
+            logger.exception('Failed to send account setup email')
 
         log_audit(
             action=AuditAction.ADMIN_USER_CREATED,
@@ -694,233 +649,156 @@ class AdminUserListView(APIView):
         return Response(UserWithProfileSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
-class AdminUserPagination(PageNumberPagination):
-    page_size = 20
+class UserDetailView(APIView):
+    """One user. GET: administrators and executives. PATCH: administrators only.
 
+    PATCH is a partial update: only the fields sent are changed. It covers the
+    profile, role, organization placement, activation (`is_active`) and sending
+    a password reset link (`send_reset_link`).
+    """
 
-    def get_paginated_response(self, data):
-        response = super().get_paginated_response(data)
-        response.data['page'] = self.page.number
-        response.data['page_size'] = self.page.paginator.per_page
-        response.data['total_pages'] = self.page.paginator.num_pages
-        response.data['next_page'] = self.page.next_page_number() if self.page.has_next() else None
-        response.data['previous_page'] = self.page.previous_page_number() if self.page.has_previous() else None
-        return response
-
-
-class AdminUserDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'admin'
 
-    def get(self, _request, user_id):
-        user = User.objects.filter(id=user_id).first()
+    def _get_user(self, user_id):
+        user = with_profile(User.objects.filter(id=user_id)).first()
         if not user:
             raise NotFound('User not found.')
-        return Response(UserWithProfileSerializer(user).data)
+        return user
+
+    def get(self, _request, user_id):
+        return Response(UserWithProfileSerializer(self._get_user(user_id)).data)
+
+    def patch(self, request, user_id):
+        user = self._get_user(user_id)
+        # Checked outside the transaction below, so the record of a refused
+        # attempt is kept.
+        _require_can_manage(request, user)
+        return self._update(request, user, user_id)
 
     @transaction.atomic
-    def patch(self, request, user_id):
-
+    def _update(self, request, user, user_id):
         serializer = UpdateAdminUserSerializer(data=request.data, context={'user_id': user_id})
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        is_self = user.pk == request.user.pk
 
-        user = User.objects.filter(id=user_id).first()
-        if not user:
-            raise NotFound('User not found.')
+        if 'role_id' in data and is_self:
+            current_role_id = getattr(_profile_or_none(user), 'role_id', None)
+            if data['role_id'] != current_role_id:
+                raise PermissionDenied('You cannot change your own role.')
 
-        user.email = serializer.validated_data['email']
-        user.username = serializer.validated_data['email']
-        user.first_name = serializer.validated_data['first_name']
-        user.last_name = serializer.validated_data['last_name']
-        user.save(update_fields=['email', 'username', 'first_name', 'last_name'])
+        if 'is_active' in data and data['is_active'] != user.is_active:
+            if is_self:
+                raise PermissionDenied('You cannot change the status of your own account.')
+            if not data['is_active'] and user.is_superuser:
+                others = User.objects.filter(is_superuser=True, is_active=True).exclude(pk=user.pk)
+                if not others.exists():
+                    raise Conflict('The last active superuser cannot be deactivated.')
 
-        if serializer.validated_data.get('reset_password'):
-            temporary_password = serializer.validated_data['new_password']
-            user.set_password(temporary_password)
-            user.save(update_fields=['password'])
+        # --- account fields ---
+        user_fields = []
+        if 'email' in data and data['email'] != user.email:
+            user.email = data['email']
+            user.username = data['email']
+            user_fields += ['email', 'username']
+        for field in ('first_name', 'last_name'):
+            if field in data and data[field] != getattr(user, field):
+                setattr(user, field, data[field])
+                user_fields.append(field)
+        if user_fields:
+            _save_unique_email(user, update_fields=user_fields)
+
+        # --- profile fields: only the keys that were sent are touched ---
+        profile_changes = {}
+        if 'department_id' in data:
+            profile_changes['department'] = (
+                Department.objects.filter(id=data['department_id']).first() if data['department_id'] else None
+            )
+        if 'unit_id' in data:
+            profile_changes['unit'] = Unit.objects.filter(id=data['unit_id']).first() if data['unit_id'] else None
+        if 'team_id' in data:
+            profile_changes['team'] = Team.objects.filter(id=data['team_id']).first() if data['team_id'] else None
+        if data.get('role_id'):
+            profile_changes['role'] = Role.objects.filter(id=data['role_id']).first()
+
+        profile = _profile_or_none(user)
+        if profile is None:
+            profile = StaffProfile.objects.create(
+                user=user,
+                role=profile_changes.get('role') or _default_staff_role(),
+                department=profile_changes.get('department'),
+                unit=profile_changes.get('unit'),
+                team=profile_changes.get('team'),
+                is_active=user.is_active,
+            )
+        elif profile_changes:
+            previous = {
+                'old_department_id': profile.department_id,
+                'old_unit_id': profile.unit_id,
+                'old_team_id': profile.team_id,
+            }
+            for field, value in profile_changes.items():
+                setattr(profile, field, value)
+            # The team must sit in the unit, and the unit in the department.
+            # (Raises Django's ValidationError, which the API reports as a 400.)
+            profile.clean()
+            profile.save(update_fields=['department', 'unit', 'team', 'role', 'updated_at'])
+            clear_leadership_left_behind(user, profile=profile, **previous)
+
+        if user_fields or profile_changes:
+            role = profile.role
+            department = profile.department
             log_audit(
-                action=AuditAction.ADMIN_USER_PASSWORD_RESET,
+                action=AuditAction.ADMIN_USER_UPDATED,
                 request=request,
                 actor_user=request.user,
                 target_type='User',
                 target_id=user.id,
                 metadata={
                     'email': user.email,
-                    'temporary_password_provided': True,
+                    'department_id': department.id if department else None,
+                    'department_name': department.name if department else None,
+                    'role_id': role.id if role else None,
+                    'role_code': role.code if role else None,
+                    'role_name': role.name if role else None,
                 },
             )
-            try:
-                UserEmailManager.send_password_changed_email(
-                    user,
-                    action='reset',
-                    temporary_password=temporary_password,
-                )
-            except Exception as exc:
-                logger.error("Failed to send password reset email: %s", str(exc))
 
-        department_id = serializer.validated_data.get('department_id')
-        department = Department.objects.filter(id=department_id).first() if department_id else None
-
-        unit_id = serializer.validated_data.get('unit_id')
-        unit = Unit.objects.filter(id=unit_id).first() if unit_id else None
-
-        team_id = serializer.validated_data.get('team_id')
-        team = Team.objects.filter(id=team_id).first() if team_id else None
-
-        role_id = serializer.validated_data.get('role_id')
-        role = Role.objects.filter(id=role_id).first() if role_id else None
-
-        profile = _profile_or_none(user)
-        if profile is None:
-            # Create a basic profile if it doesn't exist
-            if not role:
-                role, _ = Role.objects.get_or_create(
-                    code='STAFF',
-                    defaults={'name': 'Staff', 'has_global_access': False, 'is_active': True},
-                )
-            profile = StaffProfile.objects.create(
-                user=user, 
-                role=role, 
-                department=department, 
-                unit=unit,
-                team=team,
-                is_active=user.is_active
-            )
-        else:
-            profile.department = department
-            profile.unit = unit
-            profile.team = team
-            if role:
-                profile.role = role
-            profile.save(update_fields=['department', 'unit', 'team', 'role', 'updated_at'])
-
-        log_audit(
-            action=AuditAction.ADMIN_USER_UPDATED,
-            request=request,
-            actor_user=request.user,
-            target_type='User',
-            target_id=user.id,
-            metadata={
-                'email': user.email,
-                'department_id': department_id,
-                'department_name': department.name if department else None,
-                'role_id': role.id if role else None,
-                'role_code': role.code if role else None,
-                'role_name': role.name if role else None,
-                'reset_password': bool(serializer.validated_data.get('reset_password')),
-            },
-        )
-
-        return Response(UserWithProfileSerializer(user).data)
-
-
-class AdminUserRoleUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'admin'
-
-    def patch(self, request, user_id):
-
-        serializer = UpdateUserRoleSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = User.objects.filter(id=user_id).first()
-        if not user:
-            raise NotFound('User not found.')
-
-        role = Role.objects.filter(id=serializer.validated_data['role_id']).first()
-        if not role:
-            raise NotFound('Role not found.')
-
-        profile = _profile_or_none(user)
-        if profile is None:
-            profile = StaffProfile.objects.create(user=user, role=role)
-        else:
-            profile.role = role
-            profile.save(update_fields=['role', 'updated_at'])
-
-        log_audit(
-            action=AuditAction.ADMIN_USER_ROLE_UPDATED,
-            request=request,
-            actor_user=request.user,
-            target_type='User',
-            target_id=user.id,
-            metadata={'role_id': role.id, 'role_code': role.code, 'role_name': role.name},
-        )
-
-        return Response(UserWithProfileSerializer(user).data)
-
-
-class AdminUserDepartmentUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'admin'
-
-    def put(self, request, user_id):
-
-        serializer = UpdateUserDepartmentSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = User.objects.filter(id=user_id).first()
-        if not user:
-            raise NotFound('User not found.')
-
-        profile = _profile_or_none(user)
-        if profile is None:
-            raise ValidationError('Staff profile does not exist for this user.')
-
-        department_id = serializer.validated_data['department_id']
-        department = Department.objects.filter(id=department_id).first()
-        if not department:
-            raise NotFound('Department not found.')
-
-        profile.department = department
-        profile.save(update_fields=['department', 'updated_at'])
-
-        log_audit(
-            action=AuditAction.ADMIN_USER_DEPARTMENT_UPDATED,
-            request=request,
-            actor_user=request.user,
-            target_type='User',
-            target_id=user.id,
-            metadata={'department_id': department_id, 'department_name': department.name},
-        )
-
-        return Response(UserWithProfileSerializer(user).data)
-
-
-class AdminUserStatusUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'admin'
-
-    def patch(self, request, user_id):
-
-        serializer = UpdateUserStatusSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = User.objects.filter(id=user_id).first()
-        if not user:
-            raise NotFound('User not found.')
-
-        is_active = serializer.validated_data['is_active']
-        user.is_active = is_active
-        user.save(update_fields=['is_active'])
-
-        profile = _profile_or_none(user)
-        if profile:
-            profile.is_active = is_active
+        # --- activation ---
+        if 'is_active' in data and data['is_active'] != user.is_active:
+            user.is_active = data['is_active']
+            user.save(update_fields=['is_active'])
+            profile.is_active = data['is_active']
             profile.save(update_fields=['is_active', 'updated_at'])
+            if not user.is_active:
+                revoke_user_sessions(user)
+            log_audit(
+                action=AuditAction.ADMIN_USER_STATUS_UPDATED,
+                request=request,
+                actor_user=request.user,
+                target_type='User',
+                target_id=user.id,
+                metadata={'is_active': user.is_active, 'email': user.email},
+            )
 
-        log_audit(
-            action=AuditAction.ADMIN_USER_STATUS_UPDATED,
-            request=request,
-            actor_user=request.user,
-            target_type='User',
-            target_id=user.id,
-            metadata={'is_active': is_active, 'email': user.email},
-        )
+        # --- password reset link ---
+        if data.get('send_reset_link'):
+            if not user.is_active:
+                raise ValidationError({'send_reset_link': 'Activate the account before sending a reset link.'})
+            log_audit(
+                action=AuditAction.ADMIN_USER_PASSWORD_RESET,
+                request=request,
+                actor_user=request.user,
+                target_type='User',
+                target_id=user.id,
+                metadata={'email': user.email, 'method': 'reset_link'},
+            )
+            try:
+                send_admin_password_reset_link(user)
+            except Exception:
+                logger.exception('Failed to send password reset email')
 
         return Response(UserWithProfileSerializer(user).data)
 
@@ -935,17 +813,12 @@ class ExternalUserListView(APIView):
     """
     authentication_classes = [ServiceApiKeyAuthentication]
     permission_classes = [HasValidServiceApiKey]
+    required_scope = 'users:read'
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'service'
 
     def get(self, request):
-        users = (
-            User.objects.select_related(
-                'staff_profile__role',
-                'staff_profile__department',
-                'staff_profile__unit',
-                'staff_profile__team',
-            )
-            .distinct()
-        )
+        users = with_profile(User.objects.all())
 
         is_active_param = request.query_params.get('is_active')
         if is_active_param is not None:
@@ -962,4 +835,4 @@ class ExternalUserListView(APIView):
         users = users.order_by(Lower('username'))
 
         serializer = UserWithProfileSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data)

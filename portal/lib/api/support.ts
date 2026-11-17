@@ -1,3 +1,4 @@
+import type { Paginated } from "@/lib/api/types";
 import { apiClient } from "@/lib/api-client";
 
 export interface SupportRequest {
@@ -74,12 +75,7 @@ export interface UploadUrlResult {
   expires_in: number;
 }
 
-export interface PaginatedResponse<T> {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
-}
+export type PaginatedResponse<T> = Paginated<T>;
 
 // ── List my requests ──
 
@@ -87,7 +83,7 @@ export async function getMyRequests(params?: {
   status?: string;
   page?: number;
 }): Promise<PaginatedResponse<SupportRequest>> {
-  const response = await apiClient.get("/support/requests/", { params });
+  const response = await apiClient.get("/support/requests", { params });
   return response.data;
 }
 
@@ -97,7 +93,7 @@ export async function getDepartmentRequests(params?: {
   status?: string;
   page?: number;
 }): Promise<PaginatedResponse<SupportRequest>> {
-  const response = await apiClient.get("/support/requests/department/", {
+  const response = await apiClient.get("/support/requests/department", {
     params,
   });
   return response.data;
@@ -106,7 +102,7 @@ export async function getDepartmentRequests(params?: {
 // ── Get single request with detail ──
 
 export async function getRequest(id: string): Promise<SupportRequestDetail> {
-  const response = await apiClient.get(`/support/requests/${id}/`);
+  const response = await apiClient.get(`/support/requests/${id}`);
   return response.data;
 }
 
@@ -122,7 +118,7 @@ export interface CreateRequestPayload {
 export async function createRequest(
   data: CreateRequestPayload,
 ): Promise<SupportRequestDetail> {
-  const response = await apiClient.post("/support/requests/", data);
+  const response = await apiClient.post("/support/requests", data);
   return response.data;
 }
 
@@ -132,8 +128,8 @@ export async function assignRequest(
   id: string,
   assignedTo: number,
 ): Promise<SupportRequestDetail> {
-  const response = await apiClient.post(`/support/requests/${id}/assign/`, {
-    assigned_to: assignedTo,
+  const response = await apiClient.post(`/support/requests/${id}/assign`, {
+    assigned_to_id: assignedTo,
   });
   return response.data;
 }
@@ -145,7 +141,7 @@ export async function updateRequestStatus(
   status: string,
 ): Promise<SupportRequestDetail> {
   const response = await apiClient.post(
-    `/support/requests/${id}/update-status/`,
+    `/support/requests/${id}/status`,
     { status },
   );
   return response.data;
@@ -156,7 +152,7 @@ export async function updateRequestStatus(
 export async function resolveRequest(
   id: string,
 ): Promise<SupportRequestDetail> {
-  const response = await apiClient.post(`/support/requests/${id}/resolve/`);
+  const response = await apiClient.post(`/support/requests/${id}/resolve`);
   return response.data;
 }
 
@@ -165,14 +161,14 @@ export async function resolveRequest(
 export async function confirmRequest(
   id: string,
 ): Promise<SupportRequestDetail> {
-  const response = await apiClient.post(`/support/requests/${id}/confirm/`);
+  const response = await apiClient.post(`/support/requests/${id}/confirm`);
   return response.data;
 }
 
 // ── Reopen (requester) ──
 
 export async function reopenRequest(id: string): Promise<SupportRequestDetail> {
-  const response = await apiClient.post(`/support/requests/${id}/reopen/`);
+  const response = await apiClient.post(`/support/requests/${id}/reopen`);
   return response.data;
 }
 
@@ -183,7 +179,7 @@ export async function addComment(
   body: string,
 ): Promise<SupportComment> {
   const response = await apiClient.post(
-    `/support/requests/${id}/add-comment/`,
+    `/support/requests/${id}/comments`,
     { body },
   );
   return response.data;
@@ -196,7 +192,7 @@ export async function getUploadUrl(
   file: { file_name: string; content_type: string; size: number },
 ): Promise<UploadUrlResult> {
   const response = await apiClient.post(
-    `/support/requests/${id}/upload-url/`,
+    `/support/requests/${id}/attachment-upload-url`,
     file,
   );
   return response.data;
@@ -217,7 +213,7 @@ export async function confirmUpload(
   data: ConfirmUploadPayload,
 ): Promise<SupportAttachment> {
   const response = await apiClient.post(
-    `/support/requests/${id}/confirm-upload/`,
+    `/support/requests/${id}/attachments`,
     data,
   );
   return response.data;

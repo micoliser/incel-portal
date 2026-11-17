@@ -1,13 +1,20 @@
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 
 from accounts.models import StaffProfile
-from applications.models import AuditLog, InternalApplication
+from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from organization.models import Role
+
+
+def _email_html(message):
+    """Everything the recipient can read: the plain body and any HTML part."""
+    parts = [message.body] + [body for body, _mimetype in getattr(message, 'alternatives', [])]
+    return '\n'.join(str(part) for part in parts)
 
 
 class AccountsApiTests(BaseAPITestCase):
@@ -28,13 +35,15 @@ class AccountsApiTests(BaseAPITestCase):
             is_active=True,
         )
 
-    def test_login_success_returns_jwt_tokens(self):
+    def test_login_success_sets_token_cookies(self):
         response = self.client.post(reverse('auth-login'), self.login_payload(), format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('tokens', response.data)
-        self.assertIn('access', response.data['tokens'])
-        self.assertIn('refresh', response.data['tokens'])
+        # Tokens travel only in HttpOnly cookies, never in the body.
+        self.assertNotIn('tokens', response.data)
+        for name in ('access_token', 'refresh_token'):
+            self.assertTrue(response.cookies[name].value)
+            self.assertTrue(response.cookies[name]['httponly'])
         self.assertEqual(response.data['user']['email'], 'staff@example.com')
 
     def test_login_is_case_insensitive_for_email(self):
@@ -55,24 +64,37 @@ class AccountsApiTests(BaseAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_logout_requires_authentication(self):
-        response = self.client.post(reverse('auth-logout'), {'refresh': 'x'}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    def test_logout_works_without_an_access_token(self):
+        login = self.client.post(reverse('auth-login'), self.login_payload(), format='json')
+        refresh = login.cookies['refresh_token'].value
+        self.client.cookies.clear()
 
-    def test_logout_rejects_invalid_refresh_token(self):
-        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.post(reverse('auth-logout'), {'refresh': refresh}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # The session is over: its refresh token no longer works.
+        response = self.client.post(reverse('auth-refresh'), {'refresh': refresh}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertTrue(AuditLog.objects.filter(action='AUTH_LOGOUT', target_id=str(self.staff_user.id)).exists())
+
+    def test_logout_with_an_invalid_refresh_token_still_clears_cookies(self):
         response = self.client.post(reverse('auth-logout'), {'refresh': 'invalid'}, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.cookies['access_token'].value, '')
+        self.assertEqual(response.cookies['refresh_token'].value, '')
 
     def test_refresh_token_success(self):
         login = self.client.post(reverse('auth-login'), self.login_payload(), format='json')
-        refresh = login.data['tokens']['refresh']
+        refresh = login.cookies['refresh_token'].value
+        self.client.cookies.clear()
 
         response = self.client.post(reverse('auth-refresh'), {'refresh': refresh}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('access', response.data)
+        self.assertNotIn('access', response.data)
+        self.assertTrue(response.cookies['access_token'].value)
+        self.assertTrue(response.cookies['refresh_token'].value)
 
     def test_change_password_success(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
@@ -132,30 +154,6 @@ class AccountsApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['has_global_access'])
         self.assertEqual(response.data['role_code'], 'ED')
-
-    def test_me_applications_includes_access_flags(self):
-        restricted = InternalApplication.objects.create(
-            name='Restricted Tool',
-            slug='restricted-tool',
-            app_url='https://example.com/restricted',
-            access_scope=InternalApplication.AccessScope.RESTRICTED,
-        )
-        restricted.departments.add(self.dep_hr)
-        open_app = InternalApplication.objects.create(
-            name='Open Tool',
-            slug='open-tool',
-            app_url='https://example.com/open',
-            access_scope=InternalApplication.AccessScope.ALL_AUTHENTICATED,
-        )
-
-        self.client.credentials(**self.auth_headers_for(self.staff_user))
-        response = self.client.get(reverse('me-applications'))
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data_by_slug = {item['slug']: item for item in response.data}
-        self.assertFalse(data_by_slug['restricted-tool']['can_access'])
-        self.assertTrue(data_by_slug['open-tool']['can_access'])
-        self.assertIn(open_app.slug, data_by_slug)
 
     def test_users_list_requires_authentication(self):
         response = self.client.get(reverse('users-list'))
@@ -245,16 +243,30 @@ class AccountsApiTests(BaseAPITestCase):
             'first_name': 'Blocked',
             'last_name': 'Create',
             'email': 'blocked.create@example.com',
-            'password': 'VeryStrongPass123!',
             'department_id': self.dep_hr.id,
         }
 
-        response = self.client.post(reverse('admin-users-list'), payload, format='json')
+        response = self.client.post(reverse('users-list'), payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_admin_users_list_requires_global_access(self):
+    def test_only_admins_and_executives_can_list_inactive_users(self):
+        self.admin_writer.is_active = False
+        self.admin_writer.save(update_fields=['is_active'])
+
         self.client.credentials(**self.auth_headers_for(self.staff_user))
-        response = self.client.get(reverse('admin-users-list'))
+        response = self.client.get(reverse('users-list'), {'include_inactive': 'true'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('admin.writer@example.com', [u['email'] for u in response.data['results']])
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.get(reverse('users-list'))
+        self.assertNotIn('admin.writer@example.com', [u['email'] for u in response.data['results']])
+        response = self.client.get(reverse('users-list'), {'include_inactive': 'true'})
+        self.assertIn('admin.writer@example.com', [u['email'] for u in response.data['results']])
+
+    def test_user_detail_requires_global_access(self):
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('users-detail', kwargs={'user_id': self.admin_user.id}))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_can_create_user_defaults_role_to_staff(self):
@@ -263,11 +275,10 @@ class AccountsApiTests(BaseAPITestCase):
             'first_name': 'New',
             'last_name': 'Member',
             'email': 'new.member@example.com',
-            'password': 'VeryStrongPass123!',
             'department_id': self.dep_hr.id,
         }
 
-        response = self.client.post(reverse('admin-users-list'), payload, format='json')
+        response = self.client.post(reverse('users-list'), payload, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         created = User.objects.get(email='new.member@example.com')
@@ -281,11 +292,10 @@ class AccountsApiTests(BaseAPITestCase):
             'first_name': 'Dup',
             'last_name': 'User',
             'email': 'staff@example.com',
-            'password': 'VeryStrongPass123!',
             'department_id': self.dep_hr.id,
         }
 
-        response = self.client.post(reverse('admin-users-list'), payload, format='json')
+        response = self.client.post(reverse('users-list'), payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_user_create_rejects_invalid_department(self):
@@ -294,22 +304,21 @@ class AccountsApiTests(BaseAPITestCase):
             'first_name': 'No',
             'last_name': 'Department',
             'email': 'nodept@example.com',
-            'password': 'VeryStrongPass123!',
             'department_id': 999999,
         }
 
-        response = self.client.post(reverse('admin-users-list'), payload, format='json')
+        response = self.client.post(reverse('users-list'), payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_user_detail_not_found(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
-        response = self.client.get(reverse('admin-users-detail', kwargs={'user_id': 999999}))
+        response = self.client.get(reverse('users-detail', kwargs={'user_id': 999999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_can_update_user_role(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.patch(
-            reverse('admin-users-role', kwargs={'user_id': self.staff_user.id}),
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
             {'role_id': self.role_md.id},
             format='json',
         )
@@ -321,17 +330,17 @@ class AccountsApiTests(BaseAPITestCase):
     def test_admin_role_update_rejects_invalid_role(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.patch(
-            reverse('admin-users-role', kwargs={'user_id': self.staff_user.id}),
-            {'role_id': 999999},
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
+            {'role_id': '00000000-0000-0000-0000-000000000000'},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_can_update_user_department(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
-        response = self.client.put(
-            reverse('admin-users-department', kwargs={'user_id': self.staff_user.id}),
+        response = self.client.patch(
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
             {'department_id': self.dep_hr.id},
             format='json',
         )
@@ -340,20 +349,35 @@ class AccountsApiTests(BaseAPITestCase):
         self.staff_user.refresh_from_db()
         self.assertEqual(self.staff_user.staff_profile.department_id, self.dep_hr.id)
 
-    def test_admin_department_update_requires_department(self):
+    def test_user_update_changes_only_the_fields_sent(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
-        response = self.client.put(
-            reverse('admin-users-department', kwargs={'user_id': self.staff_user.id}),
-            {},
+        response = self.client.patch(
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
+            {'first_name': 'Renamed'},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.staff_user.refresh_from_db()
+        self.assertEqual(self.staff_user.first_name, 'Renamed')
+        self.assertEqual(self.staff_user.last_name, 'Member')
+        self.assertEqual(self.staff_user.email, 'staff@example.com')
+        self.assertEqual(self.staff_user.staff_profile.department_id, self.dep_eng.id)
+        self.assertEqual(self.staff_user.staff_profile.role_id, self.role_staff.id)
+
+    def test_user_update_does_not_accept_put(self):
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
+        response = self.client.put(
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
+            {'first_name': 'Renamed'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def test_admin_can_toggle_user_status(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
         response = self.client.patch(
-            reverse('admin-users-status', kwargs={'user_id': self.staff_user.id}),
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
             {'is_active': False},
             format='json',
         )
@@ -366,7 +390,7 @@ class AccountsApiTests(BaseAPITestCase):
     def test_staff_cannot_call_admin_mutation_endpoints(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.patch(
-            reverse('admin-users-status', kwargs={'user_id': self.admin_user.id}),
+            reverse('users-detail', kwargs={'user_id': self.admin_user.id}),
             {'is_active': False},
             format='json',
         )
@@ -380,13 +404,12 @@ class AccountsApiTests(BaseAPITestCase):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
 
         response = self.client.post(
-            reverse('admin-users-list'),
+            reverse('users-list'),
             {
                 'first_name': 'Auto',
                 'last_name': 'Staff',
                 'email': 'autostaff@example.com',
-                'password': 'VeryStrongPass123!',
-                'department_id': self.dep_eng.id,
+                    'department_id': self.dep_eng.id,
             },
             format='json',
         )
@@ -397,37 +420,25 @@ class AccountsApiTests(BaseAPITestCase):
     def test_global_access_non_admin_cannot_call_admin_mutation_endpoints(self):
         self.client.credentials(**self.auth_headers_for(self.admin_user))
         response = self.client.patch(
-            reverse('admin-users-status', kwargs={'user_id': self.staff_user.id}),
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
             {'is_active': False},
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    @patch('accounts.views_api.UserEmailManager.send_password_changed_email')
-    def test_admin_password_reset_sends_temp_password_email(self, mock_send_email):
+    def test_admin_password_reset_sends_a_link_and_leaves_the_password_alone(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
-        payload = {
-            'first_name': self.staff_user.first_name,
-            'last_name': self.staff_user.last_name,
-            'email': self.staff_user.email,
-            'department_id': self.dep_eng.id,
-            'reset_password': True,
-            'new_password': 'N9!vQ2@tLm7#',
-            'confirm_password': 'N9!vQ2@tLm7#',
-        }
 
         response = self.client.patch(
-            reverse('admin-users-detail', kwargs={'user_id': self.staff_user.id}),
-            payload,
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
+            {'send_reset_link': True},
             format='json',
         )
 
-        
-
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.staff_user.refresh_from_db()
-        self.assertTrue(self.staff_user.check_password('N9!vQ2@tLm7#'))
+        self.assertTrue(self.staff_user.check_password('StaffStrongPass123!'))
         self.assertTrue(
             AuditLog.objects.filter(
                 action='ADMIN_USER_PASSWORD_RESET',
@@ -435,14 +446,26 @@ class AccountsApiTests(BaseAPITestCase):
                 target_id=str(self.staff_user.id),
             ).exists()
         )
-        self.assertTrue(mock_send_email.called)
-        _, kwargs = mock_send_email.call_args
-        self.assertEqual(kwargs.get('action'), 'reset')
-        self.assertEqual(kwargs.get('temporary_password'), 'N9!vQ2@tLm7#')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['staff@example.com'])
+        self.assertIn('/reset-password?uid=', _email_html(mail.outbox[0]))
+
+    def test_admin_cannot_set_a_password_directly(self):
+        self.client.credentials(**self.auth_headers_for(self.admin_writer))
+
+        response = self.client.patch(
+            reverse('users-detail', kwargs={'user_id': self.staff_user.id}),
+            {'reset_password': True, 'new_password': 'N9!vQ2@tLm7#', 'confirm_password': 'N9!vQ2@tLm7#'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.staff_user.refresh_from_db()
+        self.assertTrue(self.staff_user.check_password('StaffStrongPass123!'))
 
     def test_admin_user_update_requires_last_name(self):
         self.client.credentials(**self.auth_headers_for(self.admin_writer))
-        url = reverse('admin-users-detail', kwargs={'user_id': self.staff_user.id})
+        url = reverse('users-detail', kwargs={'user_id': self.staff_user.id})
         base = {
             'first_name': self.staff_user.first_name,
             'email': self.staff_user.email,
@@ -453,10 +476,6 @@ class AccountsApiTests(BaseAPITestCase):
             response = self.client.patch(url, {**base, 'last_name': last_name}, format='json')
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, last_name)
             self.assertIn('last_name', response.data['error']['details'])
-
-        response = self.client.patch(url, base, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('last_name', response.data['error']['details'])
 
         self.staff_user.refresh_from_db()
         self.assertEqual(self.staff_user.last_name, 'Member')

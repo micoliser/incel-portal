@@ -549,9 +549,9 @@ class DailyReportsApiTests(BaseAPITestCase):
         self.assertEqual(res1.data['current_date'], str(day1))
         self.assertEqual(res1.data['page'], 1)
         self.assertEqual(res1.data['total_pages'], 3)
-        self.assertEqual(res1.data['total_dates'], 3)
-        self.assertTrue(res1.data['has_next'])
-        self.assertEqual(res1.data['next_page'], 2)
+        self.assertEqual(res1.data['count'], 3)
+        self.assertEqual(res1.data['total_pages'], 3)
+        self.assertEqual(res1.data['page_size'], 1)
         self.assertEqual(res1.data['results'][0]['subreports'][0]['title'], 'Day 1')
 
         # Page 2: next date backwards in time (day2)
@@ -559,8 +559,7 @@ class DailyReportsApiTests(BaseAPITestCase):
         self.assertEqual(res2.status_code, status.HTTP_200_OK)
         self.assertEqual(res2.data['current_date'], str(day2))
         self.assertEqual(res2.data['page'], 2)
-        self.assertTrue(res2.data['has_next'])
-        self.assertEqual(res2.data['next_page'], 3)
+        self.assertEqual(res2.data['page'], 2)
         self.assertEqual(res2.data['results'][0]['subreports'][0]['title'], 'Day 2')
 
         # Page 3: oldest date (day3)
@@ -568,15 +567,14 @@ class DailyReportsApiTests(BaseAPITestCase):
         self.assertEqual(res3.status_code, status.HTTP_200_OK)
         self.assertEqual(res3.data['current_date'], str(day3))
         self.assertEqual(res3.data['page'], 3)
-        self.assertFalse(res3.data['has_next'])
-        self.assertIsNone(res3.data['next_page'])
+        self.assertEqual(res3.data['page'], res3.data['total_pages'])
         self.assertEqual(res3.data['results'][0]['subreports'][0]['title'], 'Day 3')
 
         # Page 4: beyond available dates
         res4 = self.client.get(reverse('reports-department-all'), {'page': 4})
         self.assertEqual(res4.status_code, status.HTTP_200_OK)
         self.assertIsNone(res4.data['current_date'])
-        self.assertFalse(res4.data['has_next'])
+        self.assertEqual(res4.data['results'], [])
         self.assertEqual(res4.data['results'], [])
 
     def test_all_reports_date_filtering(self):

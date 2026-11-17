@@ -5,11 +5,12 @@ from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
+from common.exceptions import Conflict
 from common.params import date_param
 
 from ..models import (
@@ -83,10 +84,7 @@ class GoalsViewSet(ViewSet):
         try:
             summary_data = _get_goal_summary_data(request.user, week_start, week_end)
         except WeeklySummary.DoesNotExist:
-            return Response(
-                {'error': 'Summary not found for the specified week'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            raise NotFound('Summary not found for the specified week')
 
         goals = UserGoal.objects.filter(
             user=request.user,
@@ -100,11 +98,6 @@ class GoalsViewSet(ViewSet):
             'week_end_date': str(week_end),
             'goals': _serialize_goals_with_progress(request.user, goals, week_start, week_end, summary_data),
         })
-
-    @action(detail=False, methods=['get'])
-    def current(self, request):
-        week_start, week_end = self._resolve_week(request)
-        return self._list_goals_for_week(request, week_start, week_end)
 
     def list(self, request):
         week_start, week_end = self._resolve_week(request)
@@ -127,10 +120,7 @@ class GoalsViewSet(ViewSet):
             period_end=week_end,
             is_active=True,
         ).exists():
-            return Response(
-                {'error': 'Goal already exists for this week and metric'},
-                status=status.HTTP_409_CONFLICT,
-            )
+            raise Conflict('Goal already exists for this week and metric')
 
         goal = UserGoal.objects.create(
             user=request.user,

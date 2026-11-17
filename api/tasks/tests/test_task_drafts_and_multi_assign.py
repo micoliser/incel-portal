@@ -42,7 +42,7 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         deadline = (timezone.now() + timedelta(days=2)).isoformat()
         response = self.client.post(
-            '/api/v1/tasks/',
+            '/api/v1/tasks',
             {
                 'title': 'Single Assignee Task',
                 'description': 'Test description',
@@ -53,15 +53,16 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['title'], 'Single Assignee Task')
-        self.assertEqual(response.data['assigned_to']['id'], self.second_user.id)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['title'], 'Single Assignee Task')
+        self.assertEqual(response.data['results'][0]['assigned_to']['id'], self.second_user.id)
         self.assertTrue(Task.objects.filter(title='Single Assignee Task', assigned_to=self.second_user).exists())
 
     def test_create_task_with_multiple_assignees(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         deadline = (timezone.now() + timedelta(days=3)).isoformat()
         response = self.client.post(
-            '/api/v1/tasks/',
+            '/api/v1/tasks',
             {
                 'title': 'Team Broadcast Task',
                 'description': 'Important assignment for all',
@@ -73,7 +74,7 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['count'], 2)
-        self.assertEqual(len(response.data['tasks']), 2)
+        self.assertEqual(len(response.data['results']), 2)
 
         # Confirm 2 distinct tasks created in database
         tasks = Task.objects.filter(title='Team Broadcast Task')
@@ -85,7 +86,7 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         deadline = (timezone.now() + timedelta(days=3)).isoformat()
         response = self.client.post(
-            '/api/v1/tasks/',
+            '/api/v1/tasks',
             {
                 'title': 'Self assignment test',
                 'assigned_to_ids': [self.staff_user.id, self.second_user.id],
@@ -103,7 +104,7 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
 
         # 1. Create a draft with partial data
         create_res = self.client.post(
-            '/api/v1/task-drafts/',
+            '/api/v1/task-drafts',
             {
                 'title': 'Draft in progress',
                 'description': 'Still writing...',
@@ -119,19 +120,19 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
         self.assertEqual(create_res.data['assigned_to_users'][0]['id'], self.second_user.id)
 
         # 2. List drafts
-        list_res = self.client.get('/api/v1/task-drafts/')
+        list_res = self.client.get('/api/v1/task-drafts')
         self.assertEqual(list_res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(list_res.data), 1)
 
         # Another user should see zero drafts
         self.client.credentials(**self.auth_headers_for(self.second_user))
-        other_list_res = self.client.get('/api/v1/task-drafts/')
+        other_list_res = self.client.get('/api/v1/task-drafts')
         self.assertEqual(len(other_list_res.data), 0)
 
         # 3. Update the draft
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         update_res = self.client.patch(
-            f'/api/v1/task-drafts/{draft_id}/',
+            f'/api/v1/task-drafts/{draft_id}',
             {
                 'title': 'Draft updated title',
                 'assigned_to_ids': [self.second_user.id, self.third_user.id],
@@ -143,6 +144,6 @@ class TaskDraftsAndMultiAssignApiTests(BaseAPITestCase):
         self.assertEqual(len(update_res.data['assigned_to_users']), 2)
 
         # 4. Delete the draft
-        del_res = self.client.delete(f'/api/v1/task-drafts/{draft_id}/')
+        del_res = self.client.delete(f'/api/v1/task-drafts/{draft_id}')
         self.assertEqual(del_res.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(TaskDraft.objects.filter(id=draft_id).exists())

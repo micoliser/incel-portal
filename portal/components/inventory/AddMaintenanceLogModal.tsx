@@ -158,9 +158,11 @@ export function AddMaintenanceLogModal({
         size: att.size,
       }));
 
+      const { item, assigned_to, ...rest } = form;
       const payload = {
-        ...form,
-        assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
+        ...rest,
+        item_id: item,
+        assigned_to_id: assigned_to ? Number(assigned_to) : null,
         attachments: [...formattedExistingAttachments, ...uploadedAttachments],
       };
 

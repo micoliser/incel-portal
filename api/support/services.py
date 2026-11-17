@@ -61,10 +61,8 @@ def _build_email_context(request: SupportRequest) -> dict[str, Any]:
 
 def route_support_request(category: str) -> Department:
     """Determine the target department based on request category."""
-    if category == 'IT_SUPPORT':
-        department = Department.objects.filter(code='IT').first()
-    else:
-        department = Department.objects.filter(code='HR').first()
+    flag = 'handles_it_support' if category == 'IT_SUPPORT' else 'handles_general_support'
+    department = Department.objects.filter(**{flag: True}, is_active=True).order_by('name').first()
 
     if not department:
         raise ValidationError(

@@ -33,7 +33,7 @@ class AdminUserListViewTests(APITestCase):
         self.user_team = User.objects.create_user(username='team')
         StaffProfile.objects.create(user=self.user_team, role=self.role_ed, department=self.dept, unit=self.unit, team=self.team)
 
-        self.url = reverse('admin-users-list')
+        self.url = reverse('users-list')
 
     def test_filter_by_department(self):
         response = self.client.get(self.url, {'department_id': self.dept.id})

@@ -121,7 +121,7 @@ class NotificationsApiTests(BaseAPITestCase):
         response = self.client.post(reverse('notifications-read-all'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['updated'], 2)
+        self.assertEqual(response.data['count'], 2)
         self.assertEqual(
             Notification.objects.filter(recipient=self.staff_user, is_read=False).count(),
             0,
@@ -187,7 +187,7 @@ class NotificationsApiTests(BaseAPITestCase):
         response = self.client.delete(reverse('notifications-clear-all'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['deleted'], 2)
+        self.assertEqual(response.data['count'], 2)
         self.assertEqual(Notification.objects.filter(recipient=self.staff_user).count(), 0)
         self.assertEqual(Notification.objects.filter(recipient=self.other_user).count(), 1)
 
@@ -198,7 +198,7 @@ class NotificationsApiTests(BaseAPITestCase):
             reverse('notifications-subscriptions'),
             {
                 'subscription': {
-                    'endpoint': 'https://example.com/endpoint/abc',
+                    'endpoint': 'https://fcm.googleapis.com/fcm/send/abc',
                     'keys': {
                         'p256dh': 'p256dh-key',
                         'auth': 'auth-key',
@@ -218,7 +218,7 @@ class NotificationsApiTests(BaseAPITestCase):
             reverse('notifications-subscriptions'),
             {
                 'subscription': {
-                    'endpoint': 'https://example.com/endpoint/abc',
+                    'endpoint': 'https://fcm.googleapis.com/fcm/send/abc',
                     'keys': {
                         'p256dh': 'new-p256dh-key',
                         'auth': 'new-auth-key',
@@ -227,7 +227,7 @@ class NotificationsApiTests(BaseAPITestCase):
             },
             format='json',
         )
-        self.assertEqual(update_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
         self.assertEqual(update_response.data['id'], subscription_id)
 
         self.client.credentials(**self.auth_headers_for(self.other_user))
@@ -235,7 +235,7 @@ class NotificationsApiTests(BaseAPITestCase):
             reverse('notifications-subscriptions'),
             {
                 'subscription': {
-                    'endpoint': 'https://example.com/endpoint/abc',
+                    'endpoint': 'https://fcm.googleapis.com/fcm/send/abc',
                     'keys': {
                         'p256dh': 'other-p256dh-key',
                         'auth': 'other-auth-key',
@@ -245,17 +245,17 @@ class NotificationsApiTests(BaseAPITestCase):
             },
             format='json',
         )
-        self.assertEqual(rebind_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(rebind_response.status_code, status.HTTP_200_OK)
         self.assertEqual(rebind_response.data['id'], subscription_id)
         self.assertEqual(
-            PushSubscription.objects.filter(endpoint='https://example.com/endpoint/abc').count(),
+            PushSubscription.objects.filter(endpoint='https://fcm.googleapis.com/fcm/send/abc').count(),
             1,
         )
         self.assertTrue(
             PushSubscription.objects.filter(
                 id=subscription_id,
                 user=self.other_user,
-                endpoint='https://example.com/endpoint/abc',
+                endpoint='https://fcm.googleapis.com/fcm/send/abc',
                 p256dh='other-p256dh-key',
                 auth='other-auth-key',
                 user_agent='other-agent',

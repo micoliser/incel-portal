@@ -1,3 +1,4 @@
+import type { Paginated } from "@/lib/api/types";
 import { apiClient } from "@/lib/api-client";
 
 export type ReportCalendarDay = {
@@ -65,15 +66,10 @@ export type ReportsDayResponse = {
 
 export type CreateReportResponse = DailyReportSubreportDetail;
 
-export type DepartmentReportsAllResponse = {
+/** One page per calendar day: `count` and `total_pages` are the number of days. */
+export type DepartmentReportsAllResponse = Paginated<DailyReportDetail> & {
   current_date: string | null;
-  page: number;
-  total_pages: number;
-  total_dates: number;
   total_reports: number;
-  has_next: boolean;
-  next_page: number | null;
-  results: DailyReportDetail[];
 };
 
 export type DepartmentReportsAllParams = {
@@ -90,7 +86,7 @@ export const reportsAPI = {
     params?: DepartmentReportsAllParams,
   ): Promise<DepartmentReportsAllResponse> {
     const { data } = await apiClient.get<DepartmentReportsAllResponse>(
-      "/reports/all/",
+      "/reports/all",
       { params },
     );
     return data;
@@ -98,7 +94,7 @@ export const reportsAPI = {
 
   async getMonth(month: string): Promise<ReportsMonthResponse> {
     const { data } = await apiClient.get<ReportsMonthResponse>(
-      "/reports/month/",
+      "/reports/month",
       {
         params: { month },
       },
@@ -107,7 +103,7 @@ export const reportsAPI = {
   },
 
   async getDay(reportDate: string): Promise<ReportsDayResponse> {
-    const { data } = await apiClient.get<ReportsDayResponse>("/reports/day/", {
+    const { data } = await apiClient.get<ReportsDayResponse>("/reports/day", {
       params: { report_date: reportDate },
     });
     return data;
@@ -119,7 +115,7 @@ export const reportsAPI = {
     comment: string,
   ): Promise<CreateReportResponse> {
     const { data } = await apiClient.post<CreateReportResponse>(
-      "/reports/day/",
+      "/reports/day",
       {
         report_date: reportDate,
         title,
@@ -131,7 +127,7 @@ export const reportsAPI = {
 
   async getDailyReport(reportId: string): Promise<DailyReportDetail> {
     const { data } = await apiClient.get<DailyReportDetail>(
-      `/reports/daily/${reportId}/`,
+      `/reports/daily/${reportId}`,
     );
     return data;
   },
@@ -142,7 +138,7 @@ export const reportsAPI = {
     comment: string,
   ): Promise<CreateReportResponse> {
     const { data } = await apiClient.post<CreateReportResponse>(
-      `/reports/daily/${reportId}/subreports/`,
+      `/reports/daily/${reportId}/subreports`,
       {
         title,
         comment,
@@ -153,7 +149,7 @@ export const reportsAPI = {
 
   async getSubreport(subreportId: string): Promise<DailyReportSubreportDetail> {
     const { data } = await apiClient.get<DailyReportSubreportDetail>(
-      `/reports/subreports/${subreportId}/`,
+      `/reports/subreports/${subreportId}`,
     );
     return data;
   },
@@ -163,7 +159,7 @@ export const reportsAPI = {
     body: string,
   ): Promise<DailyReportComment> {
     const { data } = await apiClient.post<DailyReportComment>(
-      `/reports/subreports/${subreportId}/comments/`,
+      `/reports/subreports/${subreportId}/comments`,
       { body },
     );
     return data;
@@ -174,7 +170,7 @@ export const reportsAPI = {
     recipients: string[],
   ): Promise<{ detail: string }> {
     const { data } = await apiClient.post<{ detail: string }>(
-      `/reports/daily/${reportId}/send-email/`,
+      `/reports/daily/${reportId}/send-email`,
       { recipients },
     );
     return data;

@@ -1,8 +1,13 @@
+import logging
 from datetime import timedelta
 
 from django.conf import settings
 from django.http import HttpResponseForbidden
 from django.utils import timezone
+
+from common.network import client_ip
+
+logger = logging.getLogger(__name__)
 
 
 class LastActivityMiddleware:
@@ -29,8 +34,9 @@ class LastActivityMiddleware:
                         profile.last_activity_at = now
                         profile.save(update_fields=['last_activity_at'])
         except Exception:
-            # Never raise from middleware for best-effort update
-            pass
+            # A best-effort update must never break the response, but a
+            # failure here is still worth seeing.
+            logger.exception('Could not record last activity')
 
         return response
 
@@ -47,39 +53,39 @@ class AdminIPAllowlistMiddleware:
             if getattr(settings, 'DEBUG', False):
                 return self.get_response(request)
 
-            client_ip = request.META.get('REMOTE_ADDR')
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-            
-            if x_forwarded_for:
-                # The leftmost IP is the original client IP. Proxies append to the right.
-                client_ip = x_forwarded_for.split(',')[0].strip()
-
-            allowed_ips = getattr(settings, 'ADMIN_ALLOWED_IPS', ['127.0.0.1'])
-            
-            if client_ip not in allowed_ips:
+            if client_ip(request) not in settings.ADMIN_ALLOWED_IPS:
                 return HttpResponseForbidden("Forbidden: Your IP is not allowed to access this area.")
 
         return self.get_response(request)
 
 class CSPMiddleware:
-    """Adds a Content-Security-Policy header to every response."""
+    """Adds a Content-Security-Policy header to every response.
+
+    The API returns JSON, which a browser never needs to run or style, so
+    everything is refused. Django admin is real HTML and needs its own
+    scripts, inline styles and images, so it gets a policy that allows them
+    (and, unlike before, still no scripts from other sites).
+    """
+
+    API_POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    ADMIN_POLICY = (
+        "default-src 'none'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'"
+    )
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         response = self.get_response(request)
-        csp = (
-            "default-src 'none'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https://*; "
-            "font-src 'self'; "
-            "connect-src 'self'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'none'; "
-            "form-action 'self';"
-        )
         if 'Content-Security-Policy' not in response:
-            response['Content-Security-Policy'] = csp
+            is_admin = request.path.startswith('/admin/') or request.path.startswith('/static/')
+            response['Content-Security-Policy'] = self.ADMIN_POLICY if is_admin else self.API_POLICY
         return response

@@ -1,5 +1,7 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
+
+import common.converters  # noqa: F401  (registers the isodate path converter)
+from common.routers import ApiRouter
 
 from .views_api import (
     DailyReportDetailView,
@@ -19,49 +21,50 @@ from .views_api import (
     WeeklySummaryViewSet,
 )
 
-router = DefaultRouter()
+router = ApiRouter()
 router.register(r'todos', TodoItemViewSet, basename='todo')
-router.register(r'tasks/drafts', TaskDraftViewSet, basename='task-draft-alias')
 router.register(r'task-drafts', TaskDraftViewSet, basename='task-draft')
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'recurring-schedules', RecurringScheduleViewSet, basename='recurring-schedule')
 router.register(r'goals', GoalsViewSet, basename='goal')
-router.register(r'summaries', WeeklySummaryViewSet, basename='weekly-summary')
+
+summary = WeeklySummaryViewSet.as_view
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('reports/month/', ReportsMonthCalendarView.as_view(), name='reports-month-calendar'),
-    path('reports/day/', ReportsDayView.as_view(), name='reports-day-hub'),
-    path('reports/all/', DepartmentReportsAllView.as_view(), name='reports-department-all'),
-    path('reports/daily/<uuid:report_id>/', DailyReportDetailView.as_view(), name='reports-daily-detail'),
-    path(
-        'reports/daily/<uuid:report_id>/send-email/',
+    path('reports/month', ReportsMonthCalendarView.as_view(), name='reports-month-calendar'),
+    path('reports/day', ReportsDayView.as_view(), name='reports-day-hub'),
+    path('reports/all', DepartmentReportsAllView.as_view(), name='reports-department-all'),
+    path('reports/daily/<uuid:report_id>', DailyReportDetailView.as_view(), name='reports-daily-detail'),
+    path('reports/daily/<uuid:report_id>/send-email',
         DailyReportSendEmailView.as_view(),
         name='reports-daily-send-email',
     ),
-    path('reports/daily/<uuid:report_id>/subreports/', DailyReportSubreportCreateView.as_view(), name='reports-daily-subreports-create'),
-    path('reports/subreports/<uuid:subreport_id>/', DailyReportSubreportDetailView.as_view(), name='reports-subreport-detail'),
-    path('reports/subreports/<uuid:subreport_id>/comments/', DailyReportSubreportCommentView.as_view(), name='reports-subreport-comments'),
-    # Explicit endpoint for organization-wide summary to avoid router path drift
+    path('reports/daily/<uuid:report_id>/subreports', DailyReportSubreportCreateView.as_view(), name='reports-daily-subreports-create'),
+    path('reports/subreports/<uuid:subreport_id>', DailyReportSubreportDetailView.as_view(), name='reports-subreport-detail'),
+    path('reports/subreports/<uuid:subreport_id>/comments', DailyReportSubreportCommentView.as_view(), name='reports-subreport-comments'),
+    # Weekly summaries. A summary is addressed by the Monday its week starts on.
+    path('summaries/weeks', summary({'get': 'weeks'}), name='summary-weeks'),
+    path('summaries/weeks/<isodate:week>', summary({'get': 'retrieve'}), name='summary-detail'),
+    path('summaries/weeks/<isodate:week>/comparison', summary({'get': 'comparison'}), name='summary-comparison'),
+    path('summaries/weeks/<isodate:week>/history', summary({'get': 'history'}), name='summary-history'),
     path(
-        'summaries/organization-summary/',
-        WeeklySummaryViewSet.as_view({'get': 'organization_summary'}),
-        name='weekly-summary-organization-summary',
+        'summaries/weeks/<isodate:week>/share',
+        summary({'get': 'share_status', 'post': 'share_create', 'delete': 'share_revoke'}),
+        name='summary-share',
     ),
     path(
-        'summaries/organization_summary/',
-        WeeklySummaryViewSet.as_view({'get': 'organization_summary'}),
-        name='weekly-summary-organization-summary-underscore',
+        'summaries/weeks/<isodate:week>/user-shares',
+        summary({'get': 'user_shares', 'post': 'user_share_create'}),
+        name='summary-user-shares',
     ),
-    # Explicit endpoints for summary comparison and history (ensure availability even if router action registration changes)
-    path('summaries/comparison-metrics/', WeeklySummaryViewSet.as_view({'get': 'comparison_metrics'})),
-    path('summaries/historical/', WeeklySummaryViewSet.as_view({'get': 'historical'})),
-    # Explicit endpoints for sharing a summary
-    path('summaries/share-with-user/', WeeklySummaryViewSet.as_view({'post': 'share_with_user'})),
-    path('summaries/share-status/', WeeklySummaryViewSet.as_view({'get': 'share_status'})),
-    path('summaries/revoke-share/', WeeklySummaryViewSet.as_view({'post': 'revoke_share'})),
-    path('summaries/user-shares/', WeeklySummaryViewSet.as_view({'get': 'user_shares'})),
-    path('summaries/revoke-user-share/', WeeklySummaryViewSet.as_view({'post': 'revoke_user_share'})),
-    # Nested route for summary files: GET /summaries/<id>/files/
-    path('summaries/<uuid:summary_pk>/files/', SummaryFilesViewSet.as_view({'get': 'list'}), name='summary-files-list'),
+    path(
+        'summaries/weeks/<isodate:week>/user-shares/<int:user_id>',
+        summary({'delete': 'user_share_revoke'}),
+        name='summary-user-share-detail',
+    ),
+    path('summaries/weeks/<isodate:week>/export', summary({'post': 'export'}), name='summary-export'),
+    path('summaries/organization', summary({'get': 'organization'}), name='summary-organization'),
+    path('summaries/shared/<str:token>', summary({'get': 'shared'}), name='summary-shared'),
+    path('summaries/<uuid:summary_pk>/files', SummaryFilesViewSet.as_view({'get': 'list'}), name='summary-files-list'),
 ]

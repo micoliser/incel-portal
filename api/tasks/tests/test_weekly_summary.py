@@ -16,6 +16,7 @@ from tasks.models import (
     WeeklySummaryShare,
 )
 from tasks.services import calculate_user_weekly_summary
+from tasks.views_api.summaries import hash_share_token
 
 
 def build_summary_data(**overrides):
@@ -70,7 +71,7 @@ class WeeklySummaryApiTests(BaseAPITestCase):
         self.create_summary(self.admin_user, date(2026, 4, 27), date(2026, 5, 3))
 
         self.client.credentials(**self.auth_headers_for(self.staff_user))
-        response = self.client.get(reverse('weekly-summary-available-weeks'))
+        response = self.client.get(reverse('summary-weeks'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 2)
@@ -101,10 +102,7 @@ class WeeklySummaryApiTests(BaseAPITestCase):
         )
 
         self.client.credentials(**self.auth_headers_for(self.staff_user))
-        response = self.client.get(
-            reverse('weekly-summary-summary'),
-            {'week_start_date': str(self.week_start_recent)},
-        )
+        response = self.client.get(reverse('summary-detail', kwargs={'week': self.week_start_recent}))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['week_start_date'], str(self.week_start_recent))
@@ -127,103 +125,127 @@ class WeeklySummaryApiTests(BaseAPITestCase):
         self.assertEqual(response.data['status_distribution'], {'pending': 3, 'in_progress': 4, 'completed': 6})
         self.assertEqual(response.data['summary_message'], 'Great week overall.')
 
-    def test_summary_endpoint_validates_missing_and_unknown_weeks(self):
+    def test_summary_endpoint_rejects_unknown_and_malformed_weeks(self):
         self.client.credentials(**self.auth_headers_for(self.staff_user))
 
-        missing_week_response = self.client.get(reverse('weekly-summary-summary'))
-        self.assertEqual(missing_week_response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('error', missing_week_response.data)
-
-        unknown_week_response = self.client.get(
-            reverse('weekly-summary-summary'),
-            {'week_start_date': '2026-01-05'},
-        )
+        unknown_week_response = self.client.get(reverse('summary-detail', kwargs={'week': date(2026, 1, 5)}))
         self.assertEqual(unknown_week_response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn('error', unknown_week_response.data)
+        self.assertEqual(unknown_week_response.data['error']['type'], 'not_found')
 
-    def test_share_endpoint_creates_link_and_share_record(self):
-        summary = self.create_summary(
-            self.staff_user,
-            self.week_start_recent,
-            self.week_end_recent,
-        )
+        for bad in ('not-a-date', '2026-13-45', '11-05-2026'):
+            response = self.client.get(f'/api/v1/summaries/weeks/{bad}')
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND, bad)
+
+    def test_another_users_week_is_not_found(self):
+        self.create_summary(self.admin_user, self.week_start_recent, self.week_end_recent)
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        response = self.client.get(reverse('summary-detail', kwargs={'week': self.week_start_recent}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def _share_url(self, week=None):
+        return reverse('summary-share', kwargs={'week': week or self.week_start_recent})
+
+    def test_share_endpoint_creates_link_and_stores_only_a_hash(self):
+        summary = self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
 
         self.client.credentials(**self.auth_headers_for(self.staff_user))
-        response = self.client.post(
-            reverse('weekly-summary-share'),
-            {'week_start_date': str(summary.week_start_date)},
-            format='json',
-        )
+        response = self.client.post(self._share_url())
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(response.data['share_link'].startswith('/summaries?token='))
-        self.assertEqual(response.data['share_link'], f"/summaries?token={response.data['share_token']}")
-        self.assertTrue(response.data['share_token'])
-        self.assertTrue(WeeklySummaryShare.objects.filter(share_token=response.data['share_token']).exists())
-        self.assertEqual(WeeklySummaryShare.objects.get(share_token=response.data['share_token']).summary, summary)
+        self.assertNotIn('share_token', response.data)
+        token = response.data['share_link'].split('token=')[1]
 
-    def test_shared_endpoint_returns_summary_without_authentication(self):
-        summary = self.create_summary(
-            self.staff_user,
-            self.week_start_recent,
-            self.week_end_recent,
-        )
-        share = WeeklySummaryShare.objects.create(
-            summary=summary,
-            shared_by=self.staff_user,
-            share_token='shared-token-123',
-        )
+        share = WeeklySummaryShare.objects.get(summary=summary)
+        self.assertNotEqual(share.share_token, token)
+        self.assertEqual(share.share_token, hash_share_token(token))
+        # Links expire.
+        self.assertGreater(share.expires_at, timezone.now() + timedelta(days=29))
+        self.assertLess(share.expires_at, timezone.now() + timedelta(days=31))
 
-        self.client.credentials()
-        unauthenticated_response = self.client.get(
-            reverse('weekly-summary-shared'),
-            {'token': share.share_token},
-        )
+    def test_share_status_never_returns_the_link(self):
+        self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
 
-        self.assertEqual(unauthenticated_response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self.client.get(self._share_url()).data, {'shared': False})
+        self.client.post(self._share_url())
+
+        status_response = self.client.get(self._share_url())
+        self.assertEqual(set(status_response.data), {'shared', 'created_at', 'expires_at'})
+        self.assertTrue(status_response.data['shared'])
+
+    def test_creating_a_new_link_replaces_the_old_one_and_revoke_removes_it(self):
+        self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+        first = self.client.post(self._share_url()).data['share_link'].split('token=')[1]
+        second = self.client.post(self._share_url()).data['share_link'].split('token=')[1]
+        self.assertEqual(WeeklySummaryShare.objects.count(), 1)
 
         self.client.credentials(**self.auth_headers_for(self.admin_user))
-        authenticated_response = self.client.get(
-            reverse('weekly-summary-shared'),
-            {'token': share.share_token},
+        self.assertEqual(self.client.get(reverse('summary-shared', kwargs={'token': first})).status_code, 404)
+        self.assertEqual(self.client.get(reverse('summary-shared', kwargs={'token': second})).status_code, 200)
+
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+        self.assertEqual(self.client.delete(self._share_url()).status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(self.client.get(self._share_url()).data, {'shared': False})
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.assertEqual(self.client.get(reverse('summary-shared', kwargs={'token': second})).status_code, 404)
+
+    def test_only_the_owner_can_share_or_revoke_a_summary(self):
+        self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        self.assertEqual(self.client.post(self._share_url()).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.delete(self._share_url()).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_shared_endpoint_requires_sign_in_and_returns_the_summary(self):
+        summary = self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
+        WeeklySummaryShare.objects.create(
+            summary=summary,
+            shared_by=self.staff_user,
+            share_token=hash_share_token('shared-token-123'),
         )
+        url = reverse('summary-shared', kwargs={'token': 'shared-token-123'})
+
+        self.client.credentials()
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        authenticated_response = self.client.get(url)
 
         self.assertEqual(authenticated_response.status_code, status.HTTP_200_OK)
         self.assertEqual(authenticated_response.data['summary']['week_start_date'], str(summary.week_start_date))
         self.assertEqual(authenticated_response.data['summary']['user_name'], 'Staff Member')
 
-    def test_shared_endpoint_handles_missing_invalid_and_expired_tokens(self):
+    def test_a_stored_hash_cannot_be_used_as_the_link(self):
+        """Someone who can read the table still cannot open the summary."""
+        summary = self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
+        stored = hash_share_token('shared-token-123')
+        WeeklySummaryShare.objects.create(summary=summary, shared_by=self.staff_user, share_token=stored)
+
+        self.client.credentials(**self.auth_headers_for(self.admin_user))
+        response = self.client.get(reverse('summary-shared', kwargs={'token': stored}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_shared_endpoint_handles_invalid_and_expired_tokens(self):
         self.client.credentials(**self.auth_headers_for(self.admin_user))
 
-        missing_token_response = self.client.get(reverse('weekly-summary-shared'))
-        self.assertEqual(missing_token_response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('error', missing_token_response.data)
-
-        invalid_token_response = self.client.get(
-            reverse('weekly-summary-shared'),
-            {'token': 'not-a-real-token'},
-        )
+        invalid_token_response = self.client.get(reverse('summary-shared', kwargs={'token': 'not-a-real-token'}))
         self.assertEqual(invalid_token_response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn('error', invalid_token_response.data)
+        self.assertEqual(invalid_token_response.data['error']['message'], 'Invalid share link')
 
-        summary = self.create_summary(
-            self.staff_user,
-            self.week_start_recent,
-            self.week_end_recent,
-        )
-        expired_share = WeeklySummaryShare.objects.create(
+        summary = self.create_summary(self.staff_user, self.week_start_recent, self.week_end_recent)
+        WeeklySummaryShare.objects.create(
             summary=summary,
             shared_by=self.staff_user,
-            share_token='expired-token-123',
+            share_token=hash_share_token('expired-token-123'),
             expires_at=timezone.now() - timedelta(minutes=1),
         )
 
-        expired_response = self.client.get(
-            reverse('weekly-summary-shared'),
-            {'token': expired_share.share_token},
-        )
-        self.assertEqual(expired_response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn('error', expired_response.data)
+        expired_response = self.client.get(reverse('summary-shared', kwargs={'token': 'expired-token-123'}))
+        self.assertEqual(expired_response.status_code, status.HTTP_410_GONE)
+        self.assertEqual(expired_response.data['error']['type'], 'gone')
 
 
 class TaskDashboardApiTests(BaseAPITestCase):

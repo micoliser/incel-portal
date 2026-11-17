@@ -22,6 +22,10 @@ def _request_path(request_id) -> str:
     return f'{_support_prefix()}/{request_id}'
 
 
+def support_attachment_key_prefix(request_id) -> str:
+    return f'{_request_path(request_id)}/'
+
+
 def build_support_attachment_key(request_id, file_name: str) -> str:
     return f'{_request_path(request_id)}/{uuid4().hex}{file_suffix(file_name)}'
 

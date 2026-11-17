@@ -99,7 +99,11 @@ class Command(BaseCommand):
         self.stdout.write(f'Recipient: {user.email}')
         
         # Send test email
-        UserEmailManager.send_user_created_email(user, 'TempPassword123!')
+        UserEmailManager.send_user_created_email(
+            user,
+            setup_url='https://example.com/reset-password?uid=test&token=test',
+            expiry_hours=72,
+        )
         self.stdout.write(self.style.SUCCESS('✓ User created email sent'))
 
     def _test_password_changed(self, user_id=None, verbose=False):

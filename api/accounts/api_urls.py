@@ -13,12 +13,8 @@ urlpatterns = [
     path('auth/password-reset/confirm', views_api.PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
     path('me', views_api.MeView.as_view(), name='me'),
     path('me/permissions', views_api.MePermissionsView.as_view(), name='me-permissions'),
-    path('me/applications', views_api.MeApplicationsView.as_view(), name='me-applications'),
-    path('users', views_api.AuthenticatedUserListView.as_view(), name='users-list'),
+    path('users', views_api.UserListView.as_view(), name='users-list'),
+    path('users/<int:user_id>', views_api.UserDetailView.as_view(), name='users-detail'),
+    # Called by another service: its path and response shape must not change.
     path('external/users', views_api.ExternalUserListView.as_view(), name='external-users-list'),
-    path('admin/users', views_api.AdminUserListView.as_view(), name='admin-users-list'),
-    path('admin/users/<int:user_id>', views_api.AdminUserDetailView.as_view(), name='admin-users-detail'),
-    path('admin/users/<int:user_id>/role', views_api.AdminUserRoleUpdateView.as_view(), name='admin-users-role'),
-    path('admin/users/<int:user_id>/department', views_api.AdminUserDepartmentUpdateView.as_view(), name='admin-users-department'),
-    path('admin/users/<int:user_id>/status', views_api.AdminUserStatusUpdateView.as_view(), name='admin-users-status'),
 ]

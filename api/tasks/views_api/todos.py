@@ -4,45 +4,35 @@ import logging
 
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from common.pagination import page_size
+
 from ..models import (
     TodoItem,
 )
-from ..serializers import (
-    TodoItemSerializer,
-)
+from ..serializers import TodoItemSerializer, TodoSnoozeSerializer
 
 logger = logging.getLogger(__name__)
 
 MAX_SNOOZE_MINUTES = 60 * 24 * 365
 
 
-class TodoPagination(PageNumberPagination):
-    page_size = 25
-    page_size_query_param = 'page_size'
-
-    def paginate_queryset(self, queryset, request, view=None):
-        if 'page' in request.query_params:
-            return super().paginate_queryset(queryset, request, view=view)
-        return None
-
-
 class TodoItemViewSet(ModelViewSet):
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    lookup_value_converter = 'uuid'
     serializer_class = TodoItemSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = TodoPagination
+    pagination_class = page_size(25)
 
     def get_queryset(self):
         qs = TodoItem.objects.filter(user=self.request.user)
         view = self.request.query_params.get('view')
         now = timezone.now()
-        today = now.date()
+        today = timezone.localdate(now)
 
         if view == 'today':
             qs = qs.filter(
@@ -81,28 +71,23 @@ class TodoItemViewSet(ModelViewSet):
     def toggle_complete(self, request, pk=None):
         todo = self.get_object()
         todo.toggle_complete()
-        serializer = self.get_serializer(todo)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(self.get_serializer(todo).data)
 
     @action(detail=True, methods=['post'], url_path='snooze')
     def snooze(self, request, pk=None):
         todo = self.get_object()
-        try:
-            minutes = int(request.data.get('minutes', 15))
-        except (ValueError, TypeError):
-            minutes = 15
-        # Between one minute and a year: anything else is a mistake, and an
-        # unbounded value would overflow the date arithmetic.
-        minutes = max(1, min(minutes, MAX_SNOOZE_MINUTES))
+        serializer = TodoSnoozeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # At most a year: an unbounded value would overflow the date arithmetic.
+        minutes = min(serializer.validated_data['minutes'], MAX_SNOOZE_MINUTES)
         todo.snooze(minutes=minutes)
-        serializer = self.get_serializer(todo)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(self.get_serializer(todo).data)
 
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):
         qs = TodoItem.objects.filter(user=request.user)
         now = timezone.now()
-        today = now.date()
+        today = timezone.localdate(now)
 
         total = qs.count()
         completed = qs.filter(is_completed=True).count()
@@ -120,9 +105,9 @@ class TodoItemViewSet(ModelViewSet):
             'upcoming': upcoming,
             'overdue': overdue,
             'completed': completed,
-        }, status=status.HTTP_200_OK)
+        })
 
     @action(detail=False, methods=['post'], url_path='clear-completed')
     def clear_completed(self, request):
         deleted_count, _ = TodoItem.objects.filter(user=request.user, is_completed=True).delete()
-        return Response({'deleted_count': deleted_count}, status=status.HTTP_200_OK)
+        return Response({'count': deleted_count})

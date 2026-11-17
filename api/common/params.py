@@ -59,3 +59,71 @@ def date_param(source, name: str, *, fmt: str = '%Y-%m-%d', label: str = 'YYYY-M
         return datetime.strptime(value, fmt).date()
     except ValueError:
         raise ValidationError({name: f'Must be a date in {label} format.'})
+
+
+def bool_param(params, name, default=False):
+    """Read a true/false query parameter."""
+    value = params.get(name)
+    if value is None or value == '':
+        return default
+    lowered = str(value).strip().lower()
+    if lowered in ('true', '1', 'yes'):
+        return True
+    if lowered in ('false', '0', 'no'):
+        return False
+    raise ValidationError({name: 'Enter true or false.'})
+
+
+def datetime_param(source, name: str) -> datetime | None:
+    """A date and time (ISO 8601), or None when absent. A bare date means the
+    start of that day; a value without a zone is read in the server's zone."""
+    from django.utils import timezone
+    from django.utils.dateparse import parse_date, parse_datetime
+
+    value = _clean(source, name)
+    if value is None:
+        return None
+    try:
+        parsed = parse_datetime(value)
+        if parsed is None:
+            day = parse_date(value)
+            parsed = datetime(day.year, day.month, day.day) if day else None
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        raise ValidationError({name: 'Must be a date and time in ISO 8601 format.'})
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed)
+    return parsed
+
+
+def uuid_value(value: str) -> uuid.UUID:
+    return uuid.UUID(value)
+
+
+def list_param(source, name: str, cast=str) -> list:
+    """A comma-separated list (`?status=open,closed`), each item converted with
+    `cast`. Empty when absent."""
+    value = _clean(source, name)
+    if value is None:
+        return []
+    items = []
+    for raw in value.split(','):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            items.append(cast(raw))
+        except (ValueError, TypeError):
+            raise ValidationError({name: f'"{raw}" is not a valid value.'})
+    return items
+
+
+def choice_param(source, name: str, choices, *, default=None):
+    """One of a fixed set of values, or `default` when absent."""
+    value = _clean(source, name)
+    if value is None:
+        return default
+    if value not in choices:
+        raise ValidationError({name: f'Must be one of: {", ".join(sorted(choices))}.'})
+    return value

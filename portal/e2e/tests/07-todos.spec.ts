@@ -66,11 +66,9 @@ test.describe("to-do list for a staff member", () => {
     await body.getByRole("combobox").selectOption({ label: "High Priority" });
     await expect(todoTitles(page)).toHaveText([TODOS.today]);
 
+    // Changing the filter and searching straight away: the search result must
+    // win even if the "all priorities" answer arrives later.
     await body.getByRole("combobox").selectOption({ label: "All Priorities" });
-    // Wait for the full list before searching. The page does not discard
-    // out-of-date responses, so a slow "all priorities" reply could otherwise
-    // overwrite the search result.
-    await expect(todoTitles(page)).toHaveCount(5);
     await body.getByRole("textbox", { name: "Search to-dos..." }).fill("forklift");
     await expect(todoTitles(page)).toHaveText([TODOS.upcoming]);
   });

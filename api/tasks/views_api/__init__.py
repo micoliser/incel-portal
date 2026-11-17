@@ -5,7 +5,7 @@ keep using `tasks.views_api.<ViewName>`.
 """
 
 from .goals import GoalsViewSet
-from .recurring import RecurringSchedulePagination, RecurringScheduleViewSet
+from .recurring import RecurringScheduleViewSet
 from .reports import (
     DailyReportDetailView,
     DailyReportSendEmailView,
@@ -17,8 +17,8 @@ from .reports import (
     ReportsMonthCalendarView,
 )
 from .summaries import SummaryFilesViewSet, WeeklySummaryViewSet
-from .tasks import TaskDraftViewSet, TaskPagination, TaskViewSet
-from .todos import TodoItemViewSet, TodoPagination
+from .tasks import TaskDraftViewSet, TaskViewSet
+from .todos import TodoItemViewSet
 
 __all__ = [
     'DailyReportDetailView',
@@ -28,15 +28,12 @@ __all__ = [
     'DailyReportSubreportDetailView',
     'DepartmentReportsAllView',
     'GoalsViewSet',
-    'RecurringSchedulePagination',
     'RecurringScheduleViewSet',
     'ReportsDayView',
     'ReportsMonthCalendarView',
     'SummaryFilesViewSet',
     'TaskDraftViewSet',
-    'TaskPagination',
     'TaskViewSet',
     'TodoItemViewSet',
-    'TodoPagination',
     'WeeklySummaryViewSet',
 ]

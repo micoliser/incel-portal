@@ -72,6 +72,9 @@ jobs:
       AWS_S3_OBJECT_ACL: public-read
       AWS_ACCESS_KEY_ID: ci-access-key
       AWS_SECRET_ACCESS_KEY: ci-secret-key
+      # Run the suite against the Postgres service above instead of SQLite, so
+      # constraints, row locks and case rules behave as in production.
+      TEST_USE_SQLITE: "false"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

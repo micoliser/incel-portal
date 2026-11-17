@@ -53,6 +53,7 @@ import {
   AvailableWeek,
   type ComparisonMetrics,
   type SharedWeeklySummary,
+  type ShareStatus,
 } from "@/lib/api/summaries";
 import { goalsAPI, type GoalRecord } from "@/lib/api/goals";
 import { MemoizedSummaryComparison } from "./components/SummaryComparison";
@@ -76,6 +77,7 @@ function SummariesContent() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [creatingShare, setCreatingShare] = useState(false);
   const [shares, setShares] = useState<Record<string, string>>({});
+  const [shareStatuses, setShareStatuses] = useState<Record<string, ShareStatus>>({});
   const [shareConfirmOpen, setShareConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
@@ -166,13 +168,11 @@ function SummariesContent() {
 
     (async () => {
       try {
+        // The server never returns an existing link (it only keeps a hash of
+        // it), so a link is shown only in the session that created it.
         const status = await summariesAPI.getShareStatus(selectedWeek);
-        if (status?.shared && status.share_token) {
-          setShares((prev) => ({
-            ...prev,
-            [selectedWeek]: `/summaries?token=${status.share_token}`,
-          }));
-        } else {
+        setShareStatuses((prev) => ({ ...prev, [selectedWeek]: status }));
+        if (!status?.shared) {
           setShares((prev) => {
             const copy = { ...prev };
             delete copy[selectedWeek];
@@ -240,10 +240,17 @@ function SummariesContent() {
     try {
       setCreatingShare(true);
       const response = await summariesAPI.createShareLink(selectedWeek);
-      const frontendPath = `/summaries?token=${response.share_token}`;
       setShares((prev) => ({
         ...prev,
-        [selectedWeek]: frontendPath,
+        [selectedWeek]: response.share_link,
+      }));
+      setShareStatuses((prev) => ({
+        ...prev,
+        [selectedWeek]: {
+          shared: true,
+          created_at: response.created_at,
+          expires_at: response.expires_at,
+        },
       }));
       toast.success("Share link created! Copy it to share.");
       setShareConfirmOpen(false);
@@ -267,7 +274,7 @@ function SummariesContent() {
     if (!selectedWeek) return;
     try {
       setExporting(true);
-      const resp = await summariesAPI.exportSummary(selectedWeek, "pdf");
+      const resp = await summariesAPI.exportSummary(selectedWeek);
       if (resp?.file_url) {
         const a = document.createElement("a");
         a.href = resp.file_url;
@@ -926,6 +933,39 @@ function SummariesContent() {
                           </Button>
                         </div>
                       </div>
+                    ) : shareStatuses[selectedWeek || ""]?.shared ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          A public share link is active
+                          {shareStatuses[selectedWeek || ""]?.expires_at
+                            ? ` until ${new Date(
+                                shareStatuses[selectedWeek || ""]?.expires_at as string,
+                              ).toLocaleDateString()}`
+                            : ""}
+                          . For security the link is shown only when it is
+                          created; create a new one to replace it.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShareConfirmOpen(true)}
+                            disabled={creatingShare}
+                            className="h-9 text-xs"
+                          >
+                            {creatingShare ? "Creating Link..." : "Create New Link"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setRevokeConfirmOpen(true)}
+                            disabled={isRevoking}
+                            className="h-9 text-xs"
+                          >
+                            Revoke Link
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <Button
@@ -958,7 +998,7 @@ function SummariesContent() {
           <DialogHeader icon={<Share2 className="size-4.5" />}>
             <DialogTitle>Create Public Share Link</DialogTitle>
             <DialogDescription>
-              This creates a view-only share link. Anyone with this link will be able to review this weekly summary report without an account.
+              This creates a view-only share link. Any signed-in colleague with this link can review this weekly summary report. The link expires after 30 days, and creating it replaces any earlier link.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-end gap-2">
@@ -1016,18 +1056,18 @@ function SummariesContent() {
                 if (!selectedWeek) return;
                 try {
                   setIsRevoking(true);
-                  const resp = await summariesAPI.revokeShare(selectedWeek);
-                  if (resp?.revoked) {
-                    setShares((prev) => {
-                      const copy = { ...prev };
-                      delete copy[selectedWeek];
-                      return copy;
-                    });
-                    toast.success("Share link revoked");
-                    setRevokeConfirmOpen(false);
-                  } else {
-                    toast.error("Failed to revoke share link");
-                  }
+                  await summariesAPI.revokeShare(selectedWeek);
+                  setShares((prev) => {
+                    const copy = { ...prev };
+                    delete copy[selectedWeek];
+                    return copy;
+                  });
+                  setShareStatuses((prev) => ({
+                    ...prev,
+                    [selectedWeek]: { shared: false },
+                  }));
+                  toast.success("Share link revoked");
+                  setRevokeConfirmOpen(false);
                 } catch (e) {
                   console.error(e);
                   toast.error("Failed to revoke share link");

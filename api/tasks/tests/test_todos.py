@@ -44,7 +44,7 @@ class TodoItemAPITests(TestCase):
             'priority': 'high',
             'reminder_offset': '15m',
         }
-        response = self.client1.post('/api/v1/todos/', data=payload, format='json')
+        response = self.client1.post('/api/v1/todos', data=payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.json()
         self.assertEqual(data['title'], 'Prepare Q3 slide deck')
@@ -54,9 +54,9 @@ class TodoItemAPITests(TestCase):
         self.assertIsNotNone(data['due_datetime'])
 
         # Check list endpoint
-        list_resp = self.client1.get('/api/v1/todos/')
+        list_resp = self.client1.get('/api/v1/todos')
         self.assertEqual(list_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(list_resp.json()), 1)
+        self.assertEqual(list_resp.json()['count'], 1)
 
     def test_user_isolation(self):
         # User 1 creates a todo
@@ -67,16 +67,16 @@ class TodoItemAPITests(TestCase):
         )
 
         # User 2 lists todos - should see 0
-        resp = self.client2.get('/api/v1/todos/')
+        resp = self.client2.get('/api/v1/todos')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(resp.json()), 0)
+        self.assertEqual(resp.json()['count'], 0)
 
         # User 2 attempts to retrieve User 1's todo - should 404
-        resp = self.client2.get(f'/api/v1/todos/{todo1.id}/')
+        resp = self.client2.get(f'/api/v1/todos/{todo1.id}')
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
         # User 2 attempts to modify User 1's todo - should 404
-        resp = self.client2.patch(f'/api/v1/todos/{todo1.id}/', {'title': 'Hacked'})
+        resp = self.client2.patch(f'/api/v1/todos/{todo1.id}', {'title': 'Hacked'})
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_toggle_complete(self):
@@ -88,13 +88,13 @@ class TodoItemAPITests(TestCase):
         self.assertIsNone(todo.completed_at)
 
         # Toggle to completed
-        resp = self.client1.post(f'/api/v1/todos/{todo.id}/toggle-complete/')
+        resp = self.client1.post(f'/api/v1/todos/{todo.id}/toggle-complete')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertTrue(resp.json()['is_completed'])
         self.assertIsNotNone(resp.json()['completed_at'])
 
         # Toggle back to incomplete
-        resp = self.client1.post(f'/api/v1/todos/{todo.id}/toggle-complete/')
+        resp = self.client1.post(f'/api/v1/todos/{todo.id}/toggle-complete')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertFalse(resp.json()['is_completed'])
         self.assertIsNone(resp.json()['completed_at'])
@@ -108,7 +108,7 @@ class TodoItemAPITests(TestCase):
             reminder_sent=True,
         )
 
-        resp = self.client1.post(f'/api/v1/todos/{todo.id}/snooze/', {'minutes': 20})
+        resp = self.client1.post(f'/api/v1/todos/{todo.id}/snooze', {'minutes': 20})
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         todo.refresh_from_db()
         self.assertFalse(todo.reminder_sent)
@@ -156,7 +156,7 @@ class TodoItemAPITests(TestCase):
         )
 
         # Fetch stats
-        resp = self.client1.get('/api/v1/todos/stats/')
+        resp = self.client1.get('/api/v1/todos/stats')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         data = resp.json()
         self.assertEqual(data['total'], 4)
@@ -167,9 +167,9 @@ class TodoItemAPITests(TestCase):
         self.assertEqual(data['today'], 3)
 
         # Clear completed
-        clear_resp = self.client1.post('/api/v1/todos/clear-completed/')
+        clear_resp = self.client1.post('/api/v1/todos/clear-completed')
         self.assertEqual(clear_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(clear_resp.json()['deleted_count'], 1)
+        self.assertEqual(clear_resp.json()['count'], 1)
         self.assertEqual(TodoItem.objects.filter(user=self.user1).count(), 3)
 
     def test_celery_reminder_dispatch(self):
@@ -201,7 +201,8 @@ class TodoItemAPITests(TestCase):
 
     def test_multiple_reminder_offsets(self):
         now = timezone.now()
-        due_time = now + datetime.timedelta(minutes=20)
+        # A due date and time are wall-clock values in the application's zone.
+        due_time = timezone.localtime(now + datetime.timedelta(minutes=20))
 
         # Creates todo with 30m and 15m offsets
         # Since due is in 20m:
@@ -244,28 +245,28 @@ class TodoItemAPITests(TestCase):
                 priority="medium",
             )
 
-        # Unpaginated request (no page param) -> flat list
-        unpaginated = self.client1.get('/api/v1/todos/')
-        self.assertEqual(unpaginated.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(unpaginated.json(), list)
-        self.assertEqual(len(unpaginated.json()), 30)
+        # The list is always paginated, with or without a page parameter.
+        default_page = self.client1.get('/api/v1/todos')
+        self.assertEqual(default_page.status_code, status.HTTP_200_OK)
+        self.assertEqual(default_page.json()['page'], 1)
+        self.assertEqual(len(default_page.json()['results']), 25)
 
         # Paginated request (page=1) -> DRF paginated response
-        paginated_p1 = self.client1.get('/api/v1/todos/?page=1')
+        paginated_p1 = self.client1.get('/api/v1/todos?page=1')
         self.assertEqual(paginated_p1.status_code, status.HTTP_200_OK)
         data = paginated_p1.json()
         self.assertIn('results', data)
         self.assertIn('count', data)
         self.assertEqual(data['count'], 30)
         self.assertEqual(len(data['results']), 25)
-        self.assertIsNotNone(data['next'])
+        self.assertEqual(data['total_pages'], 2)
 
         # Page 2
-        paginated_p2 = self.client1.get('/api/v1/todos/?page=2')
+        paginated_p2 = self.client1.get('/api/v1/todos?page=2')
         self.assertEqual(paginated_p2.status_code, status.HTTP_200_OK)
         data2 = paginated_p2.json()
         self.assertEqual(len(data2['results']), 5)
-        self.assertIsNone(data2['next'])
+        self.assertEqual(data2['page'], 2)
 
     @patch('emails.services.task_emails.TodoReminderEmailService.send')
     def test_todo_reminder_email_dispatch(self, mock_email_send):

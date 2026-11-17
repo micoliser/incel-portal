@@ -1,22 +1,16 @@
+import logging
+
 from django.contrib.auth.models import User
 from django.core.validators import RegexValidator
 from rest_framework import serializers
 
-from common.users import display_name
+from common.serializers import UserSummarySerializer
+from common.storage import attachment_content_types, attachment_max_size
 
 from .models import SupportAttachment, SupportComment, SupportRequest
 from .s3 import generate_support_attachment_download_url
 
-
-class UserBasicSerializer(serializers.ModelSerializer):
-    full_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'full_name', 'email']
-
-    def get_full_name(self, obj):
-        return display_name(obj)
+logger = logging.getLogger(__name__)
 
 
 class DepartmentBasicSerializer(serializers.Serializer):
@@ -44,7 +38,23 @@ class SupportAttachmentSerializer(serializers.ModelSerializer):
                 content_type=obj.content_type,
             )
         except Exception:
+            logger.exception('Could not create a download link for support attachment %s', obj.id)
             return None
+
+
+def _allowed_content_type(value):
+    value = str(value).strip().lower()
+    allowed = attachment_content_types()
+    if allowed and value not in allowed:
+        raise serializers.ValidationError('Unsupported attachment content type.')
+    return value
+
+
+def _allowed_size(value):
+    maximum = attachment_max_size()
+    if value > maximum:
+        raise serializers.ValidationError(f'Attachment size must be {maximum} bytes or smaller.')
+    return value
 
 
 class SupportAttachmentUploadRequestSerializer(serializers.Serializer):
@@ -52,21 +62,35 @@ class SupportAttachmentUploadRequestSerializer(serializers.Serializer):
     content_type = serializers.CharField(max_length=255)
     size = serializers.IntegerField(min_value=1)
 
+    def validate_content_type(self, value):
+        return _allowed_content_type(value)
+
+    def validate_size(self, value):
+        return _allowed_size(value)
 
 
 class SupportAttachmentConfirmSerializer(serializers.Serializer):
+    """Records a file the browser uploaded. The view checks that the key
+    belongs to this request and what storage actually holds."""
+
     object_key = serializers.CharField(
         max_length=1024,
         validators=[
             RegexValidator(
-                regex=r'^[\w-]+/[\w-]+/[0-9a-f]{32}(?:\.[a-zA-Z0-9_.-]+)?$',
-                message='Invalid attachment key format.'
+                regex=r'^[\w-]+(?:/[\w-]+)*/[0-9a-fA-F-]{32,36}/[0-9a-f]{32}(?:\.[a-zA-Z0-9]+)?$',
+                message='Invalid attachment key format.',
             )
-        ]
+        ],
     )
     file_name = serializers.CharField(max_length=255)
     content_type = serializers.CharField(max_length=255)
     size = serializers.IntegerField(min_value=1)
+
+    def validate_content_type(self, value):
+        return _allowed_content_type(value)
+
+    def validate_size(self, value):
+        return _allowed_size(value)
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +98,7 @@ class SupportAttachmentConfirmSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 
 class SupportCommentSerializer(serializers.ModelSerializer):
-    author = UserBasicSerializer(read_only=True)
+    author = UserSummarySerializer(read_only=True)
     attachments = SupportAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -91,9 +115,9 @@ class SupportCommentCreateSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 
 class SupportRequestListSerializer(serializers.ModelSerializer):
-    requester = UserBasicSerializer(read_only=True)
+    requester = UserSummarySerializer(read_only=True)
     department = DepartmentBasicSerializer(read_only=True)
-    assigned_to = UserBasicSerializer(read_only=True, allow_null=True)
+    assigned_to = UserSummarySerializer(read_only=True, allow_null=True)
     can_manage = serializers.SerializerMethodField()
 
     class Meta:
@@ -113,10 +137,11 @@ class SupportRequestListSerializer(serializers.ModelSerializer):
 
 
 class SupportRequestDetailSerializer(serializers.ModelSerializer):
-    requester = UserBasicSerializer(read_only=True)
+    requester = UserSummarySerializer(read_only=True)
     department = DepartmentBasicSerializer(read_only=True)
-    assigned_to = UserBasicSerializer(read_only=True, allow_null=True)
-    assigned_by = UserBasicSerializer(read_only=True, allow_null=True)
+    assigned_to = UserSummarySerializer(read_only=True, allow_null=True)
+    assigned_by = UserSummarySerializer(read_only=True, allow_null=True)
+    line_manager = UserSummarySerializer(read_only=True, allow_null=True)
     comments = SupportCommentSerializer(many=True, read_only=True)
     attachments = SupportAttachmentSerializer(many=True, read_only=True)
     attachment_count = serializers.SerializerMethodField()
@@ -176,17 +201,17 @@ class SupportRequestCreateSerializer(serializers.Serializer):
 
 
 class SupportRequestAssignSerializer(serializers.Serializer):
-    assigned_to = serializers.IntegerField()
-
-    def validate_assigned_to(self, value):
-        try:
-            return User.objects.get(id=value, is_active=True)
-        except User.DoesNotExist:
-            raise serializers.ValidationError('User not found or inactive.')
+    assigned_to_id = serializers.PrimaryKeyRelatedField(
+        source='assigned_to',
+        queryset=User.objects.filter(is_active=True),
+        error_messages={'does_not_exist': 'User not found or inactive.'},
+    )
 
 
 class SupportRequestStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=[
         choice for choice in SupportRequest.STATUS_CHOICES
-        if choice[0] in ('open', 'assigned', 'in_progress', 'resolved', 'closed')
+        # Closing is not offered here: a request closes when its requester
+        # confirms the resolution, or automatically some days after it is resolved.
+        if choice[0] in ('open', 'assigned', 'in_progress', 'resolved')
     ])

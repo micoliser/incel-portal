@@ -11,6 +11,7 @@ from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
 from tasks.models import Task, TaskActivity, TaskAttachment
+from tasks.s3 import build_task_attachment_key_prefix
 
 
 class TasksApiTests(BaseAPITestCase):
@@ -63,11 +64,14 @@ class TasksApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['assigned_by']['id'], self.admin_user.id)
-        self.assertEqual(response.data['assigned_to']['id'], self.staff_user.id)
-        self.assertEqual(response.data['status'], 'pending')
+        # Creating always answers with a list: one task per assignee.
+        self.assertEqual(response.data['count'], 1)
+        created = response.data['results'][0]
+        self.assertEqual(created['assigned_by']['id'], self.admin_user.id)
+        self.assertEqual(created['assigned_to']['id'], self.staff_user.id)
+        self.assertEqual(created['status'], 'pending')
 
-        task = Task.objects.get(id=response.data['id'])
+        task = Task.objects.get(id=created['id'])
         activities = TaskActivity.objects.filter(task=task)
         self.assertEqual(activities.count(), 1)
         activity = activities.get()
@@ -105,7 +109,7 @@ class TasksApiTests(BaseAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['assigned_by']['id'], self.admin_user.id)
+        self.assertEqual(response.data['results'][0]['assigned_by']['id'], self.admin_user.id)
 
     def test_create_task_rejects_missing_assigned_to(self):
         self.client.credentials(**self.auth_headers_for(self.admin_user))
@@ -278,7 +282,8 @@ class TasksApiTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 21)
         self.assertEqual(len(self._list_results(response)), 20)
-        self.assertIsNotNone(response.data['next'])
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 2)
 
     def test_task_detail_requires_involvement(self):
         task = Task.objects.create(
@@ -354,7 +359,7 @@ class TasksApiTests(BaseAPITestCase):
             {'status': 'completed'},
             format='json',
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn('Only the assigner can approve and finalize task completion', str(response.data))
 
         # Assignee submits for review
@@ -490,7 +495,7 @@ class TasksApiTests(BaseAPITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn('Only the assigner can edit task details', str(response.data))
 
     def test_cannot_edit_completed_task_details(self):
@@ -553,10 +558,9 @@ class TasksApiTests(BaseAPITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('error', response.data)
-        self.assertIn('details', response.data['error'])
-        self.assertIn('status', response.data['error']['details'])
+        # Not their change to make: a permission error, not a validation error.
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['error']['message'], 'Only the assignee can change task progress.')
 
     def test_status_cannot_move_back_to_pending_after_progress(self):
         task = Task.objects.create(
@@ -829,7 +833,7 @@ class TasksApiTests(BaseAPITestCase):
             assigned_by=self.admin_user,
             assigned_to=self.staff_user,
         )
-        object_key = f'task-attachments/{task.id}/report.pdf'
+        object_key = f'{build_task_attachment_key_prefix(task.id)}report.pdf'
 
         self.client.credentials(**self.auth_headers_for(self.staff_user))
         response = self.client.post(

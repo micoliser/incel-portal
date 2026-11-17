@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext, type Paginated } from "@/lib/api/types";
 import axios from "axios";
 import Image from "next/image";
 import {
@@ -60,7 +61,8 @@ type ApplicationRecord = {
   name: string;
   slug: string;
   description: string;
-  app_url: string;
+  /** Null when the signed-in user may not open the application. */
+  app_url: string | null;
   logo_url?: string | null;
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   access_scope: "ALL_AUTHENTICATED" | "RESTRICTED";
@@ -70,15 +72,7 @@ type ApplicationRecord = {
   access_reason?: string;
 };
 
-type ApplicationsResponse = {
-  count: number;
-  page: number;
-  page_size: number;
-  total_pages: number;
-  next_page: number | null;
-  previous_page: number | null;
-  results: ApplicationRecord[];
-};
+type ApplicationsResponse = Paginated<ApplicationRecord>;
 
 type FormState = {
   name: string;
@@ -136,7 +130,7 @@ type ManageTab = "edit" | "access";
 
 type AccessOverrideEntry = {
   id: string;
-  user: number;
+  user: { id: number };
   effect: "ALLOW" | "DENY";
   reason?: string;
   expires_at?: string | null;
@@ -345,6 +339,8 @@ export default function ApplicationsPage() {
   const [deniedFeedbackIds, setDeniedFeedbackIds] = useState<string[]>([]);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
+  // Only the newest list request may update the list.
+  const latestRequestRef = useRef(0);
 
   useEffect(() => {
     async function loadPermissionsAndContext() {
@@ -414,6 +410,7 @@ export default function ApplicationsPage() {
     }
 
     async function loadApplications() {
+      const requestId = ++latestRequestRef.current;
       try {
         const isInitialPage = currentPage === 1;
         isRequestInFlightRef.current = true;
@@ -425,12 +422,12 @@ export default function ApplicationsPage() {
 
         const params: Record<string, string> = {};
         if (searchQuery) {
-          params.q = searchQuery;
+          params.search = searchQuery;
         }
 
         if (hasGlobalAccess) {
           if (selectedDepartmentFilterIds.length > 0) {
-            params.department_ids = selectedDepartmentFilterIds.join(",");
+            params.department_id = selectedDepartmentFilterIds.join(",");
           }
         } else if (userVisibilityFilter === "accessible") {
           params.accessible = "true";
@@ -439,26 +436,23 @@ export default function ApplicationsPage() {
         params.page = String(currentPage);
 
         const response = await apiClient.get("/applications", { params });
-        const payload = response.data as
-          | ApplicationsResponse
-          | ApplicationRecord[];
 
-        if (Array.isArray(payload)) {
-          setApplications(payload);
-          setHasNextPage(false);
-          return;
-        }
+        // A newer request (the filters changed) has superseded this one.
+        if (requestId !== latestRequestRef.current) return;
+        const payload = response.data as ApplicationsResponse;
 
         setApplications((current) =>
           isInitialPage ? payload.results : [...current, ...payload.results],
         );
-        setHasNextPage(Boolean(payload.next_page));
+        setHasNextPage(pageHasNext(payload));
       } catch (error) {
         toast.error(extractApiErrorMessage(error, "Failed to load applications."));
       } finally {
-        isRequestInFlightRef.current = false;
-        setIsLoading(false);
-        setIsLoadingMore(false);
+        if (requestId === latestRequestRef.current) {
+          isRequestInFlightRef.current = false;
+          setIsLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     }
 
@@ -561,7 +555,7 @@ export default function ApplicationsPage() {
     const appOverrides = overridesByApp[manageTarget.id] ?? [];
     const overrideEffectByUser = new Map<string, "ALLOW" | "DENY">();
     for (const item of appOverrides) {
-      overrideEffectByUser.set(String(item.user), item.effect);
+      overrideEffectByUser.set(String(item.user.id), item.effect);
     }
     const appDepartmentIds = new Set(manageForm.department_ids ?? []);
     
@@ -664,7 +658,7 @@ export default function ApplicationsPage() {
   async function uploadLogoAndGetPublicUrl(slug: string, file: File) {
     const processedFile = await processAndValidateFile(file);
     const signedResponse = await apiClient.post(
-      "/admin/applications/logo-upload-url",
+      "/applications/logo-upload-url",
       {
         slug,
         file_name: processedFile.name,
@@ -726,7 +720,7 @@ export default function ApplicationsPage() {
         );
       }
 
-      const response = await apiClient.post("/admin/applications", {
+      const response = await apiClient.post("/applications", {
         name: form.name.trim(),
         slug: form.slug.trim(),
         description: form.description.trim(),
@@ -805,7 +799,7 @@ export default function ApplicationsPage() {
         `/applications/${application.id}/open`,
       );
       const targetUrl =
-        (response.data?.url as string | undefined) ?? application.app_url;
+        (response.data?.url as string | undefined) ?? application.app_url ?? undefined;
       window.open(targetUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 403) {
@@ -829,7 +823,7 @@ export default function ApplicationsPage() {
       name: application.name,
       slug: application.slug,
       description: application.description ?? "",
-      app_url: application.app_url,
+      app_url: application.app_url ?? "",
       logo_url: application.logo_url ?? "",
       status: application.status,
       visibility_scope: application.visibility_scope,
@@ -854,7 +848,7 @@ export default function ApplicationsPage() {
     try {
       setIsLoadingOverrides(true);
       const response = await apiClient.get(
-        `/admin/applications/${application.id}/overrides`,
+        `/applications/${application.id}/overrides`,
       );
       setOverridesByApp((current) => ({
         ...current,
@@ -1052,7 +1046,7 @@ export default function ApplicationsPage() {
       }
 
       const response = await apiClient.patch(
-        `/admin/applications/${manageTarget.id}`,
+        `/applications/${manageTarget.id}`,
         {
           name: manageForm.name.trim(),
           slug: manageForm.slug.trim(),
@@ -1103,7 +1097,7 @@ export default function ApplicationsPage() {
       setManageApiError("");
       setIsGrantingAccess(true);
       const response = await apiClient.post(
-        `/admin/applications/${manageTarget.id}/overrides`,
+        `/applications/${manageTarget.id}/overrides`,
         {
           user_id: userId,
           effect: "ALLOW",
@@ -1115,7 +1109,7 @@ export default function ApplicationsPage() {
       setOverridesByApp((current) => {
         const existing = current[manageTarget.id] ?? [];
         const withoutSameUser = existing.filter(
-          (item) => item.user !== upserted.user,
+          (item) => item.user.id !== upserted.user.id,
         );
         return {
           ...current,
@@ -1151,7 +1145,7 @@ export default function ApplicationsPage() {
       setManageApiError("");
       setIsRevokingAccess(true);
       const response = await apiClient.post(
-        `/admin/applications/${manageTarget.id}/overrides`,
+        `/applications/${manageTarget.id}/overrides`,
         {
           user_id: userId,
           effect: "DENY",
@@ -1163,7 +1157,7 @@ export default function ApplicationsPage() {
       setOverridesByApp((current) => {
         const existing = current[manageTarget.id] ?? [];
         const withoutSameUser = existing.filter(
-          (item) => item.user !== upserted.user,
+          (item) => item.user.id !== upserted.user.id,
         );
         return {
           ...current,
@@ -2147,7 +2141,7 @@ export default function ApplicationsPage() {
                           setOverrideUserId(value);
                           setOverrideSelectedUser(user || null);
                         }}
-                        apiEndpoint="/admin/users"
+                        apiEndpoint="/users"
                         placeholder="Search for a user..."
                       />
                       {overrideSelectedUser && !canBeGranted && (
@@ -2217,7 +2211,7 @@ export default function ApplicationsPage() {
                           setDenyUserId(value);
                           setDenySelectedUser(user || null);
                         }}
-                        apiEndpoint="/admin/users"
+                        apiEndpoint="/users"
                         placeholder="Search for a user..."
                       />
                       {denySelectedUser && !canBeDenied && (
@@ -2387,7 +2381,7 @@ export default function ApplicationsPage() {
                       )}
 
                       <a
-                        href={application.app_url}
+                        href={application.app_url ?? "#"}
                         onClick={(event) =>
                           handleOpenApplication(event, application)
                         }

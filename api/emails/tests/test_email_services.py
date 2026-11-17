@@ -33,7 +33,9 @@ class EmailServiceTestCase(TestCase):
         mock_send.return_value = True
         
         UserEmailManager.send_user_created_email(
-            self.user, 'temporary_password'
+            self.user,
+            setup_url='https://portal.example.com/reset-password?uid=x&token=y',
+            expiry_hours=72,
         )
         
         # Verify email was sent

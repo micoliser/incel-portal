@@ -33,8 +33,21 @@ def build_maintenance_attachment_key(file_name: str) -> str:
     return f'{_maintenance_prefix()}/{uuid4().hex}{file_suffix(file_name)}'
 
 
-def build_maintenance_attachment_public_url(key: str) -> str:
-    return public_url_for_key(key)
+def maintenance_attachment_key_prefix() -> str:
+    return f'{_maintenance_prefix()}/'
+
+
+def maintenance_attachment_key(stored: str) -> str | None:
+    """The object key for a stored attachment reference, or None.
+
+    Older rows hold the file's public URL instead of its key; those are mapped
+    back to the key when they point at our bucket, and ignored otherwise.
+    """
+    if not stored:
+        return None
+    if stored.startswith(('http://', 'https://')):
+        return key_from_public_url(stored, _maintenance_prefix())
+    return stored if stored.startswith(maintenance_attachment_key_prefix()) else None
 
 
 def _presigned_upload(*, key: str, content_type: str, expires_in: int):

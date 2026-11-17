@@ -1,5 +1,6 @@
 "use client";
 
+import { hasNextPage as pageHasNext } from "@/lib/api/types";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { format, isToday, isTomorrow, isPast, parseISO } from "date-fns";
 import {
@@ -117,6 +118,8 @@ export default function TodosPage() {
   const hasInitialLoadCompleted = useRef(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const isRequestInFlightRef = useRef(false);
+  // Only the newest list request may update the list.
+  const latestRequestRef = useRef(0);
   const [activeView, setActiveView] = useState<ViewFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -181,7 +184,10 @@ export default function TodosPage() {
   }, [activeView, priorityFilter, searchQuery]);
 
   const loadData = useCallback(async () => {
-    if (isRequestInFlightRef.current) return;
+    // Only loading more waits for a request in flight; a filter change starts
+      // a new request, and the older one's answer is then ignored.
+      if (isRequestInFlightRef.current && currentPage > 1) return;
+    const requestId = ++latestRequestRef.current;
     try {
       isRequestInFlightRef.current = true;
       if (!hasInitialLoadCompleted.current) {
@@ -202,17 +208,22 @@ export default function TodosPage() {
         getTodoStats(),
       ]);
 
+      // A newer request (the filters changed) has superseded this one.
+      if (requestId !== latestRequestRef.current) return;
+
       setTodos((prev) => (currentPage === 1 ? todosData.results : [...prev, ...todosData.results]));
-      setHasNextPage(Boolean(todosData.next));
+      setHasNextPage(pageHasNext(todosData));
       setStats(statsData);
     } catch (err) {
       toast.error(extractApiErrorMessage(err, "Failed to load to-dos"));
     } finally {
-      isRequestInFlightRef.current = false;
-      hasInitialLoadCompleted.current = true;
-      setLoading(false);
-      setIsFiltering(false);
-      setIsLoadingMore(false);
+      if (requestId === latestRequestRef.current) {
+        isRequestInFlightRef.current = false;
+        hasInitialLoadCompleted.current = true;
+        setLoading(false);
+        setIsFiltering(false);
+        setIsLoadingMore(false);
+      }
     }
   }, [activeView, priorityFilter, searchQuery, currentPage]);
 
@@ -453,7 +464,7 @@ export default function TodosPage() {
     try {
       setIsClearingCompleted(true);
       const res = await clearCompletedTodos();
-      toast.success(`Cleared ${res.deleted_count} completed to-dos`);
+      toast.success(`Cleared ${res.count} completed to-dos`);
       setIsConfirmClearOpen(false);
       loadData();
     } catch (err) {

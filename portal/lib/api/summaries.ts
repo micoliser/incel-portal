@@ -57,13 +57,14 @@ export interface AvailableWeek {
 
 export interface ShareResponse {
   share_link: string;
-  share_token: string;
   created_at: string;
+  expires_at: string | null;
 }
 
 export interface UserShare {
   shared_with: number | string;
-  share_token?: string;
+  shared_with_username?: string;
+  /** Present only in the response that creates the share. */
   share_link?: string;
   created_at?: string;
 }
@@ -135,154 +136,91 @@ export interface OrgComparisonMetrics {
   previous_completion_rate?: number;
 }
 
+/** Whether a public link exists. The link itself is only returned when it is created. */
+export interface ShareStatus {
+  shared: boolean;
+  created_at?: string;
+  expires_at?: string | null;
+}
+
+const week = (weekStartDate: string) => `/summaries/weeks/${weekStartDate}`;
+
 export const summariesAPI = {
-  /**
-   * Get list of available weeks with summaries
-   */
+  /** Weeks the signed-in user has a summary for, newest first. */
   async getAvailableWeeks(): Promise<AvailableWeek[]> {
-    const { data } = await apiClient.get<AvailableWeek[]>(
-      "/summaries/available_weeks/",
-    );
+    const { data } = await apiClient.get<AvailableWeek[]>("/summaries/weeks");
     return data;
   },
 
-  /**
-   * Get summary for a specific week
-   */
+  /** The summary for the week starting on the given Monday. */
   async getSummary(weekStartDate: string): Promise<WeeklySummary> {
-    const { data } = await apiClient.get<WeeklySummary>("/summaries/summary/", {
-      params: { week_start_date: weekStartDate },
-    });
+    const { data } = await apiClient.get<WeeklySummary>(week(weekStartDate));
     return data;
   },
 
   /**
-   * Create a shareable link for a summary
+   * Create the public share link. A summary has one link at a time: creating
+   * a new one replaces the previous one. The link is returned only here.
    */
   async createShareLink(weekStartDate: string): Promise<ShareResponse> {
-    const { data } = await apiClient.post<ShareResponse>("/summaries/share/", {
-      week_start_date: weekStartDate,
-    });
+    const { data } = await apiClient.post<ShareResponse>(`${week(weekStartDate)}/share`);
     return data;
   },
 
-  /**
-   * Get public share status for a week
-   */
-  async getShareStatus(
-    weekStartDate: string,
-  ): Promise<{ shared: boolean; share_link?: string; share_token?: string }> {
-    const { data } = await apiClient.get("/summaries/share-status/", {
-      params: { week_start_date: weekStartDate },
-    });
+  async getShareStatus(weekStartDate: string): Promise<ShareStatus> {
+    const { data } = await apiClient.get<ShareStatus>(`${week(weekStartDate)}/share`);
     return data;
   },
 
-  /**
-   * Revoke a public share for a week
-   */
-  async revokeShare(weekStartDate: string) {
-    const { data } = await apiClient.post("/summaries/revoke-share/", {
-      week_start_date: weekStartDate,
-    });
-    return data;
+  async revokeShare(weekStartDate: string): Promise<void> {
+    await apiClient.delete(`${week(weekStartDate)}/share`);
   },
 
-  /**
-   * Share a summary with a specific user (user-to-user share)
-   */
+  /** Share with one colleague, who is emailed and notified with their own link. */
   async shareWithUser(weekStartDate: string, userId: number) {
-    const { data } = await apiClient.post<ShareResponse>(
-      "/summaries/share-with-user/",
-      {
-        week_start_date: weekStartDate,
-        user_id: userId,
-      },
-    );
-    return data;
-  },
-
-  /**
-   * List user-to-user shares for a summary
-   */
-  async getUserShares(weekStartDate: string) {
-    const { data } = await apiClient.get<UserShare[]>(
-      "/summaries/user-shares/",
-      {
-        params: { week_start_date: weekStartDate },
-      },
-    );
-    return data;
-  },
-
-  /**
-   * Revoke a user-to-user share
-   */
-  async revokeUserShare(weekStartDate: string, userId: number) {
-    const { data } = await apiClient.post("/summaries/revoke-user-share/", {
-      week_start_date: weekStartDate,
+    const { data } = await apiClient.post<UserShare>(`${week(weekStartDate)}/user-shares`, {
       user_id: userId,
     });
     return data;
   },
 
-  /**
-   * Get a shared summary (public endpoint, no auth needed)
-   */
+  async getUserShares(weekStartDate: string) {
+    const { data } = await apiClient.get<UserShare[]>(`${week(weekStartDate)}/user-shares`);
+    return data;
+  },
+
+  async revokeUserShare(weekStartDate: string, userId: number): Promise<void> {
+    await apiClient.delete(`${week(weekStartDate)}/user-shares/${userId}`);
+  },
+
+  /** Open a summary from a share link. */
   async getSharedSummary(
     shareToken: string,
   ): Promise<{ summary: SharedWeeklySummary; historical?: WeeklySummary[] }> {
     const { data } = await apiClient.get<{
       summary: SharedWeeklySummary;
       historical?: WeeklySummary[];
-    }>("/summaries/shared/", {
-      params: {
-        token: shareToken,
-      },
+    }>(`/summaries/shared/${encodeURIComponent(shareToken)}`);
+    return data;
+  },
+
+  /** Change against the week before. */
+  async getComparisonMetrics(weekStartDate: string): Promise<ComparisonMetrics> {
+    const { data } = await apiClient.get<ComparisonMetrics>(`${week(weekStartDate)}/comparison`);
+    return data;
+  },
+
+  /** The given week and the ones before it, oldest first. */
+  async getHistoricalSummaries(weekStartDate: string, weeks = 4): Promise<WeeklySummary[]> {
+    const { data } = await apiClient.get<WeeklySummary[]>(`${week(weekStartDate)}/history`, {
+      params: { weeks },
     });
     return data;
   },
 
   /**
-   * Get week-over-week comparison metrics for a summary
-   */
-  async getComparisonMetrics(
-    weekStartDate: string,
-  ): Promise<ComparisonMetrics> {
-    const { data } = await apiClient.get<ComparisonMetrics>(
-      "/summaries/comparison-metrics/",
-      {
-        params: {
-          week_start_date: weekStartDate,
-        },
-      },
-    );
-    return data;
-  },
-
-  /**
-   * Get historical summaries (including the provided week) for the last N weeks
-   */
-  async getHistoricalSummaries(
-    weekStartDate: string,
-    weeks = 4,
-  ): Promise<WeeklySummary[]> {
-    const { data } = await apiClient.get<WeeklySummary[]>(
-      "/summaries/historical/",
-      {
-        params: {
-          week_start_date: weekStartDate,
-          weeks,
-        },
-      },
-    );
-    return data;
-  },
-
-  /**
-   * Get files for a specific summary, grouped by task
-   * @param summaryId - UUID of the weekly summary
-   * @param viewType - 'sent' for files attached by user, 'received' for files from others
+   * Files for a summary, grouped by task.
+   * @param viewType - 'sent' for files attached by the user, 'received' for files from others
    */
   async getWeekFiles(
     summaryId: string,
@@ -294,39 +232,23 @@ export const summariesAPI = {
     };
     if (token) params.token = token;
 
-    const { data } = await apiClient.get<SummaryFilesResponse>(
-      `/summaries/${summaryId}/files/`,
-      {
-        params,
-      },
-    );
-    return data;
-  },
-
-  /**
-   * Request server to generate and store an export (PDF). Returns export record with file_url.
-   */
-  async exportSummary(
-    weekStartDate: string,
-    format: string = "pdf",
-  ): Promise<SummaryExport> {
-    const { data } = await apiClient.post<SummaryExport>("/summaries/export/", {
-      week_start_date: weekStartDate,
-      format,
+    const { data } = await apiClient.get<SummaryFilesResponse>(`/summaries/${summaryId}/files`, {
+      params,
     });
     return data;
   },
 
-  /**
-   * Get organization-wide summary (admin only)
-   */
-  async getOrganizationSummary(
-    weekStartDate: string,
-  ): Promise<OrganizationSummary> {
-    const { data } = await apiClient.get<OrganizationSummary>(
-      "/summaries/organization-summary/",
-      { params: { week_start_date: weekStartDate } },
-    );
+  /** Generate and store a PDF of the summary. Returns the export record with its file URL. */
+  async exportSummary(weekStartDate: string): Promise<SummaryExport> {
+    const { data } = await apiClient.post<SummaryExport>(`${week(weekStartDate)}/export`);
+    return data;
+  },
+
+  /** Organization-wide figures for a week (executives only). */
+  async getOrganizationSummary(weekStartDate: string): Promise<OrganizationSummary> {
+    const { data } = await apiClient.get<OrganizationSummary>("/summaries/organization", {
+      params: { week_start_date: weekStartDate },
+    });
     return data;
   },
 };

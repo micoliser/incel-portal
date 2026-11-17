@@ -6,8 +6,7 @@ from django.db import models, transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -29,17 +28,13 @@ from ..services import calculate_next_run_at
 
 logger = logging.getLogger(__name__)
 
-class RecurringSchedulePagination(PageNumberPagination):
-    page_size = 20
-
-
 class RecurringScheduleViewSet(ModelViewSet):
     serializer_class = RecurringScheduleSerializer
     permission_classes = [IsAuthenticated, IsRecurringScheduleAssignerOrAssignee]
-    pagination_class = RecurringSchedulePagination
     # No DELETE: a schedule is stopped with the audited `end` action, which
     # keeps its history. Deleting would silently drop its occurrences.
-    http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    lookup_value_converter = 'uuid'
 
     def get_queryset(self):
         user = self.request.user
@@ -65,10 +60,8 @@ class RecurringScheduleViewSet(ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        assignees = serializer.validated_data.get('assigned_to_ids')
-        if not assignees:
-            single = serializer.validated_data.get('assigned_to')
-            assignees = [single] if single else []
+        # `assigned_to_ids` for several people, or `assigned_to_id` for one.
+        assignees = serializer.validated_data.get('assigned_to_ids') or [serializer.validated_data['assigned_to']]
 
         with transaction.atomic():
             created_schedules = []
@@ -101,15 +94,9 @@ class RecurringScheduleViewSet(ModelViewSet):
                 )
                 created_schedules.append(schedule)
 
-        headers = self.get_success_headers(serializer.data)
+        # One schedule per assignee, so the response is always a list.
         serialized = RecurringScheduleSerializer(created_schedules, many=True, context={'request': request}).data
-        if len(created_schedules) == 1 and 'assigned_to_ids' not in request.data:
-            return Response(serialized[0], status=status.HTTP_201_CREATED, headers=headers)
-        return Response({
-            'count': len(created_schedules),
-            'results': serialized,
-            'id': serialized[0]['id'] if serialized else None,
-        }, status=status.HTTP_201_CREATED, headers=headers)
+        return Response({'count': len(serialized), 'results': serialized}, status=status.HTTP_201_CREATED)
 
     def perform_update(self, serializer):
         previous_state = self._recurring_schedule_notification_state(serializer.instance)
@@ -165,8 +152,6 @@ class RecurringScheduleViewSet(ModelViewSet):
     @action(detail=True, methods=['post'], url_path='end')
     def end(self, request, pk=None):
         schedule = self.get_object()
-        if request.user != schedule.assigned_by:
-            raise PermissionDenied('Only the schedule creator can end it.')
 
         if not schedule.is_active or schedule.ended_at is not None:
             raise ValidationError('This recurring schedule has already ended.')
@@ -198,8 +183,6 @@ class RecurringScheduleViewSet(ModelViewSet):
     @action(detail=True, methods=['post'], url_path='pause')
     def pause(self, request, pk=None):
         schedule = self.get_object()
-        if request.user != schedule.assigned_by:
-            raise PermissionDenied('Only the schedule creator can pause it.')
 
         if not schedule.is_active or schedule.ended_at is not None:
             raise ValidationError('This recurring schedule has ended and cannot be paused.')
@@ -232,8 +215,6 @@ class RecurringScheduleViewSet(ModelViewSet):
     @action(detail=True, methods=['post'], url_path='resume')
     def resume(self, request, pk=None):
         schedule = self.get_object()
-        if request.user != schedule.assigned_by:
-            raise PermissionDenied('Only the schedule creator can resume it.')
 
         if not schedule.is_active or schedule.ended_at is not None:
             raise ValidationError('This recurring schedule has ended and cannot be resumed.')
@@ -243,23 +224,14 @@ class RecurringScheduleViewSet(ModelViewSet):
 
         now = timezone.now()
         if schedule.end_at and schedule.end_at <= now:
-            return Response(
-                {'detail': 'This recurring schedule has expired and cannot be resumed.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('This recurring schedule has expired and cannot be resumed.')
 
         next_run_at = calculate_next_run_at(schedule, reference=now)
         if next_run_at is None:
-            return Response(
-                {'detail': 'No future runs remain for this recurring schedule.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('No future runs remain for this recurring schedule.')
 
         if schedule.end_at and next_run_at > schedule.end_at:
-            return Response(
-                {'detail': 'No future runs remain before the end date.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            raise ValidationError('No future runs remain before the end date.')
 
         schedule.is_paused = False
         schedule.paused_at = None
