@@ -1,7 +1,15 @@
 import axios from "axios";
 
+const SERVER_ERROR_MESSAGE =
+  "Something went wrong on our side. Please try again in a moment.";
+
+/** An HTML page (a proxy's or the server's error page) rather than a message. */
+function looksLikeHtml(value: string): boolean {
+  return value.trimStart().startsWith("<");
+}
+
 function firstString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) {
+  if (typeof value === "string" && value.trim() && !looksLikeHtml(value)) {
     return value.trim();
   }
 
@@ -35,7 +43,8 @@ export function extractApiErrorMessage(
       }
     | undefined;
 
-  if (typeof data === "string" && data.trim()) {
+  // A proxy or the server's own error page (HTML) is not a message for people.
+  if (typeof data === "string" && data.trim() && !looksLikeHtml(data)) {
     return data.trim();
   }
 
@@ -76,6 +85,11 @@ export function extractApiErrorMessage(
 
   if (error.code === "ERR_NETWORK") {
     return "Network error. Please check your connection and try again.";
+  }
+
+  const status = error.response?.status ?? 0;
+  if (status >= 500) {
+    return SERVER_ERROR_MESSAGE;
   }
 
   return fallback;

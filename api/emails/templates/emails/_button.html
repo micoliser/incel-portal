@@ -1,0 +1,6 @@
+{% comment %}Call-to-action button with a plain link underneath. Include with: url (required), path and id (appended to url), label. Use "only".{% endcomment %}<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 4px 0 20px">
+  <tr>
+    <td class="button-cell" bgcolor="#0d47a1" style="border-radius: 8px"><a href="{{ url }}{{ path }}{{ id }}" class="button" target="_blank" rel="noopener" style="display: inline-block; padding: 12px 24px; color: #ffffff; font-weight: 600; text-decoration: none">{{ label }}</a></td>
+  </tr>
+</table>
+<p class="fallback">If the button does not work, copy this link into your browser:<br /><a href="{{ url }}{{ path }}{{ id }}">{{ url }}{{ path }}{{ id }}</a></p>

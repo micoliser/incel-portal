@@ -171,9 +171,14 @@ CACHE_URL = '' if IS_TESTING else os.getenv('CACHE_URL', '')
 if CACHE_URL:
     CACHES = {
         'default': {
-            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            # Django's Redis cache, except that an unreachable Redis is logged
+            # and treated as an empty cache instead of failing every request
+            # (common/cache.py).
+            'BACKEND': 'common.cache.ResilientRedisCache',
             'LOCATION': CACHE_URL,
             'KEY_PREFIX': 'portal',
+            # Give up quickly, so a missing Redis does not slow every request.
+            'OPTIONS': {'socket_connect_timeout': 1, 'socket_timeout': 1},
         }
     }
 else:

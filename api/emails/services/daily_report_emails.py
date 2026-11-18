@@ -73,6 +73,7 @@ class DailyReportEmailManager:
     @staticmethod
     def send_forward(report: DailyReport, sender: User, recipients: List[str]) -> bool:
         context = build_daily_report_email_context(report, sender)
+        context['email_kind'] = 'forward'
         service = DailyReportForwardEmailService()
         reply_to = (sender.email or '').strip() or None
         sent = service.send_email(
@@ -105,28 +106,56 @@ class DailyReportEmailManager:
         return get_direct_manager(user)
 
     @staticmethod
-    def send_manager_notification(report, sender, is_eod=False) -> bool:
-        """Sends an email to the direct manager. If is_eod is True, it's the 5:05 PM report."""
+    def send_manager_notification(report, sender) -> bool:
+        """Email the author's direct manager when the first entry of the day is written."""
         manager = DailyReportEmailManager.get_manager_for_user(sender)
         if not manager or not manager.email:
             return False
-            
+
         context = build_daily_report_email_context(report, sender)
-        
-        # Override the subject based on the requirement
-        if is_eod:
-            subject = f"Daily report for {sender.first_name} {sender.last_name}"
-        else:
-            subject = f"{sender.first_name} {sender.last_name} created a daily report"
-            
-        service = DailyReportForwardEmailService()
-        
-        context['subject'] = subject
-        
-        sent = service.send_email(
+        context['email_kind'] = 'manager'
+        subject = f"{display_name(sender)} wrote a daily report"
+        return DailyReportForwardEmailService().send_email(
             subject=subject,
             recipients=[manager.email],
-            template_name=service.template_name,
+            template_name=DailyReportForwardEmailService.template_name,
             context=context,
         )
+
+    @staticmethod
+    def send_end_of_day(report) -> int:
+        """End-of-day copy of a report to its author and to the author's direct manager.
+
+        Returns the number of emails sent (0, 1 or 2).
+        """
+        author = report.user
+        manager = DailyReportEmailManager.get_manager_for_user(author)
+        base_context = build_daily_report_email_context(report, author)
+        date_display = base_context['report_date_display']
+        service = DailyReportForwardEmailService()
+        sent = 0
+
+        if manager and manager.email:
+            if service.send_email(
+                subject=f"Daily report for {display_name(author)}, {date_display}",
+                recipients=[manager.email],
+                template_name=service.template_name,
+                context={**base_context, 'email_kind': 'manager'},
+            ):
+                sent += 1
+
+        author_email = (author.email or '').strip()
+        if author_email:
+            if service.send_email(
+                subject=f"Your daily report, {date_display}",
+                recipients=[author_email],
+                template_name=service.template_name,
+                context={
+                    **base_context,
+                    'email_kind': 'author',
+                    'manager_name': display_name(manager) if manager else '',
+                },
+            ):
+                sent += 1
+
         return sent

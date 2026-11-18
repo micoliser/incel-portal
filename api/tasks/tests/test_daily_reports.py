@@ -429,62 +429,84 @@ class DailyReportsApiTests(BaseAPITestCase):
         self._create_report(title='Second')
         self.assertEqual(mock_send.call_count, 1)
         
-    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
-    def test_eod_report_sends_manager_email(self, mock_send):
-        # Create department and assign manager
+    def _put_staff_in_managed_department(self, code='TD'):
         from organization.models import Department
-        
-        dept = Department.objects.create(name='Test Dept', code='TD', line_manager_id=self.admin_user.id)
-        
+
+        dept = Department.objects.create(name=f'Dept {code}', code=code, line_manager_id=self.admin_user.id)
         profile = self.staff_user.staff_profile
         profile.department_id = dept.id
         profile.save()
-        
-        self._create_report(title='First')
-        
-        # Reset mock call count because the first creation triggers an email
-        mock_send.reset_mock()
-        
+        return dept
+
+    def _run_eod(self):
         from django.core.cache import cache
-        from django.utils import timezone
 
         from tasks.tasks import send_eod_daily_reports
+
         cache.delete(f"eod_emails_sent_{timezone.localdate().isoformat()}")
-        
-        result = send_eod_daily_reports()
-        
-        self.assertEqual(result['sent'], 1)
-        self.assertEqual(mock_send.call_count, 1)
+        return send_eod_daily_reports()
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_report_goes_to_author_and_manager(self, mock_send):
+        self._put_staff_in_managed_department()
+        self._create_report(title='First')
+        mock_send.reset_mock()  # the first entry already emailed the manager
+
+        result = self._run_eod()
+
+        self.assertEqual(result, {'reports': 1, 'sent': 2})
+        recipients = sorted(call.kwargs['recipients'][0] for call in mock_send.call_args_list)
+        self.assertEqual(recipients, sorted([self.staff_user.email, self.admin_user.email]))
+        kinds = {call.kwargs['recipients'][0]: call.kwargs['context']['email_kind'] for call in mock_send.call_args_list}
+        self.assertEqual(kinds[self.staff_user.email], 'author')
+        self.assertEqual(kinds[self.admin_user.email], 'manager')
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_report_without_manager_still_goes_to_author(self, mock_send):
+        self._create_report(title='No manager')
+        mock_send.reset_mock()
+
+        with patch('emails.services.daily_report_emails.DailyReportEmailManager.get_manager_for_user', return_value=None):
+            result = self._run_eod()
+
+        self.assertEqual(result, {'reports': 1, 'sent': 1})
+        self.assertEqual(mock_send.call_args.kwargs['recipients'], [self.staff_user.email])
+
+    @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
+    def test_eod_skips_reports_without_entries_other_days_and_disabled_accounts(self, mock_send):
+        dept = self._put_staff_in_managed_department()
+        today = timezone.localdate()
+        # A report row with no entries.
+        DailyReport.objects.create(user=self.admin_user, department=dept, report_date=today)
+        # Yesterday's report, with an entry.
+        old = DailyReport.objects.create(user=self.admin_user, department=dept, report_date=today - timedelta(days=1))
+        DailyReportSubreport.objects.create(daily_report=old, title='Old', created_by=self.admin_user)
+        # Today's report by an account that is then disabled.
+        self._create_report(title='Today')
+        self.staff_user.is_active = False
+        self.staff_user.save(update_fields=['is_active'])
+        mock_send.reset_mock()
+
+        result = self._run_eod()
+
+        self.assertEqual(result, {'reports': 0, 'sent': 0})
+        mock_send.assert_not_called()
 
     @patch('emails.services.daily_report_emails.DailyReportForwardEmailService.send_email', return_value=True)
     def test_eod_emails_not_sent_twice(self, mock_send):
-        from django.core.cache import cache
-        from django.utils import timezone
-
-        from organization.models import Department
         from tasks.tasks import send_eod_daily_reports
-        dept = Department.objects.create(name='Test Dept 2', code='TD2', line_manager_id=self.admin_user.id)
-        profile = self.staff_user.staff_profile
-        profile.department_id = dept.id
-        profile.save()
-        
+
+        self._put_staff_in_managed_department('TD2')
         self._create_report(title='EOD First')
         mock_send.reset_mock()
-        
-        today = timezone.localdate()
-        cache.delete(f"eod_emails_sent_{today.isoformat()}")
 
-        # First run should send emails
-        result1 = send_eod_daily_reports()
-        self.assertEqual(result1['sent'], 1)
-        
-        # Second run should skip
+        result1 = self._run_eod()
+        self.assertEqual(result1['sent'], 2)
+
         result2 = send_eod_daily_reports()
         self.assertEqual(result2['sent'], 0)
         self.assertEqual(result2.get('status'), 'already_sent')
-        
-        # The mock should only be called once total
-        mock_send.assert_called_once()
+        self.assertEqual(mock_send.call_count, 2)
 
     def test_all_reports_department_isolation(self):
         today = timezone.localdate()

@@ -25,24 +25,6 @@ class SupportRequestAssignedEmailService(BaseEmailService):
         return f'Support Request Assigned: {title}'
 
 
-class SupportStatusUpdatedEmailService(BaseEmailService):
-    email_type = EmailType.SUPPORT_STATUS_UPDATED
-    template_name = "emails/support/status_updated.html"
-
-    def _get_subject(self, context: dict[str, Any]) -> str:
-        title = context.get('title', 'Support Request')
-        return f'Support Request Updated: {title}'
-
-
-class SupportCommentAddedEmailService(BaseEmailService):
-    email_type = EmailType.SUPPORT_COMMENT_ADDED
-    template_name = "emails/support/comment_added.html"
-
-    def _get_subject(self, context: dict[str, Any]) -> str:
-        title = context.get('title', 'Support Request')
-        return f'New Comment on: {title}'
-
-
 class SupportRequestResolvedEmailService(BaseEmailService):
     email_type = EmailType.SUPPORT_REQUEST_RESOLVED
     template_name = "emails/support/request_resolved.html"

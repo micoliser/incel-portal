@@ -1,697 +1,962 @@
 # Technical Documentation
 
-## 1. Purpose and Audience
+Developer reference for Incel Portal: how it is built, the API contract, the
+rules the code enforces, and how it runs in production. Start with the root
+[README](../README.md) for setup.
 
-This document is the developer-facing reference for the Incel Portal codebase. It is intended for:
+Last full review: 2026-11-17, after the security and consistency overhaul
+(see section 15).
 
-- engineers onboarding to the project
-- developers implementing new features
-- maintainers handling bug fixes and refactors
-- reviewers validating architecture and behavior consistency
+## Contents
 
-Use this guide together with the project overview in the root README.
+1. [System overview](#1-system-overview)
+2. [Repository structure](#2-repository-structure)
+3. [Backend architecture](#3-backend-architecture)
+4. [Authentication and sessions](#4-authentication-and-sessions)
+5. [Access control](#5-access-control)
+6. [API conventions](#6-api-conventions)
+7. [API reference](#7-api-reference)
+8. [Domain rules](#8-domain-rules)
+9. [File uploads](#9-file-uploads)
+10. [Background jobs, emails and notifications](#10-background-jobs-emails-and-notifications)
+11. [Configuration reference](#11-configuration-reference)
+12. [Frontend architecture](#12-frontend-architecture)
+13. [Deployment and operations](#13-deployment-and-operations)
+14. [Testing and quality gates](#14-testing-and-quality-gates)
+15. [Change history of contract-breaking changes](#15-change-history-of-contract-breaking-changes)
+16. [Common change scenarios](#16-common-change-scenarios)
 
-## 2. System Overview
+---
 
-Incel Portal is a monorepo with two runtime applications:
+## 1. System overview
 
-- Backend API: Django + Django REST Framework
-- Frontend App: Next.js App Router + React
+| Component | Technology | Runs as |
+|---|---|---|
+| API | Django 6.0, DRF 3.16, SimpleJWT 5.5 | gunicorn, 3 workers |
+| Background jobs | Celery 5 | one worker app and one beat app (same image as the API) |
+| Web app | Next.js 16 App Router, React 19, TypeScript, Tailwind 4 | Next.js server |
+| Database | PostgreSQL | shared Postgres container |
+| Broker and cache | Redis | one Redis, separate database numbers for Celery and the cache |
+| Files | Amazon S3 | browser uploads directly with presigned URLs |
 
-The platform provides role-aware internal workspace capabilities:
+Business time zone: Africa/Lagos (`TIME_ZONE`, from `APP_TIME_ZONE`). It
+decides what "today" is and when beat jobs run. `USE_TZ = True`, so stored
+timestamps are UTC.
 
-- authentication and session management
-- application access and admin controls
-- task assignment, tracking, comments, and timeline
-- recurring task schedules with edit, pause, resume, and end lifecycles
-- performance goal tracking and weekly/organization metrics
-- daily reporting with subreports and commenting
-- internal IT support ticketing system
-- in-app notifications and optional browser push alerts
-- audit log visibility for governance
-- organization metadata (roles/departments)
-- track physical assets and inventory
-
-## 3. Repository Structure
+## 2. Repository structure
 
 ```text
-incel-portal/
-├── api/                        # Django backend
-│   ├── portalapi/              # Django project config (settings/urls)
-│   ├── accounts/               # auth, user profile and admin user endpoints
-│   ├── applications/           # application catalog + admin operations + audit
-│   ├── organization/           # departments and roles endpoints
-│   ├── tasks/                  # task domain + goals + reports + summaries
-│   ├── support/                # IT support ticketing
-│   ├── common/                 # shared exception handling and helpers
-│   ├── scripts/                # data seeding and utilities
-│   └── requirements.txt
-├── portal/                     # Next.js frontend
-│   ├── app/                    # App Router pages and layouts
-│   ├── components/             # reusable UI and skeletons
-│   ├── lib/                    # API client, auth token helpers, domain clients
-│   └── package.json
-├── docs/                       # developer-focused documentation
-├── deployment/                 # deployment bootstrap scripts (SQL, etc.)
-├── docker-compose.yml          # production app compose stack
-├── DEPLOYMENT.md               # VPS/infra deployment guide
-└── README.md                   # project overview and setup
+api/
+├── portalapi/            settings.py, urls.py (health, admin, /api/v1), api_urls.py, celery.py
+├── accounts/             sign-in, sessions, users, service API keys
+│   ├── services.py       session revocation, password links, sign-in guard
+│   └── tasks.py          token cleanup, audit-log pruning
+├── organization/         Department, Unit, Team, Role; services.py (placement rules)
+├── applications/         applications, access overrides, recent apps, AuditLog
+│   ├── audit.py          log_audit()
+│   ├── audit_actions.py  AuditAction constants (every action name)
+│   └── audit_messages.py human-readable audit text
+├── tasks/                tasks, recurring schedules, to-dos, goals, reports, summaries
+│   ├── views_api/        tasks.py, recurring.py, todos.py, goals.py, reports.py, summaries.py
+│   ├── permissions.py    task and schedule permissions, who-may-change rules
+│   ├── hierarchy.py      manager and oversight helpers
+│   └── tasks.py          Celery jobs
+├── support/              support requests; services.py (routing, transitions)
+├── inventory/            categories, items, assignments, maintenance logs
+├── notifications/        Notification, PushSubscription, services.py, tasks.py
+├── emails/               templates, BaseEmailService, EmailLog, signals
+├── common/
+│   ├── authentication.py cookie JWT auth with origin check, service-key auth
+│   ├── permissions.py    has_admin_access, has_global_access, can_manage_user, classes
+│   ├── access.py         application access and visibility
+│   ├── pagination.py     StandardPagination, page_size(), paginate()
+│   ├── params.py         query and body parameter parsing (400 on bad input)
+│   ├── exceptions.py     error envelope and extra exception types
+│   ├── routers.py        ApiRouter (no trailing slash)
+│   ├── serializers.py    UserSummarySerializer
+│   ├── storage.py        S3 helpers and upload verification
+│   ├── uploads.py        checked_upload() for views
+│   ├── cache.py          ResilientRedisCache
+│   ├── network.py        client_ip()
+│   ├── csv_export.py     streaming, formula-safe CSV
+│   ├── converters.py     isodate path converter
+│   └── middleware.py     last activity, admin IP allowlist, CSP
+└── <app>/tests/          test_*.py
+
+portal/
+├── app/                  page.tsx (sign-in), forgot-password/, reset-password/, (portal)/ (signed-in area)
+├── components/           shared UI and modals
+├── lib/
+│   ├── api-client.ts     axios instance, cookie credentials, refresh on 401
+│   ├── api-errors.ts     extractApiErrorMessage()
+│   ├── auth.ts           API base URL, sign-in path helpers
+│   ├── file-utils.ts     image compression, 5 MB limit
+│   └── api/              one module per API area; types.ts (Paginated, UserSummary)
+├── public/sw.js          service worker (browser push)
+└── e2e/                  Playwright suite (see portal/e2e/README.md)
 ```
 
-## 4. Backend Architecture
+## 3. Backend architecture
 
-### 4.1 Runtime Stack
+### 3.1 Request pipeline
 
-- Django 6
-- Django REST Framework
-- SimpleJWT
-- PostgreSQL in normal runtime
-- SQLite for tests
-- WhiteNoise static serving
-- boto3 for S3-compatible logo uploads
+Middleware, in order: CORS, Security, `AdminIPAllowlistMiddleware`
+(`/admin/` only), WhiteNoise, sessions, common, CSRF (Django admin only),
+auth, `LastActivityMiddleware` (updates `last_activity_at` at most once a
+minute), `CSPMiddleware`, messages, clickjacking.
 
-### 4.2 Django Project Wiring
+DRF defaults (`REST_FRAMEWORK` in settings):
 
-- Root URLs in api/portalapi/urls.py
-- API base path mounted at /api/v1/
-- Health endpoint at /health/
-- Domain route aggregator in api/portalapi/api_urls.py
+| Setting | Value |
+|---|---|
+| Authentication | `common.authentication.CookieJWTAuthentication` |
+| Permission | `IsAuthenticated` |
+| Parsers | JSON only (form and multipart bodies get 415) |
+| Pagination | `common.pagination.StandardPagination` |
+| Exception handler | `common.exceptions.custom_exception_handler` |
+| Throttles | anon 200/min, user 1000/min; scoped: login 25/min, refresh 200/min, admin 150/min, email 25/h, support 100/min, uploads 100/min, service 120/min |
+| `NUM_PROXIES` | `TRUSTED_PROXY_COUNT` |
 
-### 4.3 Domain Apps and Responsibilities
+### 3.2 Client address
 
-1. accounts
+`common.network.client_ip()` reads `X-Forwarded-For` from the right, skipping
+`TRUSTED_PROXY_COUNT` entries' worth of proxies; entries further left are
+caller-supplied and ignored. Used by the admin allowlist, the audit log and
+sign-in lockouts; throttles use the same count. Production: Cloudflare then
+CapRover nginx, so `TRUSTED_PROXY_COUNT=2`.
 
-- login/logout/refresh/change-password
-- current user profile and permissions endpoints
-- authenticated users listing
-- admin user lifecycle updates (role, department, status)
+### 3.3 Cache
 
-2. organization
+`CACHE_URL` set: `common.cache.ResilientRedisCache` (Django's Redis cache that
+treats an unreachable Redis as an empty cache, logs at most once a minute,
+1-second socket timeouts). Unset: per-process memory (fine for development,
+not for production with several processes). The cache holds sign-in failure
+counters and lockouts, rate-limit windows, reset-email counts, summary
+re-share limits and the end-of-day job lock. While Redis is down these are
+not enforced; `/health/` reports `{"status": "degraded", "cache": "unreachable"}`.
 
-- list departments
-- list roles
+### 3.4 Audit log
 
-3. applications
+`applications.audit.log_audit(action=AuditAction.X, request=..., target_type=..., target_id=..., metadata=...)`.
+Every action name is a constant in `applications/audit_actions.py`
+(`UPPER_SNAKE`, for example `ADMIN_USER_CREATED`, `INVENTORY_ITEM_ASSIGNED`,
+`ORG_MEMBERS_ADDED`). Readable text comes from `audit_messages.py`. Share
+tokens and passwords are never logged. Failed sign-in and failed reset rows
+are deleted after `AUDIT_AUTH_FAILURE_RETENTION_DAYS` (90).
 
-- read application catalog
-- open/can-access checks
-- admin create/update/soft-delete
-- signed upload URL generation for logos
-- per-application department mapping and user overrides
-- admin audit log listing/detail
+### 3.5 Data model notes
 
-4. tasks
+- Every model has a UUID primary key except Django's `User` (integer).
+- Email is unique, case-insensitive (`auth_user_email_lower_uniq`); empty
+  emails are allowed more than once.
+- Tasks, recurring schedules, daily reports and support requests protect the
+  users they reference (`on_delete=PROTECT`); users are deactivated, never
+  deleted. Django admin has no delete for users.
+- `Department` has responsibility flags: `manages_inventory`,
+  `handles_it_support`, `handles_general_support`.
+- Summary share tokens are stored as SHA-256 hashes.
+- `ServiceApiKey` stores a SHA-256 of the key and a list of `scopes`.
 
-- task CRUD scoped by assigner/assignee participation
-- backend filtering and pagination for lists
-- status transition business rules
-- task activity timeline (created/status_change/comment)
-- task comments endpoint
-- recurring schedule CRUD and lifecycle actions
-- recurring occurrence generation worker
-- pause/resume semantics that stop and restart generation without backfilling missed runs
-- user goals (set targets and track completion periods)
-- weekly summaries with week-over-week comparison and sharing capabilities
-- daily reports containing detailed subreports and threaded comments
-- organization-wide summary metric caching
+## 4. Authentication and sessions
 
-5. support
+### 4.1 Sign-in
 
-- IT support ticketing CRUD
-- lifecycle management (Open -> Assigned -> In Progress -> Resolved -> Closed)
-- comments and file attachments on tickets
-- auto-closing of resolved tickets after 7 days
+`POST /auth/login {email, password}`:
 
-6. notifications
+1. Locked? `LoginGuard` keys failures on email + client address. Ten
+   failures (`LOGIN_MAX_ATTEMPTS`) lock that pair for 15 minutes
+   (`LOGIN_LOCKOUT_SECONDS`); 50 failures an hour across all addresses
+   (`LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR`) lock the account. Locked returns
+   403 `account_locked` with `Retry-After`.
+2. Unknown email: a password hash is computed anyway (equal timing), 401
+   "Invalid credentials." with `error.metadata.attempts_remaining`. Audit rows
+   for unknown emails are limited to one per email and address every 10
+   minutes.
+3. Wrong password: 401 with `attempts_remaining`.
+4. Right password, disabled account: 403 "This account has been disabled…".
+   The disabled state is only revealed to someone with the password.
+5. Success: tokens are set as cookies; the body is `{"user": {...}}`.
 
-- in-app notification storage and read state
-- unread-count and paginated notification APIs
-- user push subscription registration/deletion
-- optional web push dispatch through VAPID + pywebpush
+### 4.2 Tokens and cookies
 
-6. inventory
+| Cookie | Lifetime | Flags |
+|---|---|---|
+| `access_token` | 5 minutes | HttpOnly, SameSite=Lax, Secure outside debug |
+| `refresh_token` | 12 hours | same |
 
-- list inventory items and categories
-- search and filter items (status, category, managing department, assignee name)
-- assign items to users
-- process returned items
-- track personal assets for logged-in user
-- signed upload URL generation and s3 logic for inventory item photos
+Tokens are never returned in a response body. Refresh tokens rotate and the
+old one is blacklisted. `POST /auth/refresh` also enforces one hour of
+inactivity (`last_activity_at`), refuses inactive users, and returns
+`{"detail": "Session refreshed."}`. `POST /auth/heartbeat` records activity.
 
-7. common
+`CookieJWTAuthentication` accepts `Authorization: Bearer` first, then the
+cookie. For a cookie-authenticated request that changes something
+(not GET/HEAD/OPTIONS), the `Origin` (or `Referer`) must be in
+`CORS_ALLOWED_ORIGINS`, otherwise 403 "This request did not come from the
+portal." Together with JSON-only bodies this replaces CSRF tokens.
 
-- standardized exception response envelope
+### 4.3 Ending sessions
 
-### 4.4 Authentication and Permissions
+`accounts.services.revoke_user_sessions(user)` blacklists every outstanding
+refresh token. Called on password change (then a new pair is issued for the
+current browser), password reset, and deactivation. `POST /auth/logout` needs
+no valid access token: it blacklists the refresh token from the body or
+cookie, clears cookies and always returns 204. Expired token records are
+deleted daily (`accounts.flush_expired_tokens`).
 
-Authentication classes:
+### 4.4 Passwords and links
 
-- JWTAuthentication
-- SessionAuthentication
+- New users: created with an unusable password and emailed a set-password
+  link (`AccountSetupTokenGenerator`, `ACCOUNT_SETUP_LINK_TIMEOUT`, 72 hours).
+- Administrator reset: `PATCH /users/{id} {"send_reset_link": true}` emails a
+  link with the same 72-hour lifetime. Administrators cannot set passwords.
+- Forgot password: `POST /auth/password-reset {email}` always returns
+  "If an account exists for this email, a password reset link has been
+  sent." and sends at most `PASSWORD_RESET_EMAILS_PER_HOUR` (3) per account
+  per hour. Link lifetime `PASSWORD_RESET_TIMEOUT` (1 hour).
+- `GET /auth/password-reset/validate?uid=&token=` and
+  `POST /auth/password-reset/confirm {uid, token, new_password}` accept either
+  link type. Links are single-use (they stop working once the password
+  changes). Django's password validators apply.
+- Links use `PORTAL_BASE_URL/reset-password?uid=…&token=…`.
 
-Default permission class:
+### 4.5 Service API keys
 
-- IsAuthenticated
+For other systems. `Authorization: Bearer <key>` on `GET /external/users`
+only. Keys are created in Django admin or with
+`manage.py create_service_api_key`, stored hashed, shown once. A key needs the
+endpoint's scope (`users:read`). Custom keys must be at least 32 characters.
+`last_used_at` is written at most once a minute. Throttle: 120 requests a
+minute.
 
-Object-level permissions are layered in domain view logic. For tasks, IsTaskAssignedOrAssigner ensures only involved users (assigner or assignee) can access details/actions.
+## 5. Access control
 
-### 4.5 Error Response Contract
+### 5.1 Roles and capabilities
 
-The backend uses a custom DRF exception handler in api/common/exceptions.py.
+| Capability | How it is decided (`common/permissions.py` and others) |
+|---|---|
+| Administrator | `has_admin_access`: superuser, or a profile role with code `ADMIN` (production uses superusers) |
+| Global access (executive) | `has_global_access`: superuser, or an active role with `has_global_access=True` (ED, MD) |
+| Manager | leads a department (`line_manager`), unit (`supervisor`) or team (`team_lead`); `tasks/hierarchy.py` |
+| Asset management | member of a department with `manages_inventory=True` (`inventory.permissions.can_manage_inventory`) |
+| Managing another user | `can_manage_user`: administrators may manage ordinary staff; superusers and executives can only be managed by a superuser |
 
-Validation errors are wrapped as:
+A deactivated role confers nothing.
+
+### 5.2 Role-gated endpoints
+
+Verified by `api/common/tests/test_rbac_matrix.py` (signed-out requests get
+401 everywhere; a service key reaches only `/external/users`).
+
+| What | Staff | Line manager | Asset dept (IT) | Executive | Administrator |
+|---|---|---|---|---|---|
+| Staff directory, organization tree, list departments/units/teams | yes | yes | yes | yes | yes |
+| One user's full record (`GET /users/{id}`), list roles | - | - | - | yes | superuser only |
+| Create users, edit users, enable/disable, send reset link | - | - | - | - | yes |
+| Create, edit, delete departments/units/teams; move members | - | - | - | - | yes |
+| List and open applications (subject to access rules) | yes | yes | yes | yes | yes |
+| Create and edit applications, logos, per-person exceptions | - | - | - | - | yes |
+| Audit log | - | - | - | yes | yes |
+| Organization weekly summary | - | - | - | yes | superuser only |
+| Department support queue | - | own departments | if they lead it | - | - |
+| View and export assets and maintenance logs | - | - | yes | yes | yes |
+| Create, edit, assign, return assets; maintenance logs; categories | - | - | yes | - | yes |
+| My assets | yes | yes | yes | yes | yes |
+
+Further rules:
+- Nobody changes their own role or disables their own account; the last
+  active superuser cannot be disabled.
+- Executives can read everything administrative but change nothing.
+
+### 5.3 Record-level visibility
+
+| Records | Who sees them |
+|---|---|
+| Tasks | Assigner and assignee; managers of either (read, comment, attach); executives (read, comment). Status changes are for the assigner and assignee only. |
+| Recurring schedules | Creator (full control); assignee and managers (read). |
+| Daily reports | Members of the same department (the All Reports list); a single report page: its author and executives. Entries and comments: the author (current day only) and executives. |
+| Weekly summaries | The owner; a colleague it was shared with (personal link); any signed-in user with a valid public link. |
+| Support requests | Requester; assigned handler; line manager of the department handling it; the requester's line manager at the time (read only). |
+| To-dos, goals, notifications, push subscriptions | The owner only. |
+| Applications | Everyone sees applications with `visibility_scope=VISIBLE_TO_ALL`; hidden ones (including deleted) only administrators. `app_url` is null for anyone who cannot open the app. |
+
+Application access (`common/access.py`): global access → yes; an unexpired
+per-person exception (allow or deny) wins next; `ALL_AUTHENTICATED` → yes;
+otherwise the user's department must be one of the application's
+departments. An inactive application cannot be opened.
+
+## 6. API conventions
+
+- Base path `/api/v1`. **No trailing slash** on any route
+  (`APPEND_SLASH = False`; a trailing slash is a 404).
+- **JSON only** in request bodies.
+- **Methods**: `GET` read, `POST` create or action, `PATCH` partial update,
+  `DELETE` remove. No `PUT` anywhere.
+- **Parameters**: free text is `search`; filters on related records are
+  `<name>_id`; several values are comma-separated
+  (`?status=pending,in_progress`); leave a filter out for "all" (no `all`
+  sentinel). A malformed ID, date, number or choice is a 400 naming the
+  parameter.
+- **References in bodies** are `<name>_id` (`assigned_to_id`,
+  `department_id`, `category_id`, `team_lead_id`, …). In responses, related
+  users are nested objects in one shape (`UserSummarySerializer`):
+  `{id, username, email, first_name, last_name, full_name, is_active}`.
+- **Lists** are paginated:
 
 ```json
-{
-  "error": {
-    "type": "validation_error",
-    "message": "Validation failed.",
-    "details": {
-      "field": ["message"]
-    }
-  }
-}
+{"count": 57, "page": 2, "page_size": 20, "total_pages": 3, "results": [ ... ]}
 ```
 
-Other API errors are wrapped similarly with type values such as authentication_error, authorization_error, and not_found.
-
-Frontend and tests should parse error.error.message and error.error.details where applicable.
-
-### 4.6 Task Domain Deep Dive
-
-Key model concepts:
-
-- Task: title, description, assigned_by, assigned_to, status, priority, deadline, completed_at
-- TaskActivity: task, user, activity_type, old_value, new_value, comment, created_at
-- RecurringSchedule: title, description, assigned_by, assigned_to, priority, frequency, interval, weekdays, times, timezone, deadline_offset_minutes, start_at, end_at, next_run_at, is_active, is_paused, paused_at, paused_by, ended_at, ended_by
-- RecurrenceOccurrence: schedule, scheduled_for, created_task
-- UserGoal: Tracks metrics against target values over custom periods
-- WeeklySummary / WeeklySummaryShare: Weekly metrics, comparisons, and secure sharing tokens
-- DailyReport / DailyReportSubreport: Day-to-day work reporting with threaded comments
-
-Activity types currently in use:
-
-- created
-- status_change
-- comment
-
-Business rules:
-
-- only assignee can change status progression
-- status cannot regress back to pending once started
-- deadline cannot be in the past on create/update validation paths
-- deadline required on task creation
-- comments allowed for both assigner and assignee
-- comments are capped at 200 characters
-- comments remain allowed after task completion
-- assignment/status/comment events emit user notifications
-- recurring schedules are creator-managed after creation; assignee cannot be changed
-- recurring schedules validate timezone, weekday selection, time format, and interval values
-- recurring schedules cannot change start_at after the schedule has started
-- paused recurring schedules are skipped by the worker until resumed
-- resumed recurring schedules continue from the next calculated occurrence rather than replaying missed runs
-- ending a recurring schedule clears pause state and prevents future generation
-
-List behavior:
-
-- view filter (assigned, created)
-- status filter (comma-separated)
-- priority filter (comma-separated)
-- server-side pagination (20 items per page)
-
-Recurring schedule behavior:
-
-- creator can view schedules they created and the assignee can view schedules assigned to them
-- task list page exposes recurring schedules created by the current user in a dedicated view
-- recurring schedule detail pages expose edit, pause/resume, and end controls only to the creator
-- recurring schedule worker generates tasks from scheduled occurrences and advances next_run_at after processing
-
-### 4.7 Applications Domain Deep Dive
-
-Highlights:
-
-- supports restricted and all-authenticated access modes
-- supports visibility settings and status lifecycle
-- supports user overrides for allow/deny
-- integrates logo upload by generating signed URLs
-- records audit logs for governance and tracing
-
-### 4.8 Data and Migrations
-
-- Django migrations are tracked per app
-- production runtime expects PostgreSQL
-- tests can run quickly with SQLite fallback in settings testing mode
-- never alter historical migrations unless absolutely required
-- add new migrations for any schema change and include them in PRs
-
-### 4.9 Notifications Domain Deep Dive
-
-Key model concepts:
-
-- Notification: recipient, actor, notification_type, title, body, link_url, payload_json, is_read, read_at
-- PushSubscription: user, endpoint, p256dh, auth, user_agent, is_active
-
-Delivery flow:
-
-- domain events call notifications.services.create_notification
-- a Notification row is always created for in-app history
-- if VAPID settings are configured and active subscriptions exist, push is sent
-- subscriptions returning 404/410 are soft-disabled (is_active=False)
-
-Current task event emitters:
-
-- task assignment notifications on task creation
-- task status change notifications to assigner and assignee
-- comment notifications to the opposite participant
-
-## 5. Frontend Architecture
-
-### 5.1 Runtime Stack
-
-- Next.js 16 App Router
-- React 19
-- TypeScript
-- Tailwind CSS v4
-- shadcn-style UI primitives
-- Sonner for toast feedback
-- date-fns for date/time formatting
-
-### 5.2 Route Map
-
-Public:
-
-- / (login)
-
-Protected (under app/(portal)):
-
-- /dashboard
-- /applications
-- /inventory
-- /inventory/[id]
-- /my-assets
-- /tasks
-- /tasks/[id]
-- /tasks/recurring/[id]
-- /logs
-- /goals
-- /reports
-- /summaries
-- /organization-summary
-- /support
-- /users
-
-Shared header component:
-
-- notification center bell with unread badge
-- on-demand notification sidebar with outside-click close
-- mark-read and clear actions for individual notifications
-- mark-all-read and clear-all actions
-- daily auto prompt for users without push subscription
-
-### 5.3 Auth and API Client Pattern
-
-Auth token storage:
-
-- localStorage keys for access and refresh tokens
-
-HTTP client behavior (portal/lib/api-client.ts):
-
-- request interceptor injects Bearer access token
-- response interceptor handles 401
-- refresh token request sent to /auth/refresh
-- retry original request with new access token
-- clear tokens and redirect to login on refresh failure
-
-### 5.4 UI Composition Pattern
-
-Common page shape across portal pages:
-
-- loading skeleton component while fetch in progress
-- error card for blocking load failures
-- toasts for non-blocking operation feedback
-- section cards for summary/action/details
-- smart edit forms detect unmodified fields to prevent unnecessary API requests ("No changes detected")
-
-This pattern should be maintained for consistency and user trust.
-
-### 5.5 Tasks Frontend Pattern
-
-Task list page:
-
-- server-driven filtering
-- infinite scroll pagination
-- skeleton loading for list states
-- selected tab is reflected in the URL so the page restores the same task view after refresh or navigation
-
-Task detail page:
-
-- status control card
-- comment composer with character counter (200 max)
-- success and failure toast notifications for comment posting
-- unified activity timeline showing created/status/comment events
-
-Recurring task detail page:
-
-- displays schedule metadata, assignment metadata, and lifecycle state
-- allows the creator to edit the schedule from a modal dialog
-- prevents assignee changes in the edit flow
-- disables start_at edits once the schedule has already started
-- provides pause, resume, and end actions with state-aware feedback
-
-### 5.7 Notifications Frontend Pattern
-
-Key implementation files:
-
-- portal/components/notification-center.tsx
-- portal/lib/api/notifications.ts
-- portal/public/sw.js
-
-Behavior:
-
-- polls unread count every 30 seconds
-- lazy-loads paginated notifications when sidebar opens
-- supports infinite scroll pagination in sidebar
-- allows mark one/mark all read operations
-- allows clear one/clear all operations
-- auto-checks browser subscription on app entry
-- prompts once per day if user is not subscribed and permission is not denied
-- supports browser push subscription upsert through API
-- handles service-worker push click navigation back into the portal
-
-### 5.6 Dashboard Pattern
-
-Current dashboard is task-forward for both admin and non-admin users:
-
-- personal task workload metrics first
-- system-wide metrics for admins as secondary context
-- applications still visible but no longer primary emphasis
-
-## 6. API Reference (Developer-Oriented)
-
-Base URL:
-
-- local: http://127.0.0.1:8000/api/v1
-- production: configured by environment
-
-### 6.1 Auth
-
-- POST /auth/login
-- POST /auth/logout
-- POST /auth/refresh
-- POST /auth/change-password
-
-### 6.2 User Context
-
-- GET /me
-- GET /me/permissions
-- GET /me/applications
-
-### 6.3 Users/Admin
-
-- GET /users
-- GET /admin/users
-- GET /admin/users/{user_id}
-- PATCH /admin/users/{user_id}/role
-- PATCH /admin/users/{user_id}/department
-- PATCH /admin/users/{user_id}/status
-
-### 6.4 Organization
-
-- GET /organization/departments
-- GET /organization/roles
-
-### 6.5 Applications
-
-- GET /applications
-- GET /applications/{application_id}
-- GET /applications/{application_id}/can-access
-- GET /applications/{application_id}/open
-- POST /admin/applications
-- POST /admin/applications/logo-upload-url
-- PATCH/DELETE /admin/applications/{application_id}
-- GET/POST /admin/applications/{application_id}/departments
-- POST /admin/applications/{application_id}/overrides
-- DELETE /admin/applications/{application_id}/overrides/{override_id}
-- GET /admin/audit-logs
-- GET /admin/audit-logs/{log_id}
-
-### 6.6 Inventory
-
-- GET /inventory/categories
-- GET /inventory/items
-- POST /inventory/items/{id}/assign
-- POST /inventory/items/{id}/return_item
-- GET /me/inventory
-
-### 6.7 Tasks
-
-- GET /tasks
-- POST /tasks
-- GET /tasks/{id}
-- PATCH /tasks/{id}
-- GET /tasks/{id}/activities
-- POST /tasks/{id}/comments
-
-### 6.7 Recurring schedules
-
-- GET /recurring-schedules
-- POST /recurring-schedules
-- GET /recurring-schedules/{id}
-- PATCH /recurring-schedules/{id}
-- POST /recurring-schedules/{id}/pause
-- POST /recurring-schedules/{id}/resume
-- POST /recurring-schedules/{id}/end
-
-Comment constraints:
-
-- required, non-empty after trim
-- max 200 characters
-
-### 6.7 Goals, Summaries, Reports
-
-- GET /goals
-- GET /summaries
-- GET /summaries/organization-summary/
-- GET /summaries/comparison-metrics/
-- GET /summaries/historical/
-- POST /summaries/share-with-user/
-- GET /summaries/share-status/
-- POST /summaries/revoke-share/
-- GET /summaries/user-shares/
-- POST /summaries/revoke-user-share/
-- GET /summaries/{summary_pk}/files/
-- GET /reports/month/
-- GET /reports/day/
-- GET /reports/daily/{report_id}/
-- POST /reports/daily/{report_id}/send-email/
-- POST /reports/daily/{report_id}/subreports/
-- GET /reports/subreports/{subreport_id}/
-- POST /reports/subreports/{subreport_id}/comments/
-
-### 6.8 Support
-
-- GET /support/requests/
-- POST /support/requests/
-- GET /support/requests/{id}/
-- PATCH /support/requests/{id}/
-
-### 6.9 Notifications
-
-- GET /notifications
-- GET /notifications/unread-count
-- POST /notifications/{notification_id}/read
-- DELETE /notifications/{notification_id}
-- POST /notifications/read-all
-- DELETE /notifications/clear-all
-- GET /notifications/push-public-key
-- GET /notifications/subscriptions
-- POST /notifications/subscriptions
-- DELETE /notifications/subscriptions/{subscription_id}
-
-Push subscription write payload:
+  `page` and `page_size` (up to 100) are query parameters. Default sizes:
+  20; applications 15; audit logs 30; to-dos 25; support 10;
+  notifications 20 (max 50); `reports/all` one day per page (`count` is the
+  number of days, plus `current_date` and `total_reports`).
+  Not paginated on purpose: organization departments, units and teams,
+  inventory categories, `/me/inventory`, task drafts, `/summaries/weeks`,
+  `/external/users`.
+
+- **Errors** always use one shape:
 
 ```json
-{
-  "subscription": {
-    "endpoint": "https://...",
-    "keys": {
-      "p256dh": "...",
-      "auth": "..."
-    }
-  },
-  "user_agent": "Mozilla/5.0 ..."
-}
+{"error": {"type": "validation_error", "message": "Validation failed.", "details": {"field": ["message"]}}}
 ```
 
-## 7. Local Development Workflow
+  `type` is one of `validation_error` (400), `authentication_error` (401),
+  `authorization_error` (403), `account_locked` (403), `not_found` (404),
+  `conflict` (409), `gone` (410), `rate_limited` (429),
+  `bad_gateway` (502), `service_unavailable` (503). Extra data is in
+  `error.metadata` (for example `attempts_remaining`).
 
-### 7.1 Backend
+- **Action results**: an action on one record returns that record; bulk
+  actions return `{"count": n}`; deletes and revokes return 204;
+  message-only actions return `{"detail": "..."}`.
+- **Status codes worth knowing**: 409 for a conflict with current state
+  (deleting a group that has members, an asset with history, a task changed
+  by someone else meanwhile, a duplicate goal); 410 for an expired share link;
+  403 when the user may not make a change, 400 when the change itself is
+  invalid; an upsert returns 201 when it created and 200 when it updated.
 
-```bash
-cd api
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver 127.0.0.1:8000
-```
+## 7. API reference
 
-### 7.2 Frontend
+All paths are under `/api/v1`. Generated from the URL configuration on
+2026-11-17.
 
-```bash
-cd portal
-npm install
-npm run dev
-```
+### Authentication and current user
 
-### 7.3 Required Environment Variables
+| Methods | Path | Notes |
+|---|---|---|
+| POST | `/auth/login` | `{email, password}` → `{user}`; cookies set |
+| POST | `/auth/logout` | always 204 |
+| POST | `/auth/refresh` | cookie or `{refresh}` |
+| POST | `/auth/heartbeat` | records activity, 204 |
+| POST | `/auth/change-password` | `{old_password, new_password}` |
+| POST | `/auth/password-reset` | `{email}` |
+| GET | `/auth/password-reset/validate` | `?uid=&token=` → `{valid, email}` (masked) |
+| POST | `/auth/password-reset/confirm` | `{uid, token, new_password}` |
+| GET | `/me` | current user, including `has_global_access`, `is_manager`, `manager_scope`, `can_manage_inventory` |
+| GET | `/me/permissions` | `{is_superuser, has_global_access, role_code, department_id}` |
+| GET | `/me/recent-applications` | last four opened |
+| GET | `/me/inventory` | assets assigned to me |
 
-Backend (api/.env expected by settings):
+### Users
 
-- DJANGO_SECRET_KEY
-- DJANGO_DEBUG
-- DJANGO_ALLOWED_HOSTS
-- CORS_ALLOWED_ORIGINS
-- CSRF_TRUSTED_ORIGINS
-- DB_NAME
-- DB_USER
-- DB_PASSWORD
-- DB_HOST
-- DB_PORT
-- CELERY_BROKER_URL
-- CELERY_RESULT_BACKEND
-- AWS_S3_BUCKET_NAME
-- AWS_S3_REGION_NAME
-- AWS_S3_CUSTOM_DOMAIN
-- AWS_S3_ENDPOINT_URL
-- AWS_APPLICATION_LOGO_S3_PREFIX
-- AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN
-- AWS_S3_OBJECT_ACL
-- TASK_ATTACHMENT_S3_PREFIX
-- TASK_ATTACHMENT_UPLOAD_URL_EXPIRES_IN
-- TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN
-- TASK_ATTACHMENT_MAX_SIZE
-- TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES
-- WEB_PUSH_VAPID_PUBLIC_KEY
-- WEB_PUSH_VAPID_PRIVATE_KEY
-- WEB_PUSH_VAPID_SUBJECT
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/users` | list: `search`, `department_id`, `unit_id`, `team_id`, `unassigned=department\|unit\|team`, `include_inactive=true` (administrators and executives). Create: `{first_name, last_name, email, role_id?, department_id?, unit_id?, team_id?}`; emails a set-password link |
+| GET, PATCH | `/users/{user_id}` | PATCH any of `first_name, last_name, email, role_id, department_id, unit_id, team_id, is_active, send_reset_link` |
+| GET | `/external/users` | service key only; `?is_active=true\|false\|all`; plain array |
 
-Frontend (portal/.env.local or shell env):
+### Organization
 
-- NEXT_PUBLIC_API_BASE_URL
+| Methods | Path | Notes |
+|---|---|---|
+| GET | `/organization/hierarchy` | departments → units → teams with leaders and `members_count` |
+| GET | `/organization/roles` | |
+| GET, POST | `/organization/departments` | `search`; inactive ones only for administrators |
+| GET, PATCH, DELETE | `/organization/departments/{pk}` | `line_manager_id` must be a member; DELETE with members → 409 |
+| POST | `/organization/departments/{pk}/members` | `{action: "add", user_ids}` |
+| GET, POST | `/organization/units` | `department_id` filter |
+| GET, PATCH, DELETE | `/organization/units/{pk}` | `supervisor_id` |
+| POST | `/organization/units/{pk}/members` | `{action: "add"\|"remove", user_ids}` |
+| GET, POST | `/organization/teams` | `unit_id` filter |
+| GET, PATCH, DELETE | `/organization/teams/{pk}` | `team_lead_id` |
+| POST | `/organization/teams/{pk}/members` | `{action, user_ids}` |
 
-## 8. Testing and Quality Gates
+### Applications and audit log
 
-### 8.1 Backend Quality
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/applications` | `search`, `department_id` (comma list, executives and administrators), `accessible=true` |
+| GET, PATCH, DELETE | `/applications/{application_id}` | DELETE hides and deactivates |
+| GET | `/applications/{application_id}/can-access` | |
+| POST | `/applications/{application_id}/open` | records the visit, returns `{url}` |
+| POST | `/applications/logo-upload-url` | `{slug, file_name, content_type}` |
+| GET, POST | `/applications/{application_id}/overrides` | `{user_id, effect: ALLOW\|DENY, reason?, expires_at?}` |
+| DELETE | `/applications/{application_id}/overrides/{override_id}` | |
+| GET | `/audit-logs` | `action`, `target_type`, `actor_user_id`, `created_from`, `created_to` |
+| GET | `/audit-logs/{log_id}` | |
 
-Typical checks:
+### Tasks, recurring schedules, drafts
 
-```bash
-cd api
-source .venv/bin/activate
-python manage.py check
-python manage.py test
-```
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/tasks` | list: `view=assigned\|created\|team`, `status`, `priority` (comma lists). Create: `{title, description?, priority, deadline, assigned_to_id}` or `assigned_to_ids` (up to 50) → `{count, results}` |
+| GET | `/tasks/dashboard` | counts and recent tasks |
+| GET, PATCH | `/tasks/{pk}` | assignee cannot be changed |
+| GET | `/tasks/{pk}/activities` | timeline |
+| POST | `/tasks/{pk}/approve` | assigner, task under review |
+| POST | `/tasks/{pk}/reject` | assigner; `{reason?, target_status?: in_progress\|pending}` |
+| POST | `/tasks/{pk}/comments` | `{comment, attachments?, links?}` |
+| POST | `/tasks/{pk}/attachment-upload-url` | `{file_name, content_type, size}` |
+| GET, POST | `/recurring-schedules` | create returns `{count, results}` |
+| GET, PATCH | `/recurring-schedules/{pk}` | creator only for PATCH |
+| POST | `/recurring-schedules/{pk}/pause`, `/resume`, `/end` | creator only |
+| GET, POST | `/task-drafts` | up to 50 per user |
+| GET, PATCH, DELETE | `/task-drafts/{pk}` | |
 
-Feature-level expectation:
+### To-dos and goals
 
-- add tests for new business rules
-- add permission tests for any new sensitive endpoint
-- add regression tests whenever a bug is fixed
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/todos` | `view`, `priority`, `search` |
+| GET, PATCH, DELETE | `/todos/{pk}` | |
+| POST | `/todos/{pk}/toggle-complete` | |
+| POST | `/todos/{pk}/snooze` | `{minutes}` (1 or more; capped at a year) |
+| GET | `/todos/stats` | |
+| POST | `/todos/clear-completed` | `{count}` |
+| GET, POST | `/goals` | `week_start_date` |
 
-### 8.2 Frontend Quality
+### Daily reports
 
-```bash
-cd portal
-npm run lint
-npm run build
-```
+| Methods | Path | Notes |
+|---|---|---|
+| GET | `/reports/month` | calendar |
+| GET, POST | `/reports/day` | the day's report; POST adds an entry (`report_date`, title, comment), creating the day's report on first use; current day only |
+| GET | `/reports/all` | department reports, one day per page; `department_id` (executives), `date`, `date_from`, `date_to`, `search` |
+| GET | `/reports/daily/{report_id}` | |
+| POST | `/reports/daily/{report_id}/send-email` | `{recipients}` (registered active users) |
+| POST | `/reports/daily/{report_id}/subreports` | today only |
+| GET | `/reports/subreports/{subreport_id}` | |
+| POST | `/reports/subreports/{subreport_id}/comments` | today only |
 
-Feature-level expectation:
+### Weekly summaries
 
-- preserve page loading and error states
-- include user feedback toasts for async actions
-- keep route-level behavior consistent with role/access constraints
+`{week}` is the Monday the week starts on, `YYYY-MM-DD` (anything else is 404).
 
-### 8.3 CI Pipeline
+| Methods | Path | Notes |
+|---|---|---|
+| GET | `/summaries/weeks` | weeks with a summary |
+| GET | `/summaries/weeks/{week}` | |
+| GET | `/summaries/weeks/{week}/comparison` | |
+| GET | `/summaries/weeks/{week}/history` | `weeks` (1–52, default 4) |
+| GET, POST, DELETE | `/summaries/weeks/{week}/share` | status / create (returns `share_link` once, replaces any previous link, expires in 30 days) / revoke |
+| GET, POST | `/summaries/weeks/{week}/user-shares` | `{user_id}`; recipient emailed and notified |
+| DELETE | `/summaries/weeks/{week}/user-shares/{user_id}` | |
+| POST | `/summaries/weeks/{week}/export` | PDF to S3 |
+| GET | `/summaries/organization` | `week_start_date`; executives |
+| GET | `/summaries/shared/{token}` | expired → 410 |
+| GET | `/summaries/{summary_pk}/files` | `view=sent\|received`, `token` |
 
-GitHub workflow in .github/workflows/ci-cd.yml:
+### Support
 
-- backend tests with Postgres service
-- frontend lint + build
-- docker image build and push to GHCR
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/support/requests` | `status`; create `{title, category: IT_SUPPORT\|OTHER, priority, description}` |
+| GET | `/support/requests/department` | queue of departments the caller leads |
+| GET | `/support/requests/{pk}` | |
+| POST | `/support/requests/{pk}/assign` | `{assigned_to_id}`; department line manager |
+| POST | `/support/requests/{pk}/status` | `{status: open\|assigned\|in_progress\|resolved}` |
+| POST | `/support/requests/{pk}/resolve` | handler or manager |
+| POST | `/support/requests/{pk}/confirm` | requester; closes |
+| POST | `/support/requests/{pk}/reopen` | requester |
+| POST | `/support/requests/{pk}/comments` | `{body}` |
+| POST | `/support/requests/{pk}/attachment-upload-url` | `{file_name, content_type, size}` → `{upload_url, object_key}` |
+| POST | `/support/requests/{pk}/attachments` | `{object_key, file_name, content_type, size, comment_id?}` |
 
-No image publish step should proceed if tests fail.
+### Inventory
 
-## 9. Deployment and Operations
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/inventory/categories` | |
+| GET, PATCH, DELETE | `/inventory/categories/{pk}` | |
+| GET, POST | `/inventory/items` | `search`, `status`, `category_id`, `managing_department_id` |
+| GET, PATCH, DELETE | `/inventory/items/{pk}` | DELETE with history → 409 |
+| GET | `/inventory/items/stats` | |
+| GET | `/inventory/items/export` | CSV |
+| POST | `/inventory/items/photo-upload-url` | PNG, JPEG, WebP |
+| POST | `/inventory/items/{pk}/assign` | `{assigned_to_id}` or `{assigned_to_department_id}`, `condition_notes?` |
+| POST | `/inventory/items/{pk}/return` | `{condition_notes?}` |
+| GET, POST | `/inventory/maintenance-logs` | `item_id`, `status`, `category_id`, `search` |
+| GET, PATCH, DELETE | `/inventory/maintenance-logs/{pk}` | completed logs are read-only |
+| POST | `/inventory/maintenance-logs/attachment-upload-url` | |
+| GET | `/inventory/maintenance-logs/export` | CSV |
 
-Production model:
+### Notifications
 
-- root docker-compose.yml deploys app stack (backend + frontend)
-- external Traefik handles ingress and TLS
-- shared Postgres expected from infrastructure stack
-- GHCR images consumed for backend/frontend runtime
+| Methods | Path | Notes |
+|---|---|---|
+| GET | `/notifications` | paginated |
+| GET | `/notifications/unread-count` | |
+| POST | `/notifications/{notification_id}/read` | |
+| DELETE | `/notifications/{notification_id}` | |
+| POST | `/notifications/read-all` | `{count}` |
+| DELETE | `/notifications/clear-all` | `{count}` |
+| GET | `/notifications/push-public-key` | |
+| GET, POST | `/notifications/subscriptions` | POST upsert: 201 new, 200 existing |
+| DELETE | `/notifications/subscriptions/{subscription_id}` | |
 
-Refer to DEPLOYMENT.md for VPS step-by-step operations and environment file examples.
+Outside `/api/v1`: `GET /health/` (200 `ok`, 200 `degraded` when the cache is
+unreachable, 503 when the database is) and `/admin/` (Django admin, IP
+allowlist).
 
-## 10. Common Change Scenarios
+## 8. Domain rules
 
-### 10.1 Adding a new backend endpoint
+### 8.1 Users and organization
 
-1. Add serializer/input validation
-2. Add view logic + permissions
-3. Wire route in relevant api_urls
-4. Add tests for success + failure + unauthorized behavior
-5. Update docs in README and docs/TECHNICAL_DOCUMENTATION.md
+- `PATCH /users/{id}` is a true partial update. Team must sit in the unit,
+  unit in the department (`StaffProfile.clean`).
+- Someone who leaves a team, unit or department stops leading it
+  (`organization.services`). Removing members only affects actual members.
+- A leader must be a member of the group they lead.
+- Organization changes are audited (`ORG_GROUP_*`, `ORG_MEMBERS_*`,
+  `ORG_LEADER_CHANGED`).
 
-### 10.2 Adding a new frontend page
+### 8.2 Tasks
 
-1. Add route in app/ tree
-2. Reuse existing loading/error/skeleton patterns
-3. Integrate with typed API client functions
-4. Add toast feedback for user-triggered mutations
-5. Update docs in README and docs/TECHNICAL_DOCUMENTATION.md
+- Status flow: `pending → in_progress → under_review → completed`. The
+  assignee moves work forward (cannot go back to pending once started, cannot
+  complete). The assigner edits details and approves (`completed`) or rejects
+  (back to `in_progress` or `pending`) work under review. Completed tasks are
+  locked.
+- Who may make a change is checked first (403,
+  `tasks.permissions.require_may_change_task`); then whether the transition is
+  valid (400, serializer).
+- Updates lock the task row; a status changed by someone else meanwhile is a
+  409.
+- The assignee cannot be changed after creation. A deadline is required and
+  cannot be in the past. Tasks cannot be deleted.
+- Comments: 1–500 characters, up to 10 attachments (keys must belong to the
+  task) and 10 links.
+- Only active users can be assigned. Up to 50 assignees per request; one task
+  each.
 
-### 10.3 Modifying task workflow rules
+### 8.3 Recurring schedules
 
-1. Update serializer validation and view behavior
-2. Ensure timeline/audit semantics remain coherent
-3. Update backend tests to lock expected behavior
-4. Verify frontend pages still align with new constraints
-5. Update docs to record new/removed rules and endpoint behavior
+- Daily or weekly, interval 1–365, up to 24 run times a day, deadline offset
+  up to a year, own time zone per schedule.
+- The creator edits, pauses, resumes and ends; the assignee cannot be changed;
+  the start cannot change once started; ending is permanent.
+- The generator (every minute) skips paused schedules (re-checked under the
+  row lock) and, after downtime, creates only the latest missed run
+  (`RECURRING_MAX_CATCH_UP_RUNS`).
 
-## 11. Security and Data Handling Notes
+### 8.4 Daily reports and summaries
 
-- Keep secrets out of source control
-- Use env files for local/production secrets
-- Keep JWT refresh handling strict and fail-closed
-- Validate all mutating input server-side even if validated on UI
-- Avoid exposing admin operations in non-admin frontend paths
-- Keep audit logging for operationally relevant actions
+- One report per person per day, created on the first entry; entries and
+  comments only on the current day (Lagos time).
+- Emails: the first entry of the day emails the author's direct manager (team
+  lead, then supervisor, then line manager). At 17:05 Lagos time on weekdays,
+  `send_eod_daily_reports` emails each of today's reports to its author and to
+  that manager. Only reports with at least one entry, by active accounts, are
+  sent; no manager means only the author's copy. One template
+  (`emails/reports/daily_report_forward.html`) serves the forward, manager and
+  author versions through `email_kind`.
+- Weekly summaries are generated Mondays at 00:00 for the week just ended,
+  compared at 00:15, cached for the organization view at 00:30 and emailed at
+  08:00 (active users only). Calculation: `calculate_user_weekly_summary` in
+  `tasks/services.py`.
+  - Own work: tasks assigned to the person (self-assigned included). The
+    completion rate is tasks completed that week divided by tasks on their
+    list that week (`tasks_open_during_week`: created by Sunday and not
+    completed before Monday), so it never exceeds 100%.
+  - Delegated work (`calculate_delegated_work`, `delegated_*` fields): tasks
+    the person assigned to someone else. Reviews come from task history
+    (`status_change` from `under_review`, by the person); review time is from
+    the latest submission to that decision. "Waiting for review" and
+    "overdue" are as at Sunday night, rebuilt from history, so past weeks can
+    be recalculated.
+  - `lead_section` is `delegated` when delegated volume (tasks open plus
+    reviews) exceeds the person's own open tasks; the email and the summary
+    page show that section first. `has_own_work` and `has_delegated_work`
+    hide empty sections.
+  - Comparisons add `delta_delegated_*` only when both weeks have the
+    figures; the trend follows the leading section.
+  - After changing the calculation, run
+    `manage.py recalculate_weekly_summaries --weeks 4` (no emails).
+- Public share links: one per summary at a time, 30 days
+  (`SUMMARY_SHARE_LINK_DAYS`), only the hash stored. Sharing with a
+  colleague: active users only, not yourself; re-sharing within 10 minutes
+  sends nothing new.
 
-## 12. Documentation Maintenance Contract
+### 8.5 Support
 
-Developer rule for this repository:
+- Routing: `IT_SUPPORT` to the department with `handles_it_support`, others to
+  the one with `handles_general_support`.
+- The requester's line manager is recorded on the request at creation.
+- Handlers and managers can set `open`, `assigned`, `in_progress`,
+  `resolved`; only the requester's confirmation (or the daily job, seven days
+  after resolution, `SUPPORT_AUTO_CLOSE_DAYS`) closes a request. Reopening
+  clears the assignment.
+- Requests cannot be edited or deleted directly.
 
-- every API or frontend feature that is added, removed, or modified must also update documentation in the same change set
+### 8.6 Inventory
 
-Minimum documentation update requirement per feature PR:
+- Status: `available`, `assigned`, `maintenance`, `retired`, `unaccounted`
+  (reason required).
+- Assign to a person or a department, not both; assigning or returning locks
+  the item row. Only active people can receive assets.
+- Opening a maintenance log moves the item to maintenance (not allowed for
+  retired or unaccounted items); completing the last open log returns it to
+  `assigned` (person or department) or `available`. Completed logs are
+  read-only. At most five attachments per log.
+- An item with assignment or maintenance history cannot be deleted (409).
+- Exports stream and are formula-safe.
 
-1. Update root README if user-facing behavior changed
-2. Update this technical documentation for architecture or workflow changes
-3. Update endpoint lists and constraints if API contract changed
-4. Update setup/deployment sections if runtime requirements changed
+### 8.7 Applications
 
-If documentation is not updated for behavior changes, the change is incomplete.
+- Deleting hides and deactivates. Logo URLs must point at our bucket.
+- Changing an application's departments emails the departments that gained
+  access and the people who lost it.
 
-## 13. Recommended Next Docs (Optional)
+## 9. File uploads
 
-If the team grows, split this document into focused references:
+Flow: the browser asks the API for a presigned PUT URL (`*-upload-url`),
+uploads directly to S3, then sends the returned `object_key` (or public URL)
+back to the API with the record.
 
-- docs/API_CONTRACT.md
-- docs/FRONTEND_ARCHITECTURE.md
-- docs/BACKEND_ARCHITECTURE.md
-- docs/CONTRIBUTING.md
-- docs/TROUBLESHOOTING.md
+Before a file is recorded, `common.storage.verify_upload` asks S3
+(`head_object`) for its real size and type, refuses (and deletes) a file that
+is missing, too large or of the wrong type, and records what S3 reports.
+Keys must sit under the record's own folder. Switched off by
+`VERIFY_UPLOADS=False` (tests and the e2e stack).
 
-For now, this file intentionally keeps everything in one comprehensive location.
+| Upload | Folder setting | Allowed types | Served by |
+|---|---|---|---|
+| Task attachments | `TASK_ATTACHMENT_S3_PREFIX/<task id>/` | attachment list | short-lived signed links |
+| Support attachments | `SUPPORT_ATTACHMENT_S3_PREFIX/<request id>/` | attachment list | short-lived signed links |
+| Maintenance attachments | `AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX/` | attachment list | short-lived signed links |
+| Asset photos | `AWS_INVENTORY_PHOTO_S3_PREFIX/` | PNG, JPEG, WebP | public URL |
+| Application logos | `AWS_APPLICATION_LOGO_S3_PREFIX/` | PNG, JPEG, WebP | public URL |
+| Summary PDFs (server) | `SUMMARY_PDF_EXPORT_S3_PREFIX/` | PDF | signed link |
+
+Attachment list (`TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES`): PNG, JPEG, WebP,
+PDF, plain text, ZIP, Word, Excel. API maximum `TASK_ATTACHMENT_MAX_SIZE`
+(10 MB); the portal stops files over 5 MB and compresses images before upload.
+
+The AWS key needs `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on
+every folder above. Each folder setting must point inside what the key may
+write (in development every folder is under `development/`).
+
+## 10. Background jobs, emails and notifications
+
+### 10.1 Beat schedule (Africa/Lagos time)
+
+| Job | When |
+|---|---|
+| `tasks.generate_recurring_task_occurrences` | every minute |
+| `tasks.check_due_todo_reminders` | every minute |
+| `tasks.send_eod_daily_reports` | 17:05 Monday–Friday |
+| `support.auto_close_resolved_requests` | 01:00 daily |
+| `accounts.flush_expired_tokens` | 02:00 daily |
+| `accounts.prune_auth_failure_audit_logs` | 02:30 daily |
+| `tasks.generate_weekly_summaries` | 00:00 Monday |
+| `tasks.calculate_weekly_comparisons` | 00:15 Monday |
+| `tasks.cache_organization_summaries` | 00:30 Monday |
+| `tasks.send_weekly_summary_emails` | 08:00 Monday |
+
+Jobs have a soft time limit of 540 s and a hard limit of 600 s. Results are not
+stored (`CELERY_TASK_IGNORE_RESULT`).
+
+### 10.2 Emails
+
+`emails/services/*` build emails from templates in `emails/templates/`.
+`BaseEmailService.send_email`:
+- inside a database transaction, waits for the commit
+  (`EMAIL_SEND_ON_COMMIT`), so rolled-back work sends nothing;
+- queues `emails.tasks.send_email_task` (3 retries, a minute apart) when
+  `SEND_EMAILS_CELERY` is on, otherwise sends in-process;
+- with `EMAIL_DEBUG`, logs instead of sending (account emails, which carry
+  password links, are only printed in debug mode);
+- records every attempt in `EmailLog` (Django admin → Email logs).
+
+Account emails never contain a password.
+
+Templates are Django templates. Each one extends `emails/_base.html` (layout,
+styles, footer) and uses `emails/_button.html` for its button with a plain
+link underneath; layout is table-based so Outlook and Gmail render it. Every
+template receives `portal_url` (`PORTAL_BASE_URL`), so links are absolute.
+`render_email()` in `base_email_service.py` renders the HTML and a plain-text
+part (no CSS, links written out).
+
+A tag such as `{% endif %}` must stay on one line. Do not run an HTML
+formatter on the templates (`.prettierignore` excludes them).
+`emails/tests/test_templates.py` compiles and renders every template and
+checks that every email service points at a template that exists.
+
+### 10.3 Notifications and push
+
+`notifications.services.create_notification(...)` stores a `Notification`
+and, after commit, sends browser push through `notifications.send_push`
+(Celery when `SEND_PUSH_CELERY`, otherwise in-process). Push needs the VAPID
+settings. Subscription endpoints must be https on a known push service
+(`WEB_PUSH_ALLOWED_HOSTS`); others are refused, and stored ones that fail the
+check are switched off. Gone subscriptions (404/410) are deactivated. Timeout
+`WEB_PUSH_TIMEOUT_SECONDS` (10).
+
+Types: `task_assigned`, `task_status_changed`, `task_comment`,
+`support_request_submitted`, `support_request_assigned`,
+`support_status_updated`, `support_comment_added`, `support_request_resolved`,
+`support_request_closed`, `todo_reminder`, `inventory_assigned`,
+`summary_shared`.
+
+## 11. Configuration reference
+
+All read in `api/portalapi/settings.py` from the environment or `api/.env`.
+
+### Core
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DJANGO_SECRET_KEY` | placeholder | required outside debug |
+| `DJANGO_DEBUG` | `False` | |
+| `DJANGO_ALLOWED_HOSTS` | `127.0.0.1,localhost` | |
+| `CORS_ALLOWED_ORIGINS` | local origins | must contain the web app's origin (also used for the cookie origin check) |
+| `CSRF_TRUSTED_ORIGINS` | production origins | Django admin |
+| `ADMIN_ALLOWED_IPS` | `127.0.0.1` | client addresses allowed into `/admin/` outside debug |
+| `TRUSTED_PROXY_COUNT` | `1` | production `2` |
+| `PORTAL_BASE_URL` | local or production | emailed links |
+| `APP_TIME_ZONE` | `Africa/Lagos` | |
+| `LOG_LEVEL` | `INFO` | project loggers |
+
+### Database, Redis, Celery
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DB_NAME`, `DB_USER`, `DB_HOST`, `DB_PORT` | `incel_portal_db`, `incel_portal_user`, `127.0.0.1`, `5432` | |
+| `DB_PASSWORD` | placeholder | required outside debug |
+| `CACHE_URL` | empty (memory) | Redis URL, a different database number from Celery |
+| `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | |
+| `CELERY_RESULT_BACKEND` | broker URL | |
+| `CELERY_TASK_SOFT_TIME_LIMIT`, `CELERY_TASK_TIME_LIMIT` | `540`, `600` | seconds |
+| `RECURRING_MAX_CATCH_UP_RUNS` | `1` | |
+| `TEST_USE_SQLITE`, `TEST_DB_NAME` | `true`, empty | test runs only |
+
+### Sign-in and accounts
+
+| Variable | Default |
+|---|---|
+| `LOGIN_MAX_ATTEMPTS` | `10` |
+| `LOGIN_LOCKOUT_SECONDS` | `900` |
+| `LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR` | `50` |
+| `PASSWORD_RESET_TIMEOUT` | `3600` |
+| `ACCOUNT_SETUP_LINK_TIMEOUT` | `259200` (72 h) |
+| `PASSWORD_RESET_EMAILS_PER_HOUR` | `3` |
+| `AUDIT_AUTH_FAILURE_RETENTION_DAYS` | `90` |
+
+### Email
+
+| Variable | Default |
+|---|---|
+| `EMAIL_ENABLED` | `True` |
+| `EMAIL_DEBUG` | `False` (log instead of send) |
+| `SEND_EMAILS_CELERY` | `True` |
+| `EMAIL_BACKEND` | SMTP |
+| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS` | `smtp.gmail.com`, `587`, `True` |
+| `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | empty |
+| `DEFAULT_FROM_EMAIL`, `EMAIL_SENDER_NAME` | `noreply@localhost`, `Incel Portal` |
+| `EMAIL_TIMEOUT` | `15` |
+| `EMAIL_FILE_PATH` | `api/sent-mail` (file backend only) |
+
+### Storage
+
+| Variable | Default |
+|---|---|
+| `AWS_S3_BUCKET_NAME`, `AWS_S3_REGION_NAME` | empty |
+| `AWS_S3_CUSTOM_DOMAIN`, `AWS_S3_ENDPOINT_URL` | empty |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | (read by boto3) |
+| `AWS_S3_OBJECT_ACL` | `private` |
+| `VERIFY_UPLOADS` | `True` |
+| `TASK_ATTACHMENT_S3_PREFIX` | `task-attachments` |
+| `SUPPORT_ATTACHMENT_S3_PREFIX` | `support-attachments` |
+| `AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX` | `maintenance-attachments` |
+| `AWS_INVENTORY_PHOTO_S3_PREFIX` | `inventory/photos` |
+| `AWS_APPLICATION_LOGO_S3_PREFIX` | `application-logos` |
+| `SUMMARY_PDF_EXPORT_S3_PREFIX` | `pdf-exports` |
+| `TASK_ATTACHMENT_MAX_SIZE` | 10 MB |
+| `TASK_ATTACHMENT_MAX_FILES` | `10` |
+| `TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES` | see section 9 |
+| `*_UPLOAD_URL_EXPIRES_IN` | `900` |
+| `TASK_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN`, `SUPPORT_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN` | `60` |
+| `MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN` | `300` |
+
+### Other features
+
+| Variable | Default |
+|---|---|
+| `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_VAPID_SUBJECT` | empty (push off) |
+| `SEND_PUSH_CELERY` | `True` |
+| `WEB_PUSH_ALLOWED_HOSTS` | FCM, Mozilla, Apple, Windows push hosts |
+| `WEB_PUSH_TIMEOUT_SECONDS` | `10` |
+| `SUMMARY_SHARE_LINK_DAYS` | `30` |
+| `SUPPORT_AUTO_CLOSE_DAYS` | `7` |
+
+Web app: `NEXT_PUBLIC_API_BASE_URL` (build time).
+
+## 12. Frontend architecture
+
+- **Routes** (`portal/app`): `/` sign-in, `/forgot-password`,
+  `/reset-password` (also used to set a first password), and under
+  `app/(portal)/`: `/dashboard`, `/tasks`, `/tasks/[id]`,
+  `/tasks/recurring/[id]`, `/todos`, `/goals`, `/reports`,
+  `/reports/[date]`, `/reports/daily/[reportId]`,
+  `/reports/subreports/[subreportId]`, `/reports/all`, `/summaries`,
+  `/summaries/[id]/files`, `/organization-summary`, `/applications`,
+  `/support`, `/support/[id]`, `/inventory`, `/inventory/[id]`,
+  `/inventory/maintenance`, `/my-assets`, `/users`, `/departments`, `/logs`.
+- **Layout** (`app/(portal)/layout.tsx`) loads `/me` and `/me/permissions`,
+  guards admin-only routes, and builds the sidebar from the same flags.
+- **API client** (`lib/api-client.ts`): `withCredentials` (cookies); on a 401
+  it calls `/auth/refresh` once (shared across concurrent requests) and
+  retries, otherwise sends the user to sign-in with `?next=`. The browser
+  never sees a token.
+- **API modules** in `lib/api/`; shared types in `lib/api/types.ts`:
+  `Paginated<T>`, `hasNextPage()`, `UserSummary`.
+- **Errors**: `extractApiErrorMessage(error, fallback)` reads the error
+  envelope; an HTML error page or a 5xx without a message becomes "Something
+  went wrong on our side. Please try again in a moment."
+- **Lists** use a request counter so only the newest response updates the
+  list (no stale results when filters change quickly).
+- **Uploads** go straight to S3 (`lib/file-utils.ts` compresses images and
+  enforces 5 MB). Support replies queue files until the reply is sent.
+- **Push**: `public/sw.js` and `components/notification-center.tsx`.
+
+## 13. Deployment and operations
+
+### 13.1 Production layout
+
+CapRover on one server, behind Cloudflare (`TRUSTED_PROXY_COUNT=2`).
+
+| CapRover app | Image | Command |
+|---|---|---|
+| `incel-portal-api` | `ghcr.io/<owner>/incel-portal-backend:<sha>` | `python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn portalapi.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120` |
+| `incel-portal-celery-worker` | same backend image | `celery -A portalapi worker --loglevel=info` |
+| `incel-portal-celery-beat` | same backend image | `celery -A portalapi beat --loglevel=info` |
+| `incel-portal-frontend` | `ghcr.io/<owner>/incel-portal-frontend:<sha>` | image default |
+
+Postgres and Redis run as their own CapRover apps; look up their service
+names with `docker service ls` (use the names that work in
+`CELERY_BROKER_URL`). The backend image runs as an unprivileged user.
+
+Set the backend variables of section 11 on all three backend apps. Required
+in production beyond the defaults: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`,
+`DJANGO_ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS=https://workspace.incelgroup.com`,
+`CSRF_TRUSTED_ORIGINS`, `PORTAL_BASE_URL`, `DB_*`, `CELERY_BROKER_URL`,
+`CACHE_URL`, `TRUSTED_PROXY_COUNT=2`, `ADMIN_ALLOWED_IPS`, AWS settings and
+every `*_S3_PREFIX`, email settings, VAPID keys.
+
+### 13.2 Releasing
+
+Merging to `main` runs CI and, if everything passes, deploys the commit's
+images to the four apps in order (API, worker, beat, web). Migrations run when
+the API starts; a failing migration stops the API from starting. Before a
+release with migrations, back up the database.
+
+To roll back code, deploy an earlier commit's image in CapRover. Migrations
+that add columns or rewrite data are not undone by that; restore the database
+backup if the old code cannot run against the new schema.
+
+### 13.3 After a release
+
+1. `GET /health/` returns `{"status": "ok"}` (not `degraded`).
+2. Sign in; the audit log shows your real IP.
+3. `/admin/` opens from an allowed address; Email logs show new emails.
+4. One upload of each kind works.
+
+### 13.4 Backups
+
+The database server runs a nightly backup script that keeps 30 backups per
+database. Its location, commands and restore steps are kept with the
+deployment notes outside this repository.
+
+### 13.5 Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Every API request returns 500, `/health/` was ok | Before 2026-11-17: wrong `CACHE_URL`. Now the API keeps working and `/health/` shows `degraded`; fix `CACHE_URL`. |
+| Every change in the portal fails with "This request did not come from the portal." | `CORS_ALLOWED_ORIGINS` does not contain the web app's exact origin. |
+| Staff are rate limited at busy times; `/admin/` refused from the office | `TRUSTED_PROXY_COUNT` too low (everyone looks like Cloudflare). |
+| Uploads fail with "Could not verify the uploaded file" (503) | The AWS key cannot read that folder, or the folder setting is outside what the key may write. |
+| Uploads fail before reaching the API | S3 refused the PUT: the folder setting is outside the key's permissions, or the bucket's CORS does not allow the web app's origin. |
+| New users do not receive their set-password email | Email settings, or `PORTAL_BASE_URL`. Check Django admin → Email logs. |
+| API container restarts repeatedly after a release | A migration failed (for example duplicate emails for the unique-email migration). Read the API log. |
+
+## 14. Testing and quality gates
+
+| Check | Command (from `api/` or `portal/`) |
+|---|---|
+| API tests (SQLite) | `python manage.py test` |
+| API tests (Postgres) | `TEST_USE_SQLITE=false python manage.py test` |
+| Lint | `uvx ruff check .` (pinned `ruff==0.17.5` in CI) |
+| Missing migrations | `python manage.py makemigrations --check --dry-run` |
+| Web lint and build | `npm run lint`, `npm run build` |
+| End to end | `npm run test:e2e` (see `portal/e2e/README.md`) |
+
+Expectations:
+- Every new rule or fixed bug gets a test.
+- Access-control changes update `common/tests/test_rbac_matrix.py`.
+- Malformed input should be a 400 (`common/tests/test_bad_input.py` shows the
+  pattern).
+- Tests that touch storage mock `common.storage.s3_client` and switch on
+  `VERIFY_UPLOADS` explicitly.
+
+CI (`.github/workflows/ci-cd.yml`) runs backend (Postgres), frontend and end
+to end on every pull request into `main` and every push to `main`; images are
+built and deployed only from `main` and only when all three pass.
+
+## 15. Change history of contract-breaking changes
+
+The November 2026 overhaul (security audit and API consistency work) changed
+the API contract; the web app was updated at the same time. Anything written
+against the old API must be updated:
+
+- Routes: no trailing slashes; `admin/` prefix removed (`/admin/users` →
+  `/users`, `/admin/applications` → `/applications`, `/admin/audit-logs` →
+  `/audit-logs`, `/admin/organization/*` → `/organization/*`); summary routes
+  are under `/summaries/weeks/{week}`; actions renamed (`add-comment` →
+  `comments`, `update-status` → `status`, `upload-url` →
+  `attachment-upload-url`, `confirm-upload` → `attachments`, `return_item` →
+  `return`, `upload_photo_url` → `photo-upload-url`, `bulk_members` →
+  `members`); `/me/applications`, `/goals/current` and `/tasks/drafts`
+  removed; `/users/{id}/role`, `/department` and `/status` folded into
+  `PATCH /users/{id}`.
+- One pagination shape, one error shape, `_id` write fields, `search`
+  parameter, JSON-only bodies, no `PUT`.
+- Tokens only in cookies; cookie writes need a portal origin.
+- Creating tasks or schedules returns `{count, results}`.
+- Status codes: lockout 403, expired share 410, conflicts 409.
+
+`GET /external/users` did not change.
+
+## 16. Common change scenarios
+
+**New endpoint:** serializer for input → view with explicit permissions (a
+`GenericViewSet` with only the mixins needed, or an `APIView`) → route in the
+app's `api_urls.py` (use `ApiRouter`) → tests for success, bad input and every
+role → add to the role test if role-gated → `portal/lib/api/` function →
+this document (sections 5 and 7).
+
+**New list:** rely on the default pagination; parse filters with
+`common/params.py`; return `Paginated<T>` in the portal and use
+`hasNextPage()`.
+
+**New upload:** presigned URL under a per-record folder, then
+`checked_upload()` when recording it; allowlist the types; serve private
+files with `presigned_download_url()`.
+
+**New setting:** define it once in `settings.py` with a default, read it as
+`settings.X`, add it to section 11, and to CapRover if production needs it.
+
+**Changing access rules:** update `common/permissions.py` or the app's
+permission classes, the role test, and section 5.
+
+Documentation rule: see [DOCUMENTATION_POLICY.md](DOCUMENTATION_POLICY.md).

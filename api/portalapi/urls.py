@@ -17,6 +17,7 @@ Including another URLconf
 import logging
 
 from django.contrib import admin
+from django.core.cache import caches
 from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path
@@ -26,13 +27,20 @@ logger = logging.getLogger(__name__)
 
 def health_check(request):
     """200 when the API can reach its database, 503 when it cannot, so the
-    platform stops routing to (or restarts) an instance that is up but broken."""
+    platform stops routing to (or restarts) an instance that is up but broken.
+    A cache that cannot be reached is reported as "degraded" (still 200)."""
     try:
         with connection.cursor() as cursor:
             cursor.execute('SELECT 1')
     except Exception:
         logger.exception('Health check: database unreachable')
         return JsonResponse({'status': 'unavailable', 'database': 'unreachable'}, status=503)
+
+    # A broken cache does not stop the API (common/cache.py), so it is
+    # reported here instead of failing the check: still 200, but visible.
+    backend = caches['default']
+    if hasattr(backend, 'is_available') and not backend.is_available():
+        return JsonResponse({'status': 'degraded', 'cache': 'unreachable'})
     return JsonResponse({'status': 'ok'})
 
 urlpatterns = [

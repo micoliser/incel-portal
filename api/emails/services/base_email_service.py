@@ -1,4 +1,6 @@
+import html as html_lib
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from django.conf import settings
@@ -10,6 +12,42 @@ from django.utils.html import strip_tags
 from emails.config import EmailConfig, EmailType
 
 logger = logging.getLogger(__name__)
+
+_NON_TEXT_BLOCKS = re.compile(r'<(head|style|script)\b.*?</\1>', re.IGNORECASE | re.DOTALL)
+_HIDDEN_PREHEADER = re.compile(r'<div style="display: none[^>]*>.*?</div>', re.IGNORECASE | re.DOTALL)
+_LINK = re.compile(r'<a\b[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+_BREAKS = re.compile(r'<br\s*/?>|</(p|h1|h2|h3|tr|li|table)>', re.IGNORECASE)
+
+
+def render_email(template_name: str, context: Dict[str, Any]) -> tuple[str, str]:
+    """Render an email template to (html, plain text).
+
+    Every template gets `portal_url` (the portal's address, no trailing
+    slash) so links in emails are always absolute.
+    """
+    full_context = {'portal_url': settings.PORTAL_BASE_URL.rstrip('/'), **context}
+    html = render_to_string(template_name, full_context)
+    return html, html_to_text(html)
+
+
+def html_to_text(html: str) -> str:
+    """Readable plain-text part: no CSS, links kept as "label: url"."""
+    text = _NON_TEXT_BLOCKS.sub('', html)
+    text = _HIDDEN_PREHEADER.sub('', text)
+
+    def link(match):
+        url, label = match.group(1), strip_tags(match.group(2)).strip()
+        return url if not label or label == url else f'{label}: {url}'
+
+    text = _LINK.sub(link, text)
+    text = re.sub(r'</th>', ': ', text, flags=re.IGNORECASE)
+    text = re.sub(r'</td>', ' ', text, flags=re.IGNORECASE)
+    text = _BREAKS.sub('\n', text)
+    text = strip_tags(text)
+    lines = [' '.join(line.split()) for line in text.splitlines()]
+    text = '\n'.join(lines)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return html_lib.unescape(text).strip() + '\n'
 
 
 class BaseEmailService:
@@ -116,8 +154,7 @@ class BaseEmailService:
         """Send email synchronously."""
         try:
             # Render template
-            html_message = render_to_string(template_name, context)
-            text_message = strip_tags(html_message)
+            html_message, text_message = render_email(template_name, context)
 
             # Create email
             from_email = EmailConfig.format_from_email()

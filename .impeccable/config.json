@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-17T16:42:37.145Z",
+        "reason": "Inter is the portal's existing brand font (portal/app/layout.tsx); emails match the product"
+      }
+    ]
+  }
+}
