@@ -181,9 +181,9 @@ export default function MaintenanceLogsPage() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "completed": return <CheckCircle className="h-4 w-4 text-[#16a34a]" />;
+      case "completed": return <CheckCircle className="h-4 w-4 text-success-text" />;
       case "in_progress": return <Wrench className="h-4 w-4 text-amber-500" />;
-      default: return <AlertCircle className="h-4 w-4 text-[#0d47a1]" />;
+      default: return <AlertCircle className="h-4 w-4 text-[#0d47a1] dark:text-[#38bdf8]" />;
     }
   };
 
@@ -221,7 +221,7 @@ export default function MaintenanceLogsPage() {
           </div>
           
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectTrigger aria-label="Filter by category" className="w-full sm:w-[180px]">
               <SelectValue placeholder="Filter by category" />
             </SelectTrigger>
             <SelectContent>
@@ -235,7 +235,7 @@ export default function MaintenanceLogsPage() {
           </Select>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectTrigger aria-label="Filter by status" className="w-full sm:w-[180px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -324,7 +324,7 @@ export default function MaintenanceLogsPage() {
                             {log.attachments && log.attachments.length > 0 ? (
                               <div className="space-y-1">
                                 {log.attachments.map((att) => (
-                                  <a key={att.id} href={att.file_url || att.object_key} target="_blank" rel="noopener noreferrer" className="text-[#0d47a1] hover:underline flex items-center gap-1 text-xs">
+                                  <a key={att.id} href={att.file_url || att.object_key} target="_blank" rel="noopener noreferrer" className="text-[#0d47a1] dark:text-[#38bdf8] hover:underline flex items-center gap-1 text-xs">
                                     <Paperclip className="h-3 w-3" /> {att.file_name}
                                   </a>
                                 ))}

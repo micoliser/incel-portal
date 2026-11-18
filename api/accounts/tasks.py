@@ -5,8 +5,8 @@ from django.conf import settings
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
-from applications.audit_actions import AuditAction
 from applications.models import AuditLog
+from audit.actions import AuditAction
 
 
 @shared_task(name='accounts.flush_expired_tokens')

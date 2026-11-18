@@ -1,6 +1,6 @@
 import uuid
 
-from django.contrib.auth.models import User
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -8,27 +8,30 @@ from common.models import TimeStampedModel
 
 
 class SupportRequest(TimeStampedModel):
-    CATEGORY_CHOICES = [
-        ('IT_SUPPORT', 'IT Support'),
-        ('OTHER', 'Other'),
-    ]
-    PRIORITY_CHOICES = [
-        ('low', 'Low'),
-        ('medium', 'Medium'),
-        ('high', 'High'),
-        ('urgent', 'Urgent'),
-    ]
-    STATUS_CHOICES = [
-        ('open', 'Open'),
-        ('assigned', 'Assigned'),
-        ('in_progress', 'In Progress'),
-        ('resolved', 'Resolved'),
-        ('closed', 'Closed'),
-    ]
+    class Category(models.TextChoices):
+        IT_SUPPORT = 'IT_SUPPORT', 'IT Support'
+        OTHER = 'OTHER', 'Other'
+
+    CATEGORY_CHOICES = Category.choices
+    class Priority(models.TextChoices):
+        LOW = 'low', 'Low'
+        MEDIUM = 'medium', 'Medium'
+        HIGH = 'high', 'High'
+        URGENT = 'urgent', 'Urgent'
+
+    PRIORITY_CHOICES = Priority.choices
+    class Status(models.TextChoices):
+        OPEN = 'open', 'Open'
+        ASSIGNED = 'assigned', 'Assigned'
+        IN_PROGRESS = 'in_progress', 'In Progress'
+        RESOLVED = 'resolved', 'Resolved'
+        CLOSED = 'closed', 'Closed'
+
+    STATUS_CHOICES = Status.choices
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     requester = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='support_requests',
     )
@@ -43,14 +46,14 @@ class SupportRequest(TimeStampedModel):
         related_name='support_requests',
     )
     assigned_to = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='assigned_support_requests',
     )
     assigned_by = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -59,7 +62,7 @@ class SupportRequest(TimeStampedModel):
     resolved_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     line_manager = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -83,8 +86,7 @@ class SupportRequest(TimeStampedModel):
         """Check if a resolved request is past the auto-close threshold."""
         if self.status != 'resolved' or not self.resolved_at:
             return False
-        from django.conf import settings as django_settings
-        days = getattr(django_settings, 'SUPPORT_AUTO_CLOSE_DAYS', 7)
+        days = getattr(settings, 'SUPPORT_AUTO_CLOSE_DAYS', 7)
         threshold = self.resolved_at + timezone.timedelta(days=days)
         return timezone.now() >= threshold
 
@@ -97,7 +99,7 @@ class SupportComment(TimeStampedModel):
         related_name='comments',
     )
     author = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='support_comments',
     )

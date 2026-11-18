@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.formats import date_format
 
@@ -12,6 +12,8 @@ from common.users import display_name
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
 from tasks.models import DailyReport
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

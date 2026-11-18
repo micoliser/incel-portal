@@ -1,10 +1,12 @@
 from datetime import timedelta
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from tasks.models import WeeklySummary
+
+User = get_user_model()
 
 
 class Command(BaseCommand):

@@ -1,4 +1,4 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -7,6 +7,8 @@ from rest_framework import status
 from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from organization.models import Department, Team, Unit
+
+User = get_user_model()
 
 
 class OrganizationApiTests(BaseAPITestCase):

@@ -1,18 +1,25 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Prefetch, ProtectedError, Q
-from rest_framework import mixins, permissions
+from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import GenericViewSet
 
 from accounts.models import StaffProfile
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.exceptions import Conflict
 from common.permissions import IsAdminOrGlobalReadOnly, IsAdminUser, has_admin_access
+from common.viewsets import (
+    CreateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+    ListModelMixin,
+    PartialUpdateModelMixin,
+    RetrieveModelMixin,
+)
 from organization.models import Department, Role, Team, Unit
 from organization.serializers import (
     DepartmentHierarchySerializer,
@@ -59,11 +66,11 @@ class HierarchyView(APIView):
 
 
 class OrganizationGroupViewSet(
-    mixins.ListModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.CreateModelMixin,
-    mixins.UpdateModelMixin,
-    mixins.DestroyModelMixin,
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    DestroyModelMixin,
     GenericViewSet,
 ):
     """Shared behaviour for departments, units and teams.
@@ -73,7 +80,6 @@ class OrganizationGroupViewSet(
     always shown whole, so they are deliberately not paginated.
     """
 
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
     lookup_value_converter = 'uuid'
     pagination_class = None
 

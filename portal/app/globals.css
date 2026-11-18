@@ -27,6 +27,9 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
+  /* Status text that stays readable on white, on 10% tints and in dark mode. */
+  --color-success-text: var(--success-text);
+  --color-destructive-text: var(--destructive-text);
   --color-primary-deep: var(--primary-deep);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -158,7 +161,9 @@ html {
   --accent: #e0f2fe;
   --accent-foreground: #0d47a1;
   --success: #16a34a;
+  --success-text: #166534;
   --destructive: #dc2626;
+  --destructive-text: #b91c1c;
   --border: #e2e8f0;
   --input: #cbd5e1;
   --ring: #0d47a1;
@@ -196,10 +201,13 @@ html {
   --accent: rgba(13, 71, 161, 0.22);
   --accent-foreground: #38bdf8;
   --success: #16a34a;
+  --success-text: #4ade80;
   --destructive: #dc2626;
+  --destructive-text: #f87171;
   --border: rgba(255, 255, 255, 0.09);
   --input: rgba(255, 255, 255, 0.14);
-  --ring: #0d47a1;
+  /* The brand blue is too dark to see on near-black; focus needs 3:1. */
+  --ring: #38bdf8;
   --chart-1: #0d47a1;
   --chart-2: #38bdf8;
   --chart-3: #16a34a;

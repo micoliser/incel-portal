@@ -7,30 +7,18 @@ keep using `tasks.views_api.<ViewName>`.
 from .goals import GoalsViewSet
 from .recurring import RecurringScheduleViewSet
 from .reports import (
-    DailyReportDetailView,
-    DailyReportSendEmailView,
-    DailyReportSubreportCommentView,
-    DailyReportSubreportCreateView,
-    DailyReportSubreportDetailView,
-    DepartmentReportsAllView,
-    ReportsDayView,
-    ReportsMonthCalendarView,
+    DailyReportSubreportViewSet,
+    DailyReportViewSet,
 )
 from .summaries import SummaryFilesViewSet, WeeklySummaryViewSet
 from .tasks import TaskDraftViewSet, TaskViewSet
 from .todos import TodoItemViewSet
 
 __all__ = [
-    'DailyReportDetailView',
-    'DailyReportSendEmailView',
-    'DailyReportSubreportCommentView',
-    'DailyReportSubreportCreateView',
-    'DailyReportSubreportDetailView',
-    'DepartmentReportsAllView',
+    'DailyReportSubreportViewSet',
+    'DailyReportViewSet',
     'GoalsViewSet',
     'RecurringScheduleViewSet',
-    'ReportsDayView',
-    'ReportsMonthCalendarView',
     'SummaryFilesViewSet',
     'TaskDraftViewSet',
     'TaskViewSet',

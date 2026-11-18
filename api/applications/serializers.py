@@ -1,6 +1,5 @@
 from rest_framework import serializers
 
-from applications.audit_messages import action_label, build_message, target_label
 from applications.models import (
     ApplicationAccessOverride,
     AuditLog,
@@ -8,6 +7,7 @@ from applications.models import (
     RecentApplication,
 )
 from applications.s3 import extract_application_logo_key_from_public_url
+from audit.messages import action_label, build_message, target_label
 from common.serializers import UserSummarySerializer
 from organization.models import Department
 

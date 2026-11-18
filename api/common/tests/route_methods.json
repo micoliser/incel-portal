@@ -1,0 +1,697 @@
+{
+  "api/v1/applications": {
+    "name": "applications-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/applications/logo-upload-url": {
+    "name": "applications-logo-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/applications/{}": {
+    "name": "applications-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/applications/{}/can-access": {
+    "name": "applications-can-access",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/applications/{}/open": {
+    "name": "applications-open",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/applications/{}/overrides": {
+    "name": "applications-overrides",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/applications/{}/overrides/{}": {
+    "name": "applications-override-detail",
+    "methods": [
+      "delete"
+    ]
+  },
+  "api/v1/audit-logs": {
+    "name": "audit-logs-list",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/audit-logs/{}": {
+    "name": "audit-logs-detail",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/auth/change-password": {
+    "name": "auth-change-password",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/auth/heartbeat": {
+    "name": "auth-heartbeat",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/auth/login": {
+    "name": "auth-login",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/auth/logout": {
+    "name": "auth-logout",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/auth/password-reset": {
+    "name": "auth-password-reset-request",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/auth/password-reset/confirm": {
+    "name": "auth-password-reset-confirm",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/auth/password-reset/validate": {
+    "name": "auth-password-reset-validate",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/auth/refresh": {
+    "name": "auth-refresh",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/external/users": {
+    "name": "external-users-list",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/goals": {
+    "name": "goal-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/inventory/categories": {
+    "name": "inventory-category-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/inventory/categories/{}": {
+    "name": "inventory-category-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/inventory/items": {
+    "name": "inventory-item-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/inventory/items/export": {
+    "name": "inventory-item-export",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/inventory/items/photo-upload-url": {
+    "name": "inventory-item-photo-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/inventory/items/stats": {
+    "name": "inventory-item-stats",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/inventory/items/{}": {
+    "name": "inventory-item-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/inventory/items/{}/assign": {
+    "name": "inventory-item-assign",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/inventory/items/{}/return": {
+    "name": "inventory-item-return",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/inventory/maintenance-logs": {
+    "name": "inventory-maintenance-log-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/inventory/maintenance-logs/attachment-upload-url": {
+    "name": "inventory-maintenance-log-attachment-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/inventory/maintenance-logs/export": {
+    "name": "inventory-maintenance-log-export",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/inventory/maintenance-logs/{}": {
+    "name": "inventory-maintenance-log-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/me": {
+    "name": "me",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/me/inventory": {
+    "name": "my-inventory",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/me/permissions": {
+    "name": "me-permissions",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/me/recent-applications": {
+    "name": "me-recent-applications",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/notifications": {
+    "name": "notifications-list",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/notifications/clear-all": {
+    "name": "notifications-clear-all",
+    "methods": [
+      "delete"
+    ]
+  },
+  "api/v1/notifications/push-public-key": {
+    "name": "notifications-push-public-key",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/notifications/read-all": {
+    "name": "notifications-read-all",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/notifications/subscriptions": {
+    "name": "notifications-subscriptions",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/notifications/subscriptions/{}": {
+    "name": "notifications-subscription-delete",
+    "methods": [
+      "delete"
+    ]
+  },
+  "api/v1/notifications/unread-count": {
+    "name": "notifications-unread-count",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/notifications/{}": {
+    "name": "notifications-delete",
+    "methods": [
+      "delete"
+    ]
+  },
+  "api/v1/notifications/{}/read": {
+    "name": "notifications-mark-read",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/organization/departments": {
+    "name": "department-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/organization/departments/{}": {
+    "name": "department-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/organization/departments/{}/members": {
+    "name": "department-members",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/organization/hierarchy": {
+    "name": "organization-hierarchy",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/organization/roles": {
+    "name": "organization-roles-list",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/organization/teams": {
+    "name": "team-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/organization/teams/{}": {
+    "name": "team-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/organization/teams/{}/members": {
+    "name": "team-members",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/organization/units": {
+    "name": "unit-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/organization/units/{}": {
+    "name": "unit-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/organization/units/{}/members": {
+    "name": "unit-members",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/recurring-schedules": {
+    "name": "recurring-schedule-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/recurring-schedules/{}": {
+    "name": "recurring-schedule-detail",
+    "methods": [
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/recurring-schedules/{}/end": {
+    "name": "recurring-schedule-end",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/recurring-schedules/{}/pause": {
+    "name": "recurring-schedule-pause",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/recurring-schedules/{}/resume": {
+    "name": "recurring-schedule-resume",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/reports/all": {
+    "name": "reports-department-all",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/reports/daily/{}": {
+    "name": "reports-daily-detail",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/reports/daily/{}/send-email": {
+    "name": "reports-daily-send-email",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/reports/daily/{}/subreports": {
+    "name": "reports-daily-subreports-create",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/reports/day": {
+    "name": "reports-day-hub",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/reports/month": {
+    "name": "reports-month-calendar",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/reports/subreports/{}": {
+    "name": "reports-subreport-detail",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/reports/subreports/{}/comments": {
+    "name": "reports-subreport-comments",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/summaries/organization": {
+    "name": "summary-organization",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/summaries/shared/{}": {
+    "name": "summary-shared",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/summaries/weeks": {
+    "name": "summary-weeks",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/summaries/weeks/{}": {
+    "name": "summary-detail",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/summaries/weeks/{}/comparison": {
+    "name": "summary-comparison",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/summaries/weeks/{}/export": {
+    "name": "summary-export",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/summaries/weeks/{}/history": {
+    "name": "summary-history",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/summaries/weeks/{}/share": {
+    "name": "summary-share",
+    "methods": [
+      "delete",
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/summaries/weeks/{}/user-shares": {
+    "name": "summary-user-shares",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/summaries/weeks/{}/user-shares/{}": {
+    "name": "summary-user-share-detail",
+    "methods": [
+      "delete"
+    ]
+  },
+  "api/v1/summaries/{}/files": {
+    "name": "summary-files-list",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/support/requests": {
+    "name": "support-request-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/support/requests/department": {
+    "name": "support-request-department",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/support/requests/{}": {
+    "name": "support-request-detail",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/support/requests/{}/assign": {
+    "name": "support-request-assign",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/attachment-upload-url": {
+    "name": "support-request-attachment-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/attachments": {
+    "name": "support-request-attachments",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/comments": {
+    "name": "support-request-comments",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/confirm": {
+    "name": "support-request-confirm",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/reopen": {
+    "name": "support-request-reopen",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/resolve": {
+    "name": "support-request-resolve",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/support/requests/{}/status": {
+    "name": "support-request-status",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/task-drafts": {
+    "name": "task-draft-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/task-drafts/{}": {
+    "name": "task-draft-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/tasks": {
+    "name": "task-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/tasks/dashboard": {
+    "name": "task-dashboard",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/tasks/{}": {
+    "name": "task-detail",
+    "methods": [
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/tasks/{}/activities": {
+    "name": "task-activities",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/tasks/{}/approve": {
+    "name": "task-approve",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/tasks/{}/attachment-upload-url": {
+    "name": "task-attachment-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/tasks/{}/comments": {
+    "name": "task-comments",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/tasks/{}/reject": {
+    "name": "task-reject",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/todos": {
+    "name": "todo-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/todos/clear-completed": {
+    "name": "todo-clear-completed",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/todos/stats": {
+    "name": "todo-stats",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/todos/{}": {
+    "name": "todo-detail",
+    "methods": [
+      "delete",
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/todos/{}/snooze": {
+    "name": "todo-snooze",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/todos/{}/toggle-complete": {
+    "name": "todo-toggle-complete",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/users": {
+    "name": "users-list",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/users/{}": {
+    "name": "users-detail",
+    "methods": [
+      "get",
+      "patch"
+    ]
+  }
+}

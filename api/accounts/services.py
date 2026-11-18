@@ -4,8 +4,8 @@ import hashlib
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
-from django.contrib.auth.models import User
 from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.core.cache import cache
 from django.utils.crypto import constant_time_compare
@@ -14,6 +14,8 @@ from django.utils.http import base36_to_int, urlsafe_base64_decode, urlsafe_base
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from emails.services.user_emails import UserEmailManager
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

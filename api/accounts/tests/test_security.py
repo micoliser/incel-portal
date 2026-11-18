@@ -6,7 +6,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
@@ -22,6 +22,8 @@ from accounts.tasks import flush_expired_tokens, prune_auth_failure_audit_logs
 from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from organization.models import Role
+
+User = get_user_model()
 
 PORTAL = 'http://localhost:3000'
 STAFF_PASSWORD = 'StaffStrongPass123!'

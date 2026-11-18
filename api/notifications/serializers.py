@@ -2,6 +2,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from rest_framework import serializers
+from rest_framework.settings import api_settings
 
 from notifications.models import Notification, PushSubscription
 
@@ -63,6 +64,31 @@ class PushSubscriptionWriteSerializer(serializers.Serializer):
         if not is_allowed_push_endpoint(value):
             raise serializers.ValidationError('This is not a recognised browser push service.')
         return value
+
+
+class PushSubscriptionInputSerializer(PushSubscriptionWriteSerializer):
+    """A browser's push subscription, in either shape the portal may send.
+
+    `{"subscription": {"endpoint", "keys": {"p256dh", "auth"}}, "user_agent"}`
+    (what `PushSubscription.toJSON()` gives, wrapped) or the same object
+    unwrapped, with the keys either under `keys` or at the top level.
+    """
+
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise serializers.ValidationError({api_settings.NON_FIELD_ERRORS_KEY: ['Expected a subscription object.']})
+        subscription = data.get('subscription', data)
+        if not isinstance(subscription, dict):
+            raise serializers.ValidationError({'subscription': 'Expected an object.'})
+        keys = subscription.get('keys', {})
+        if not isinstance(keys, dict):
+            raise serializers.ValidationError({'keys': 'Expected an object.'})
+        return super().to_internal_value({
+            'endpoint': subscription.get('endpoint', ''),
+            'p256dh': keys.get('p256dh', data.get('p256dh', '')),
+            'auth': keys.get('auth', data.get('auth', '')),
+            'user_agent': data.get('user_agent', ''),
+        })
 
 
 class PushSubscriptionSerializer(serializers.ModelSerializer):

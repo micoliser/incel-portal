@@ -5,7 +5,7 @@ import { expect, pageAs, test } from "../support/fixtures";
 import { choose, expectSequence, main, unique } from "../support/ui";
 
 function ticketCards(page: Page) {
-  return main(page).getByRole("button").filter({ has: page.getByRole("heading", { level: 3 }) });
+  return main(page).getByRole("button").filter({ has: page.getByRole("heading", { level: 2 }) });
 }
 
 async function openTicket(page: Page, title: string) {
@@ -42,7 +42,7 @@ test.describe("support requests for a staff member", () => {
     await expectSequence(body, "Resolved & Closed", 1);
     await expect(body.getByRole("button", { name: "My Requests 4" })).toBeVisible();
     await expect(body.getByRole("button", { name: "Department Requests" })).toHaveCount(0);
-    await expect(ticketCards(page).getByRole("heading", { level: 3 })).toHaveText([
+    await expect(ticketCards(page).getByRole("heading", { level: 2 })).toHaveText([
       TICKETS.hr, TICKETS.resolved, TICKETS.inProgress, TICKETS.open,
     ]);
     await expect(body.getByText(TICKETS.peer)).toHaveCount(0);
@@ -64,14 +64,14 @@ test.describe("support requests for a staff member", () => {
     await page.goto("/support");
     const body = main(page);
     await body.getByRole("button", { name: "Open 2" }).click();
-    await expect(ticketCards(page).getByRole("heading", { level: 3 })).toHaveText([TICKETS.hr, TICKETS.open]);
+    await expect(ticketCards(page).getByRole("heading", { level: 2 })).toHaveText([TICKETS.hr, TICKETS.open]);
     // The counts on the state buttons follow the filtered list, so match by label only.
     await body.getByRole("button", { name: /^Resolved/ }).click();
-    await expect(ticketCards(page).getByRole("heading", { level: 3 })).toHaveText([TICKETS.resolved]);
+    await expect(ticketCards(page).getByRole("heading", { level: 2 })).toHaveText([TICKETS.resolved]);
     await body.getByRole("button", { name: /^All Status/ }).click();
     await expect(ticketCards(page)).toHaveCount(4);
     await body.getByRole("textbox", { name: "Search by title or requester..." }).fill("signature");
-    await expect(ticketCards(page).getByRole("heading", { level: 3 })).toHaveText([TICKETS.inProgress]);
+    await expect(ticketCards(page).getByRole("heading", { level: 2 })).toHaveText([TICKETS.inProgress]);
   });
 
   test("shows a request's details, discussion and handler", async ({ page }) => {

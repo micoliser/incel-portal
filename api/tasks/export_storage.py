@@ -1,16 +1,17 @@
-import logging
-
 """PDF export storage helpers for weekly summaries."""
 
 import io
+import logging
 
 from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from common.users import display_name
 from tasks.s3 import _s3_client
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

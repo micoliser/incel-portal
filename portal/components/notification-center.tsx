@@ -193,11 +193,17 @@ export function NotificationCenter() {
       }
     };
 
+    const fetchIfVisible = () => {
+      if (document.visibilityState === "visible") void fetchUnread();
+    };
+
     void fetchUnread();
-    const interval = window.setInterval(fetchUnread, POLL_INTERVAL_MS);
+    const interval = window.setInterval(fetchIfVisible, POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", fetchIfVisible);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", fetchIfVisible);
     };
   }, []);
 
@@ -400,7 +406,7 @@ export function NotificationCenter() {
           <Bell className="size-4" aria-hidden="true" />
         )}
         {hasUnread && (
-          <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white shadow-xs">
+          <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold text-white shadow-xs">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
@@ -517,7 +523,7 @@ export function NotificationCenter() {
                   All
                   <span
                     className={cn(
-                      "rounded-full px-1.5 py-0.2 text-[10px] font-medium tabular-nums",
+                      "rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
                       filterTab === "all"
                         ? "bg-white/20 text-white"
                         : "bg-muted text-muted-foreground"
@@ -542,7 +548,7 @@ export function NotificationCenter() {
                   {unreadCount > 0 && (
                     <span
                       className={cn(
-                        "rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums",
+                        "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
                         filterTab === "unread"
                           ? "bg-white text-[#0d47a1]"
                           : "bg-destructive text-white"

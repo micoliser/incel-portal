@@ -63,11 +63,11 @@ type InventoryItem = {
 };
 
 const statusColors: Record<string, string> = {
-  available: "bg-[#16a34a]/10 text-[#16a34a]",
-  assigned: "bg-[#0d47a1]/10 text-[#0d47a1]",
+  available: "bg-[#16a34a]/10 text-success-text",
+  assigned: "bg-[#0d47a1]/10 text-[#0d47a1] dark:text-[#38bdf8]",
   maintenance: "bg-amber-100 text-amber-800",
   retired: "bg-muted text-foreground",
-  unaccounted: "bg-[#dc2626]/10 text-[#dc2626]",
+  unaccounted: "bg-[#dc2626]/10 text-destructive-text",
 };
 
 const backButtonClassName =

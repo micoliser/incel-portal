@@ -1,9 +1,11 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from common.permissions import has_global_access
 from organization.models import Department, Role, Team, Unit
+
+User = get_user_model()
 
 # What the user serializer reads besides the user row. List views load users
 # with these so the cost of a page does not grow with the number of users.
@@ -210,9 +212,20 @@ class PasswordResetValidateSerializer(serializers.Serializer):
     token = serializers.CharField()
 
 
-class PasswordResetConfirmSerializer(serializers.Serializer):
+class RefreshTokenBodySerializer(serializers.Serializer):
+    """Logout and refresh take the refresh token from the cookie; a body may also carry it."""
+
+    refresh = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
+
+
+class PasswordLinkSerializer(serializers.Serializer):
+    """The two halves of an emailed set-password or reset link."""
+
     uid = serializers.CharField()
     token = serializers.CharField()
+
+
+class PasswordResetConfirmSerializer(PasswordLinkSerializer):
     new_password = serializers.CharField(write_only=True, min_length=8)
 
     def validate_new_password(self, value):

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.admin.sites import site
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core import mail
 from django.db import connection, transaction
 from django.db.models import ProtectedError
@@ -26,6 +26,8 @@ from support.services import route_support_request
 from tasks.models import RecurringSchedule, Task, TaskDraft, WeeklySummary
 from tasks.serializers import MAX_ASSIGNEES, MAX_DRAFTS_PER_USER
 from tasks.tasks import generate_recurring_task_occurrences, send_weekly_summary_emails
+
+User = get_user_model()
 
 
 class InputLimitTests(BaseAPITestCase):

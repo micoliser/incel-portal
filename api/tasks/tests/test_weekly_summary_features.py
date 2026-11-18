@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase
@@ -27,6 +27,8 @@ from tasks.models import (
 from tasks.services import calculate_weekly_comparison, check_user_goals
 from tasks.tasks import cache_organization_summaries
 from tasks.views_api.summaries import hash_share_token
+
+User = get_user_model()
 
 
 def _share_emails():

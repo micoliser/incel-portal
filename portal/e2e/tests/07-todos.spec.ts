@@ -5,7 +5,7 @@ import { expect, test } from "../support/fixtures";
 import { main, unique } from "../support/ui";
 
 function todoTitles(page: Page) {
-  return main(page).getByRole("heading", { level: 4 });
+  return main(page).getByRole("heading", { level: 3 });
 }
 
 const CAPTURE = /What needs to be done/;
@@ -20,7 +20,7 @@ async function addTodo(page: Page, title: string) {
 function todoRow(page: Page, title: string) {
   return main(page)
     .locator("div")
-    .filter({ has: page.getByRole("heading", { level: 4, name: title, exact: true }) })
+    .filter({ has: page.getByRole("heading", { level: 3, name: title, exact: true }) })
     .filter({ has: page.getByRole("button", { name: "Delete to-do" }) })
     .last();
 }
@@ -37,7 +37,7 @@ test.describe("to-do list for a staff member", () => {
     await expect(body.getByRole("button", { name: "Upcoming 1" })).toBeVisible();
     await expect(body.getByRole("button", { name: "Overdue 1" })).toBeVisible();
     await expect(body.getByRole("button", { name: "Completed 1" })).toBeVisible();
-    await expect(body.getByRole("heading", { level: 3 })).toHaveText(["Overdue", "Today", "Upcoming", "No Due Date"]);
+    await expect(body.getByRole("heading", { level: 2 })).toHaveText(["Overdue", "Today", "Upcoming", "No Due Date"]);
     await expect(todoTitles(page)).toHaveText([
       TODOS.overdue, TODOS.today, TODOS.completed, TODOS.upcoming, TODOS.undated,
     ]);

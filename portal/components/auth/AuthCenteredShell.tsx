@@ -73,7 +73,7 @@ export function AuthCenteredShell({ children }: AuthCenteredShellProps) {
               Incel Workspace
             </span>
             <span className="text-[11px] font-medium text-muted-foreground">
-              Enterprise Operations
+              Incel Group
             </span>
           </div>
         </Link>
@@ -93,7 +93,7 @@ export function AuthCenteredShell({ children }: AuthCenteredShellProps) {
               </>
             ) : (
               <>
-                <Moon className="size-3.5 text-[#0d47a1]" />
+                <Moon className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
                 <span>Dark mode</span>
               </>
             )}
@@ -111,7 +111,7 @@ export function AuthCenteredShell({ children }: AuthCenteredShellProps) {
       {/* Bottom Footer */}
       <footer className="relative z-10 py-6 text-center text-xs text-muted-foreground space-y-1.5">
         <p className="flex items-center justify-center gap-1.5">
-          <Lock className="size-3 text-muted-foreground/70" />
+          <Lock className="size-3 text-muted-foreground" />
           <span>Protected by 256-bit security encryption & audit verification</span>
         </p>
         <p>

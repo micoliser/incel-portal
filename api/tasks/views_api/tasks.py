@@ -11,15 +11,22 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
 
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.exceptions import Conflict
 from common.params import list_param
 from common.permissions import has_global_access
 from common.uploads import checked_upload
 from common.users import display_name
+from common.viewsets import (
+    CreateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+    ListModelMixin,
+    PartialUpdateModelMixin,
+    RetrieveModelMixin,
+)
 from emails.services.task_emails import TaskEmailManager
 from notifications.models import Notification
 from notifications.services import create_notification
@@ -69,12 +76,17 @@ def _choice_of(choices):
     return cast
 
 
-class TaskViewSet(ModelViewSet):
+class TaskViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    GenericViewSet,
+):
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
     # No DELETE: tasks are a record of assigned work. Deleting one would also
     # remove its activity history and attachments, with nothing in the audit log.
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
     lookup_value_converter = 'uuid'
 
     @action(detail=False, methods=['get'])
@@ -556,13 +568,19 @@ class TaskViewSet(ModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class TaskDraftViewSet(ModelViewSet):
+class TaskDraftViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
     """A user's own unfinished task forms. A short personal list, shown whole."""
 
     serializer_class = TaskDraftSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
     lookup_value_converter = 'uuid'
 
     def get_queryset(self):

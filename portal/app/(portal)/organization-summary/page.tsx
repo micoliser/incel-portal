@@ -97,7 +97,7 @@ function renderDelta(
           ? "border-border/70 bg-muted/50 text-muted-foreground"
           : isUp
             ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-            : "border-[#dc2626]/25 bg-[#dc2626]/10 text-[#dc2626] dark:text-red-400",
+            : "border-[#dc2626]/25 bg-[#dc2626]/10 text-destructive-text dark:text-red-400",
       )}
     >
       {isZero ? (
@@ -343,7 +343,7 @@ export default function OrganizationSummaryPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Tasks Completed
                 </span>
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                   <CheckSquare2 className="size-4" />
                 </div>
               </div>
@@ -381,7 +381,7 @@ export default function OrganizationSummaryPage() {
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Overall enterprise assignment delivery rate
+                  Share of assigned tasks completed, company-wide
                 </p>
               </div>
             </Card>
@@ -392,7 +392,7 @@ export default function OrganizationSummaryPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Avg On-Time Rate
                 </span>
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400">
                   <Clock className="size-4" />
                 </div>
               </div>
@@ -476,7 +476,7 @@ export default function OrganizationSummaryPage() {
               </Card>
 
               <Card className="rounded-xl border border-border/70 bg-card p-4 shadow-2xs hover:border-emerald-500/30 transition-colors">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mb-2.5">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 mb-2.5">
                   <FileUp className="size-4" />
                 </div>
                 <p className="text-2xl font-bold tabular-nums text-foreground">
@@ -512,7 +512,7 @@ export default function OrganizationSummaryPage() {
               </Card>
 
               <Card className="rounded-xl border border-border/70 bg-card p-4 shadow-2xs hover:border-amber-500/30 transition-colors">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 mb-2.5">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 mb-2.5">
                   <Clock className="size-4" />
                 </div>
                 <p className="text-2xl font-bold tabular-nums text-foreground">
@@ -594,7 +594,7 @@ export default function OrganizationSummaryPage() {
                           >
                             <span
                               className={cn(
-                                "rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide border",
+                                "rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide border",
                                 getPriorityBadgeClasses(priority),
                               )}
                             >
@@ -682,7 +682,7 @@ export default function OrganizationSummaryPage() {
                           >
                             <span
                               className={cn(
-                                "rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide border",
+                                "rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide border",
                                 getStatusBadgeClasses(status),
                               )}
                             >
@@ -721,7 +721,7 @@ export default function OrganizationSummaryPage() {
                   </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {orgSummary.comparison.previous_week_start
-                      ? `Compared to reporting cycle of ${format(parseISO(orgSummary.comparison.previous_week_start), "MMM d, yyyy")}`
+                      ? `Compared with the week of ${format(parseISO(orgSummary.comparison.previous_week_start), "MMM d, yyyy")}`
                       : "Compared against prior reporting period"}
                   </p>
                 </div>
@@ -733,7 +733,7 @@ export default function OrganizationSummaryPage() {
                     orgSummary.comparison.trend === "up"
                       ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                       : orgSummary.comparison.trend === "down"
-                        ? "border-[#dc2626]/25 bg-[#dc2626]/10 text-[#dc2626] dark:text-red-400"
+                        ? "border-[#dc2626]/25 bg-[#dc2626]/10 text-destructive-text dark:text-red-400"
                         : "border-border/70 bg-muted/60 text-muted-foreground",
                   )}
                 >
@@ -845,7 +845,7 @@ function ComparisonMetricCard({
         {renderDelta(delta, fmt)}
       </div>
       {displayPrevious != null && (
-        <p className="mt-1 text-[11px] text-muted-foreground/80 tabular-nums">
+        <p className="mt-1 text-xs text-muted-foreground tabular-nums">
           Prior: {displayPrevious}
         </p>
       )}

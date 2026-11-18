@@ -51,7 +51,7 @@ function getFileTypeInfo(fileName: string, contentType?: string) {
     return {
       type: "PDF Document",
       icon: FileText,
-      iconBg: "bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+      iconBg: "bg-rose-500/10 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400",
     };
   }
   if (
@@ -61,7 +61,7 @@ function getFileTypeInfo(fileName: string, contentType?: string) {
     return {
       type: "Image",
       icon: ImageIcon,
-      iconBg: "bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+      iconBg: "bg-sky-500/10 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400",
     };
   }
   if (
@@ -72,7 +72,7 @@ function getFileTypeInfo(fileName: string, contentType?: string) {
     return {
       type: "Spreadsheet",
       icon: Table,
-      iconBg: "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+      iconBg: "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400",
     };
   }
   if (
@@ -83,7 +83,7 @@ function getFileTypeInfo(fileName: string, contentType?: string) {
     return {
       type: "Archive",
       icon: Archive,
-      iconBg: "bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
+      iconBg: "bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400",
     };
   }
   if (["js", "ts", "tsx", "py", "html", "css", "json", "sql"].includes(ext)) {
@@ -174,7 +174,7 @@ function TaskSection({
                 {task.task_title}
               </CardTitle>
               {task.task_created_at && (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Task initiated on {formatDisplayDate(task.task_created_at)}
                 </p>
               )}
@@ -427,7 +427,7 @@ export default function SummaryFilesPage() {
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5">
               <p className="text-xs font-medium text-muted-foreground">Payload Size</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+              <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
                 {formatFileSize(totals.totalSize)}
               </p>
             </div>

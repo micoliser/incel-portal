@@ -2,7 +2,7 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
@@ -21,9 +21,11 @@ from accounts.serializers import (
     AdminCreateUserSerializer,
     ChangePasswordSerializer,
     LoginSerializer,
+    PasswordLinkSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     PasswordResetValidateSerializer,
+    RefreshTokenBodySerializer,
     UpdateAdminUserSerializer,
     UserWithProfileSerializer,
     with_profile,
@@ -38,8 +40,8 @@ from accounts.services import (
     should_log_unknown_login,
     user_for_password_link,
 )
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.authentication import (
     HasValidServiceApiKey,
     PublicEndpointAuthentication,
@@ -55,9 +57,12 @@ from common.permissions import (
     has_admin_access,
     has_global_access,
 )
+from common.viewsets import GenericViewSet
 from emails.services.user_emails import UserEmailManager
 from organization.models import Department, Role, Team, Unit
 from organization.services import clear_leadership_left_behind
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +200,17 @@ class LoginView(APIView):
         return _set_jwt_cookies(response, tokens)
 
 
+def _refresh_token_from(request) -> str:
+    """The refresh token from the body if one is sent, else the cookie.
+
+    A malformed body is ignored, as before, so signing out always works and
+    the portal (which sends no body) is unaffected.
+    """
+    body = RefreshTokenBodySerializer(data=request.data)
+    from_body = body.validated_data.get('refresh', '') if body.is_valid() else ''
+    return from_body or request.COOKIES.get('refresh_token') or ''
+
+
 class LogoutView(APIView):
     """Signing out must work even when the access token has already expired,
     so this endpoint identifies the session by its refresh token alone."""
@@ -203,10 +219,9 @@ class LogoutView(APIView):
     authentication_classes = [PublicEndpointAuthentication]
 
     def post(self, request):
-        body = request.data if isinstance(request.data, dict) else {}
-        refresh_token = body.get('refresh') or request.COOKIES.get('refresh_token')
+        refresh_token = _refresh_token_from(request)
 
-        if isinstance(refresh_token, str) and refresh_token:
+        if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
                 user = User.objects.filter(pk=token.get('user_id')).first()
@@ -234,9 +249,8 @@ class RefreshTokenView(APIView):
     throttle_scope = 'refresh'
 
     def post(self, request):
-        body = request.data if isinstance(request.data, dict) else {}
-        refresh_token = body.get('refresh') or request.COOKIES.get('refresh_token')
-        if not isinstance(refresh_token, str) or not refresh_token:
+        refresh_token = _refresh_token_from(request)
+        if not refresh_token:
             raise AuthenticationFailed('Refresh token required.')
 
         try:
@@ -432,8 +446,11 @@ class PasswordResetConfirmView(APIView):
     throttle_scope = 'login'
 
     def post(self, request):
-        body = request.data if isinstance(request.data, dict) else {}
-        user = user_for_password_link(body.get('uid'), body.get('token'))
+        link = PasswordLinkSerializer(data=request.data)
+        user = (
+            user_for_password_link(link.validated_data['uid'], link.validated_data['token'])
+            if link.is_valid() else None
+        )
 
         if user is None:
             log_audit(
@@ -530,23 +547,39 @@ def _require_can_manage(request, target):
     raise PermissionDenied('Only a superuser can manage this account.')
 
 
-class UserListView(APIView):
-    """The staff directory, and user creation.
+class UserViewSet(GenericViewSet):
+    """The staff directory and user management.
 
-    GET: every signed-in user can list active users. Administrators and
+    list: every signed-in user sees active users. Administrators and
     executives may add `include_inactive=true` to see deactivated accounts too.
-    POST: administrators only.
+    create: administrators only.
+    retrieve: administrators and executives. partial_update: administrators only.
+    PATCH changes only the fields sent: the profile, role, organization
+    placement, activation (`is_active`) and sending a password reset link
+    (`send_reset_link`).
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'user_id'
+    lookup_value_regex = '[0-9]+'
+
+    def get_permissions(self):
+        if self.action in ('retrieve', 'partial_update'):
+            return [permissions.IsAuthenticated(), IsAdminOrGlobalReadOnly()]
+        return [permissions.IsAuthenticated()]
 
     def get_throttles(self):
-        if self.request.method == 'POST':
+        if self.action in ('create', 'retrieve', 'partial_update'):
             self.throttle_scope = 'admin'
             return [ScopedRateThrottle()]
         return super().get_throttles()
 
-    def get(self, request):
+    def _get_user(self, user_id):
+        user = with_profile(User.objects.filter(id=user_id)).first()
+        if not user:
+            raise NotFound('User not found.')
+        return user
+
+    def list(self, request):
         users = with_profile(User.objects.all())
 
         include_inactive = bool_param(request.query_params, 'include_inactive')
@@ -584,7 +617,7 @@ class UserListView(APIView):
         return paginate(users, request, UserWithProfileSerializer, view=self)
 
     @transaction.atomic
-    def post(self, request):
+    def create(self, request):
         if not has_admin_access(request.user):
             raise PermissionDenied()
 
@@ -648,29 +681,11 @@ class UserListView(APIView):
 
         return Response(UserWithProfileSerializer(user).data, status=status.HTTP_201_CREATED)
 
+    def retrieve(self, _request, user_id):
+        return Response(UserWithProfileSerializer(self._get_user(int(user_id))).data)
 
-class UserDetailView(APIView):
-    """One user. GET: administrators and executives. PATCH: administrators only.
-
-    PATCH is a partial update: only the fields sent are changed. It covers the
-    profile, role, organization placement, activation (`is_active`) and sending
-    a password reset link (`send_reset_link`).
-    """
-
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalReadOnly]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'admin'
-
-    def _get_user(self, user_id):
-        user = with_profile(User.objects.filter(id=user_id)).first()
-        if not user:
-            raise NotFound('User not found.')
-        return user
-
-    def get(self, _request, user_id):
-        return Response(UserWithProfileSerializer(self._get_user(user_id)).data)
-
-    def patch(self, request, user_id):
+    def partial_update(self, request, user_id):
+        user_id = int(user_id)
         user = self._get_user(user_id)
         # Checked outside the transaction below, so the record of a refused
         # attempt is kept.

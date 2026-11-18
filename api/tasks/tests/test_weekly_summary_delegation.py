@@ -3,7 +3,7 @@
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.template.loader import render_to_string
 from django.test import TestCase
@@ -11,6 +11,8 @@ from django.utils import timezone
 
 from tasks.models import Task, TaskActivity, WeeklySummary
 from tasks.services import calculate_user_weekly_summary, calculate_weekly_comparison
+
+User = get_user_model()
 
 WEEK_START = date(2026, 11, 9)  # Monday
 WEEK_END = date(2026, 11, 15)  # Sunday

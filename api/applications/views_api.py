@@ -1,4 +1,4 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -7,8 +7,6 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
 from applications.models import (
     ApplicationAccessOverride,
     AuditLog,
@@ -29,6 +27,8 @@ from applications.serializers import (
     InternalApplicationWriteSerializer,
     RecentApplicationSerializer,
 )
+from audit import log_audit
+from audit.actions import AuditAction
 from common.access import access_for_applications, can_user_access_application, visible_applications
 from common.pagination import page_size, paginate
 from common.params import bool_param, datetime_param, int_param, list_param, uuid_value
@@ -38,9 +38,12 @@ from common.permissions import (
     has_admin_access,
     has_global_access,
 )
+from common.viewsets import GenericViewSet
 from emails.services.application_emails import ApplicationEmailManager
 from emails.utils import EmailNotificationHelper
 from organization.models import Department
+
+User = get_user_model()
 
 
 def _dedupe_emails(emails):
@@ -119,12 +122,27 @@ def _set_departments(app, department_ids):
     app.departments.set(departments)
 
 
-class ApplicationListView(APIView):
-    """GET: the applications the caller may see. POST: create one (administrators)."""
+class ApplicationViewSet(GenericViewSet):
+    """The application catalogue. Wired in `api_urls.py`.
 
-    permission_classes = [permissions.IsAuthenticated]
+    list, retrieve, can_access, open: anyone who may see the application
+    (list shows only those). create, partial_update, destroy: administrators
+    (checked in each action). logo_upload_url: administrators, upload rate limit.
+    open records that the caller opened an application and returns its address.
+    """
 
-    def get(self, request):
+    def get_permissions(self):
+        if self.action == 'logo_upload_url':
+            return [permissions.IsAuthenticated(), IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def get_throttles(self):
+        if self.action == 'logo_upload_url':
+            self.throttle_scope = 'uploads'
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
+
+    def list(self, request):
         applications = visible_applications(request.user).prefetch_related('departments').order_by('name')
 
         search = (request.query_params.get('search') or '').strip()
@@ -146,7 +164,7 @@ class ApplicationListView(APIView):
         context = {'request': request, 'access': access, 'show_all_urls': has_admin_access(request.user)}
         return paginator.get_paginated_response(InternalApplicationSerializer(page, many=True, context=context).data)
 
-    def post(self, request):
+    def create(self, request):
         if not has_admin_access(request.user):
             raise PermissionDenied()
 
@@ -176,18 +194,12 @@ class ApplicationListView(APIView):
 
         return Response(_serialize_applications(request, app, many=False), status=status.HTTP_201_CREATED)
 
-
-class ApplicationDetailView(APIView):
-    """GET: anyone who may see the application. PATCH and DELETE: administrators."""
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, application_id):
+    def retrieve(self, request, application_id):
         app = _application_or_404(request, application_id)
         return Response(_serialize_applications(request, app, many=False))
 
     @transaction.atomic
-    def patch(self, request, application_id):
+    def partial_update(self, request, application_id):
         if not has_admin_access(request.user):
             raise PermissionDenied()
         app = _application_or_404(request, application_id)
@@ -227,7 +239,7 @@ class ApplicationDetailView(APIView):
 
         return Response(_serialize_applications(request, app, many=False))
 
-    def delete(self, request, application_id):
+    def destroy(self, request, application_id):
         """Deleting hides the application and switches it off; its history is kept."""
         if not has_admin_access(request.user):
             raise PermissionDenied()
@@ -247,22 +259,12 @@ class ApplicationDetailView(APIView):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-
-class ApplicationCanAccessView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, application_id):
+    def can_access(self, request, application_id):
         app = _application_or_404(request, application_id)
         can_access, reason = can_user_access_application(request.user, app)
         return Response({'application_id': app.id, 'can_access': can_access, 'reason': reason})
 
-
-class ApplicationOpenView(APIView):
-    """Records that the caller opened an application and returns its address."""
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, application_id):
+    def open(self, request, application_id):
         app = _application_or_404(request, application_id)
 
         can_access, reason = can_user_access_application(request.user, app)
@@ -298,6 +300,21 @@ class ApplicationOpenView(APIView):
 
         return Response({'application_id': app.id, 'url': app.app_url})
 
+    def logo_upload_url(self, request):
+        serializer = ApplicationLogoUploadUrlSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            payload = generate_application_logo_upload_url(
+                slug=serializer.validated_data['slug'],
+                file_name=serializer.validated_data['file_name'],
+                content_type=serializer.validated_data['content_type'],
+            )
+        except ApplicationLogoUploadError as exc:
+            raise ValidationError(str(exc))
+
+        return Response(payload)
+
 
 class RecentApplicationsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -320,40 +337,19 @@ class RecentApplicationsView(APIView):
         return Response(RecentApplicationSerializer(recent, many=True, context=context).data)
 
 
-class ApplicationLogoUploadUrlView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'uploads'
-
-    def post(self, request):
-        serializer = ApplicationLogoUploadUrlSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            payload = generate_application_logo_upload_url(
-                slug=serializer.validated_data['slug'],
-                file_name=serializer.validated_data['file_name'],
-                content_type=serializer.validated_data['content_type'],
-            )
-        except ApplicationLogoUploadError as exc:
-            raise ValidationError(str(exc))
-
-        return Response(payload)
-
-
-class ApplicationOverrideListView(APIView):
+class ApplicationOverrideViewSet(GenericViewSet):
     """Per-person exceptions to an application's access rule. Administrators only."""
 
     permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
-    def get(self, request, application_id):
+    def list(self, request, application_id):
         app = _application_or_404(request, application_id)
         overrides = (
             ApplicationAccessOverride.objects.filter(application=app).select_related('user').order_by('-created_at')
         )
         return Response(AccessOverrideSerializer(overrides, many=True).data)
 
-    def post(self, request, application_id):
+    def create(self, request, application_id):
         """Set the exception for one person (replacing any they already have)."""
         app = _application_or_404(request, application_id)
 
@@ -394,11 +390,7 @@ class ApplicationOverrideListView(APIView):
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-
-class ApplicationOverrideDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
-
-    def delete(self, request, application_id, override_id):
+    def destroy(self, request, application_id, override_id):
         app = _application_or_404(request, application_id)
 
         override = ApplicationAccessOverride.objects.filter(id=override_id, application=app).first()
@@ -420,12 +412,13 @@ class ApplicationOverrideDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class AuditLogListView(APIView):
-    # The audit trail holds sign-in failures, IP addresses and account changes,
-    # so it is limited to administrators and executives.
+class AuditLogViewSet(GenericViewSet):
+    """The audit trail. It holds sign-in failures, IP addresses and account
+    changes, so it is limited to administrators and executives."""
+
     permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalAccessUser]
 
-    def get(self, request):
+    def list(self, request):
         logs = AuditLog.objects.select_related('actor_user').order_by('-created_at')
         params = request.query_params
 
@@ -447,12 +440,10 @@ class AuditLogListView(APIView):
 
         return paginate(logs, request, AuditLogSerializer, pagination_class=AuditLogPagination, view=self)
 
-
-class AuditLogDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrGlobalAccessUser]
-
-    def get(self, _request, log_id):
+    def retrieve(self, _request, log_id):
         log = AuditLog.objects.select_related('actor_user').filter(id=log_id).first()
         if not log:
             raise NotFound('Audit log not found.')
         return Response(AuditLogSerializer(log).data)
+
+

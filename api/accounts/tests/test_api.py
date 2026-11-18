@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core import mail
 from django.urls import reverse
 from rest_framework import status
@@ -9,6 +9,8 @@ from accounts.models import StaffProfile
 from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 from organization.models import Role
+
+User = get_user_model()
 
 
 def _email_html(message):

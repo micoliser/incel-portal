@@ -2,42 +2,36 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from common.pagination import page_size, paginate
+from common.viewsets import GenericViewSet
 from notifications.models import Notification, PushSubscription
 from notifications.serializers import (
     NotificationSerializer,
+    PushSubscriptionInputSerializer,
     PushSubscriptionSerializer,
-    PushSubscriptionWriteSerializer,
 )
 
 NotificationPagination = page_size(20, maximum=50)
 
 
-class NotificationListView(APIView):
+class NotificationViewSet(GenericViewSet):
+    """The signed-in user's notifications. Wired in `api_urls.py`."""
+
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
+    def list(self, request):
         queryset = Notification.objects.filter(recipient=request.user).order_by('-created_at')
 
         return paginate(queryset, request, NotificationSerializer, pagination_class=NotificationPagination, view=self)
 
-
-class NotificationUnreadCountView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
+    def unread_count(self, request):
         unread_count = Notification.objects.filter(recipient=request.user, is_read=False).count()
         return Response({'unread_count': unread_count})
 
-
-class NotificationMarkReadView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, notification_id):
+    def mark_read(self, request, notification_id):
         notification = Notification.objects.filter(
             id=notification_id,
             recipient=request.user,
@@ -52,11 +46,7 @@ class NotificationMarkReadView(APIView):
 
         return Response(NotificationSerializer(notification).data)
 
-
-class NotificationMarkAllReadView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
+    def read_all(self, request):
         now = timezone.now()
         updated = Notification.objects.filter(recipient=request.user, is_read=False).update(
             is_read=True,
@@ -64,11 +54,7 @@ class NotificationMarkAllReadView(APIView):
         )
         return Response({'count': updated})
 
-
-class NotificationDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def delete(self, request, notification_id):
+    def destroy(self, request, notification_id):
         deleted, _details = Notification.objects.filter(
             id=notification_id,
             recipient=request.user,
@@ -77,49 +63,26 @@ class NotificationDeleteView(APIView):
             raise NotFound('Notification not found.')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-
-class NotificationClearAllView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def delete(self, request):
+    def clear_all(self, request):
         deleted, _details = Notification.objects.filter(recipient=request.user).delete()
         return Response({'count': deleted})
 
-
-class PushPublicKeyView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, _request):
+    def push_public_key(self, _request):
         public_key = getattr(settings, 'WEB_PUSH_VAPID_PUBLIC_KEY', '')
         return Response({'public_key': public_key, 'enabled': bool(public_key)})
 
 
-class PushSubscriptionListCreateView(APIView):
+class PushSubscriptionViewSet(GenericViewSet):
+    """The signed-in user's browser push subscriptions. Wired in `api_urls.py`."""
+
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
+    def list(self, request):
         subscriptions = PushSubscription.objects.filter(user=request.user).order_by('-updated_at')
         return Response(PushSubscriptionSerializer(subscriptions, many=True).data)
 
-    def post(self, request):
-        raw = request.data
-        if not isinstance(raw, dict):
-            raise ValidationError('Expected a subscription object.')
-        subscription_data = raw.get('subscription', raw)
-        if not isinstance(subscription_data, dict):
-            raise ValidationError({'subscription': 'Expected an object.'})
-        keys = subscription_data.get('keys', {})
-        if not isinstance(keys, dict):
-            raise ValidationError({'keys': 'Expected an object.'})
-
-        payload = {
-            'endpoint': subscription_data.get('endpoint', ''),
-            'p256dh': keys.get('p256dh', raw.get('p256dh', '')),
-            'auth': keys.get('auth', raw.get('auth', '')),
-            'user_agent': raw.get('user_agent', ''),
-        }
-
-        serializer = PushSubscriptionWriteSerializer(data=payload)
+    def create(self, request):
+        serializer = PushSubscriptionInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         endpoint = serializer.validated_data['endpoint']
@@ -152,11 +115,7 @@ class PushSubscriptionListCreateView(APIView):
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-
-class PushSubscriptionDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def delete(self, request, subscription_id):
+    def destroy(self, request, subscription_id):
         subscription = PushSubscription.objects.filter(
             id=subscription_id,
             user=request.user,

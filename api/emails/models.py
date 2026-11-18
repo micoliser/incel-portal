@@ -1,27 +1,27 @@
-from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.db import models
 
-User = get_user_model()
+from common.models import CreatedAtModel
 
 
-class EmailLog(models.Model):
+class EmailLog(CreatedAtModel):
     """Log of all sent emails for auditing and debugging."""
 
-    STATUSES = [
-        ('pending', 'Pending'),
-        ('sent', 'Sent'),
-        ('failed', 'Failed'),
-    ]
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        SENT = 'sent', 'Sent'
+        FAILED = 'failed', 'Failed'
+
+    STATUSES = Status.choices
 
     email_type = models.CharField(max_length=100)
     subject = models.CharField(max_length=255)
     recipients = models.JSONField()  # List of email addresses
     status = models.CharField(max_length=20, choices=STATUSES, default='pending')
     error_message = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(blank=True, null=True)
     user = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
     )
 
     class Meta:

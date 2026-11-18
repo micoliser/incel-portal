@@ -80,6 +80,10 @@ function CustomTooltip({ active, payload, label, unit = "" }: CustomTooltipProps
   return null;
 }
 
+// Recharts colours legend text with the series colour, which is too faint as
+// text; the coloured dot already identifies the series.
+const legendLabel = (value: string) => <span className="text-foreground">{value}</span>;
+
 export function CompletionTrendChart({ summaries }: TrendChartProps) {
   if (!summaries || summaries.length === 0) {
     return (
@@ -144,6 +148,7 @@ export function CompletionTrendChart({ summaries }: TrendChartProps) {
               />
               <Tooltip content={<CustomTooltip unit="%" />} />
               <Legend
+                formatter={legendLabel}
                 wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
                 iconType="circle"
               />
@@ -204,7 +209,7 @@ export function TasksCompletedChart({ summaries }: TrendChartProps) {
     <Card className="border-border/80 bg-card shadow-xs">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
             <BarChart3 className="size-4" />
           </div>
           <div>
@@ -234,10 +239,11 @@ export function TasksCompletedChart({ summaries }: TrendChartProps) {
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend
+                formatter={legendLabel}
                 wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
                 iconType="circle"
               />
-              <Bar dataKey="Assigned" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Assigned" fill="#64748b" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Completed" fill="#0d47a1" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -289,7 +295,7 @@ export function PriorityDistributionChart({
     <Card className="border-border/80 bg-card shadow-xs">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400">
             <PieChartIcon className="size-4" />
           </div>
           <div>
@@ -324,6 +330,7 @@ export function PriorityDistributionChart({
               </Pie>
               <Tooltip content={<CustomTooltip unit=" tasks" />} />
               <Legend
+                formatter={legendLabel}
                 wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
                 iconType="circle"
               />
@@ -377,7 +384,7 @@ export function StatusDistributionChart({
     <Card className="border-border/80 bg-card shadow-xs">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-700 dark:text-sky-400">
             <PieChartIcon className="size-4" />
           </div>
           <div>
@@ -412,6 +419,7 @@ export function StatusDistributionChart({
               </Pie>
               <Tooltip content={<CustomTooltip unit=" tasks" />} />
               <Legend
+                formatter={legendLabel}
                 wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
                 iconType="circle"
               />

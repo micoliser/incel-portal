@@ -1,6 +1,10 @@
-from django.urls import path
+from django.urls import include, path
 
 from accounts import views_api
+from common.routers import ApiRouter
+
+router = ApiRouter()
+router.register('users', views_api.UserViewSet, basename='users')
 
 urlpatterns = [
     path('auth/login', views_api.LoginView.as_view(), name='auth-login'),
@@ -13,8 +17,7 @@ urlpatterns = [
     path('auth/password-reset/confirm', views_api.PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
     path('me', views_api.MeView.as_view(), name='me'),
     path('me/permissions', views_api.MePermissionsView.as_view(), name='me-permissions'),
-    path('users', views_api.UserListView.as_view(), name='users-list'),
-    path('users/<int:user_id>', views_api.UserDetailView.as_view(), name='users-detail'),
+    path('', include(router.urls)),
     # Called by another service: its path and response shape must not change.
     path('external/users', views_api.ExternalUserListView.as_view(), name='external-users-list'),
 ]

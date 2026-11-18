@@ -3,19 +3,27 @@ import logging
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework import generics, viewsets
+from rest_framework import generics
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.csv_export import csv_response
 from common.exceptions import Conflict, ServiceUnavailable
 from common.params import choice_param, uuid_param
 from common.uploads import checked_upload
 from common.users import display_name
+from common.viewsets import (
+    CreateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+    ListModelMixin,
+    PartialUpdateModelMixin,
+    RetrieveModelMixin,
+)
 from inventory.s3 import (
     delete_inventory_photo_by_public_url,
     generate_inventory_photo_upload_url,
@@ -47,27 +55,37 @@ from .serializers import (
     MaintenanceAttachmentUploadUrlSerializer,
 )
 
-NO_PUT = ['get', 'post', 'patch', 'delete', 'head', 'options']
-
 logger = logging.getLogger(__name__)
 
 ITEM_STATUSES = {value for value, _label in InventoryItem.STATUS_CHOICES}
 MAINTENANCE_STATUSES = {value for value, _label in InventoryMaintenanceLog.STATUS_CHOICES}
 
 
-class InventoryCategoryViewSet(viewsets.ModelViewSet):
+class InventoryCategoryViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
     queryset = InventoryCategory.objects.all().order_by('name')
     serializer_class = InventoryCategorySerializer
     permission_classes = [IsAuthenticated, IsITOrAdminOrGlobalReadOnly]
-    http_method_names = NO_PUT
     lookup_value_converter = 'uuid'
     # A short list that fills dropdowns, always shown whole.
     pagination_class = None
 
 
-class InventoryItemViewSet(viewsets.ModelViewSet):
+class InventoryItemViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
     permission_classes = [IsAuthenticated, IsITOrAdminOrGlobalReadOnly]
-    http_method_names = NO_PUT
     lookup_value_converter = 'uuid'
     
     def get_queryset(self):
@@ -327,9 +345,15 @@ class MyInventoryView(generics.ListAPIView):
         return InventoryItem.objects.filter(current_assignee=self.request.user).select_related('category', 'current_assignee').prefetch_related('assignments')
 
 
-class InventoryMaintenanceLogViewSet(viewsets.ModelViewSet):
+class InventoryMaintenanceLogViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
     permission_classes = [IsAuthenticated, IsITOrAdminOrGlobalReadOnly]
-    http_method_names = NO_PUT
     lookup_value_converter = 'uuid'
 
     def get_queryset(self):

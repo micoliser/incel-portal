@@ -508,7 +508,7 @@ export default function UsersPage() {
             User Management
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage enterprise workspace users, departmental placements, and roles.
+            Add people, place them in the organization and set their roles.
           </p>
         </div>
 
@@ -552,7 +552,7 @@ export default function UsersPage() {
             <span className="text-xs font-medium text-muted-foreground">
               Active Accounts
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
               <UserCheck className="size-4" />
             </div>
           </div>
@@ -560,7 +560,7 @@ export default function UsersPage() {
             <span className="text-2xl font-bold tracking-tight text-foreground">
               {stats.active}
             </span>
-            <span className="text-xs text-[#16a34a] font-medium">enabled</span>
+            <span className="text-xs text-success-text font-medium">enabled</span>
           </div>
         </Card>
 
@@ -570,7 +570,7 @@ export default function UsersPage() {
             <span className="text-xs font-medium text-muted-foreground">
               Disabled Accounts
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400">
               <UserX className="size-4" />
             </div>
           </div>
@@ -631,7 +631,7 @@ export default function UsersPage() {
               value={departmentFilter || "all"}
               onValueChange={(val) => setDepartmentFilter(val === "all" ? "" : val)}
             >
-              <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+              <SelectTrigger aria-label="Filter by department" className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
                 <SelectValue placeholder="All Departments" />
               </SelectTrigger>
               <SelectContent>
@@ -696,7 +696,7 @@ export default function UsersPage() {
         </div>
       </Card>
 
-      {/* 4. Enterprise Users Table */}
+      {/* 4. Users table */}
       {loading ? (
         <UsersSkeleton />
       ) : (
@@ -824,7 +824,7 @@ export default function UsersPage() {
                               className={cn(
                                 "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
                                 user.is_active
-                                  ? "border-[#16a34a]/30 bg-[#16a34a]/10 text-[#16a34a] dark:text-[#4ade80] dark:bg-[#16a34a]/20"
+                                  ? "border-[#16a34a]/30 bg-[#16a34a]/10 text-success-text dark:text-[#4ade80] dark:bg-[#16a34a]/20"
                                   : "border-border bg-muted text-muted-foreground",
                               )}
                             >
@@ -849,7 +849,7 @@ export default function UsersPage() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => openEdit(user)}
-                                    className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-[#0d47a1] transition-colors"
+                                    className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-[#0d47a1] dark:hover:text-[#38bdf8] transition-colors"
                                     title="Edit user details"
                                   >
                                     <Pencil className="size-4" />
@@ -861,8 +861,8 @@ export default function UsersPage() {
                                     className={cn(
                                       "size-8 rounded-lg transition-colors",
                                       user.is_active
-                                        ? "text-muted-foreground hover:bg-rose-500/10 hover:text-[#dc2626]"
-                                        : "text-muted-foreground hover:bg-[#16a34a]/10 hover:text-[#16a34a]",
+                                        ? "text-muted-foreground hover:bg-rose-500/10 hover:text-destructive-text"
+                                        : "text-muted-foreground hover:bg-[#16a34a]/10 hover:text-success-text",
                                     )}
                                     title={
                                       user.is_active
@@ -889,7 +889,7 @@ export default function UsersPage() {
                               <div className="flex flex-col sm:flex-row sm:items-center gap-4 pl-12 text-muted-foreground">
                                 {user.unit_name && (
                                   <div className="flex items-center gap-1.5">
-                                    <Network className="size-3.5 text-[#16a34a]" />
+                                    <Network className="size-3.5 text-success-text" />
                                     <span>
                                       Unit:{" "}
                                       <strong className="text-foreground font-medium">
@@ -1439,7 +1439,7 @@ export default function UsersPage() {
             icon={<UsersIcon className="size-4.5" />}
             iconClassName={
               statusConfirmUser?.is_active
-                ? "bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
+                ? "bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
                 : undefined
             }
           >

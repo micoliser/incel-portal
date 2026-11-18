@@ -87,8 +87,8 @@ export default function ForgotPasswordPage() {
         <CardContent>
           {isSuccess ? (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="flex items-start gap-3 rounded-xl border border-[#16a34a]/30 bg-[#16a34a]/10 p-4 text-[#16a34a] dark:text-[#4ade80]">
-                <CheckCircle2 className="size-5 text-[#16a34a] dark:text-[#4ade80] mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-xl border border-[#16a34a]/30 bg-[#16a34a]/10 p-4 text-success-text dark:text-[#4ade80]">
+                <CheckCircle2 className="size-5 text-success-text dark:text-[#4ade80] mt-0.5 shrink-0" />
                 <div className="text-xs space-y-1 text-foreground">
                   <p className="font-semibold text-sm">Reset link dispatched</p>
                   <p className="text-muted-foreground leading-relaxed">
@@ -103,7 +103,7 @@ export default function ForgotPasswordPage() {
 
               <div className="rounded-xl border border-border bg-muted/40 p-4 text-xs text-muted-foreground space-y-2.5">
                 <div className="flex items-center gap-2 font-semibold text-foreground">
-                  <Mail className="size-4 text-[#0d47a1]" />
+                  <Mail className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" />
                   <span>Important Details</span>
                 </div>
                 <ul className="space-y-1.5 pl-1">
@@ -146,7 +146,7 @@ export default function ForgotPasswordPage() {
               {errorMessage ? (
                 <div
                   role="alert"
-                  className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-[#dc2626] font-medium leading-relaxed animate-in fade-in-50 duration-200"
+                  className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-destructive-text font-medium leading-relaxed animate-in fade-in-50 duration-200"
                 >
                   <AlertCircle className="size-4 shrink-0 mt-0.5" />
                   <div className="flex-1">{errorMessage}</div>
@@ -176,7 +176,7 @@ export default function ForgotPasswordPage() {
                   />
                 </div>
                 {fieldError ? (
-                  <p id="email-error" className="text-xs text-[#dc2626] font-medium">
+                  <p id="email-error" className="text-xs text-destructive-text font-medium">
                     {fieldError}
                   </p>
                 ) : null}

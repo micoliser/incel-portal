@@ -8,16 +8,17 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ViewSet
 
 from common.exceptions import Conflict
 from common.params import date_param
+from common.viewsets import GenericViewSet
 
 from ..models import (
     UserGoal,
     WeeklySummary,
 )
 from ..serializers import (
+    GoalWeekSerializer,
     UserGoalCreateSerializer,
     UserGoalSerializer,
 )
@@ -67,13 +68,15 @@ def _serialize_goals_with_progress(user, goals, week_start_date, week_end_date, 
     return payload
 
 
-class GoalsViewSet(ViewSet):
+class GoalsViewSet(GenericViewSet):
     permission_classes = [IsAuthenticated]
 
     def _resolve_week(self, request):
+        body = GoalWeekSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
         week_start = (
             date_param(request.query_params, 'week_start_date')
-            or date_param(request.data, 'week_start_date')
+            or body.validated_data.get('week_start_date')
         )
         if not week_start:
             week_start, _ = _get_current_week_bounds()

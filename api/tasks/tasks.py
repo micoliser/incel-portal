@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
@@ -33,6 +33,8 @@ from .services import (
     create_task_with_side_effects,
     iter_schedule_occurrences,
 )
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

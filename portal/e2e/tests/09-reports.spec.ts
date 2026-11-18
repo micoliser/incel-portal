@@ -38,7 +38,7 @@ test.describe("daily reports for a staff member", () => {
     await page.goto("/reports");
     const body = main(page);
     await expect(body.getByText("Click a day to open the daily report hub.")).toBeVisible();
-    await expect(body.getByText("You have a report here").first()).toBeVisible();
+    await expect(body.getByText("Your report", { exact: true }).first()).toBeVisible();
     await expect(body.getByText("2 reports").first()).toBeVisible();
     await expect(body.getByRole("button", { name: "Prev" })).toBeVisible();
     await expect(body.getByRole("button", { name: "Next" })).toBeVisible();

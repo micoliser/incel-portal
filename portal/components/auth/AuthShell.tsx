@@ -4,9 +4,6 @@ import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  ShieldCheck,
-  Layers,
-  Activity,
   Sun,
   Moon,
   CheckCircle2,
@@ -43,8 +40,8 @@ function subscribeTheme(callback: () => void) {
 const emptySubscribe = () => () => {};
 
 export function AuthShell({
-  headline = "Where enterprise operations move with precision.",
-  description = "A unified portal orchestrating tasks, approvals, department inventory, and executive analytics across Incel Group.",
+  headline = "Your work at Incel Group, in one place.",
+  description = "Tasks, daily reports, company applications and support for Incel Group staff.",
   children,
 }: AuthShellProps) {
   const isMounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
@@ -84,7 +81,7 @@ export function AuthShell({
               </>
             ) : (
               <>
-                <Moon className="size-3.5 text-[#0d47a1]" />
+                <Moon className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
                 <span>Dark mode</span>
               </>
             )}
@@ -116,18 +113,13 @@ export function AuthShell({
                 Incel Workspace
               </span>
               <span className="text-xs font-medium text-blue-100/90">
-                Enterprise Operations
+                Incel Group
               </span>
             </div>
           </Link>
 
           {/* Middle showcase content */}
           <div className="relative z-10 max-w-xl space-y-7 my-auto py-8">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-medium text-blue-100/85 shadow-xs">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              Incel Portal v2.4 Enterprise
-            </div>
-
             <h1 className="text-4xl xl:text-5xl font-bold tracking-tight text-white leading-[1.12]">
               {headline}
             </h1>
@@ -136,72 +128,18 @@ export function AuthShell({
               {description}
             </p>
 
-            {/* Live Operations Overview Card - Subdued, dark-tinted inset */}
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-emerald-400" />
-                  <span className="text-xs font-semibold tracking-wide text-white/95">
-                    Live System Status
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium text-blue-200/60">
-                  Real-time synchronization
-                </span>
-              </div>
-
-              {/* 3 Metric Pillars - Calm, pure white numbers, no neon */}
-              <div className="grid grid-cols-3 gap-3 pt-1">
-                <div className="rounded-xl border border-white/5 bg-black/15 p-3 text-left">
-                  <span className="text-2xl font-bold text-white tabular-nums tracking-tight">
-                    14
-                  </span>
-                  <p className="text-[11px] font-medium text-blue-200/70 mt-0.5">
-                    Departments
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/5 bg-black/15 p-3 text-left">
-                  <span className="text-2xl font-bold text-white tabular-nums tracking-tight">
-                    99.4%
-                  </span>
-                  <p className="text-[11px] font-medium text-blue-200/70 mt-0.5">
-                    Task SLA Rate
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/5 bg-black/15 p-3 text-left">
-                  <span className="text-2xl font-bold text-white tabular-nums tracking-tight">
-                    256-bit
-                  </span>
-                  <p className="text-[11px] font-medium text-blue-200/70 mt-0.5">
-                    Data Security
-                  </p>
-                </div>
-              </div>
-
-              {/* Security reassurance banner */}
-              <div className="flex items-center gap-2 pt-1 text-xs text-blue-100/75">
-                <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
-                <span>Role-based access with comprehensive audit trails for leadership & staff.</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Trust Markers - Elegant minimal row without chunky bright pills */}
-          <div className="relative z-10 flex items-center gap-5 text-xs text-blue-100/80 pt-4">
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-blue-200/80" />
-              <span>Multi-tier Auth</span>
-            </div>
-            <span className="size-1 rounded-full bg-blue-200/30" />
-            <div className="flex items-center gap-1.5">
-              <Layers className="size-3.5 text-blue-200/80" />
-              <span>Department Scoped</span>
-            </div>
-            <span className="size-1 rounded-full bg-blue-200/30" />
-            <div className="flex items-center gap-1.5">
-              <Activity className="size-3.5 text-blue-200/80" />
-              <span>Audit Logged</span>
-            </div>
+            <ul className="space-y-2.5 text-sm text-blue-100">
+              {[
+                "Tasks with a review step, to-dos and weekly goals",
+                "Daily reports and weekly summaries",
+                "Company applications, support requests and the assets assigned to you",
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2.5">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-blue-200" aria-hidden="true" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
@@ -224,7 +162,7 @@ export function AuthShell({
                   Incel Workspace
                 </span>
                 <span className="text-[11px] font-medium text-muted-foreground">
-                  Enterprise Operations
+                  Incel Group
                 </span>
               </div>
             </div>
@@ -234,7 +172,7 @@ export function AuthShell({
             {/* Bottom Support & Security Disclaimer */}
             <div className="text-center pt-2 space-y-1.5 text-xs text-muted-foreground">
               <p className="flex items-center justify-center gap-1.5">
-                <Lock className="size-3 text-muted-foreground/70" />
+                <Lock className="size-3 text-muted-foreground" />
                 <span>Protected by automated inactivity lockout & audit monitoring</span>
               </p>
               <p>

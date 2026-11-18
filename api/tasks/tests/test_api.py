@@ -1,7 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -12,6 +12,8 @@ from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
 from tasks.models import Task, TaskActivity, TaskAttachment
 from tasks.s3 import build_task_attachment_key_prefix
+
+User = get_user_model()
 
 
 class TasksApiTests(BaseAPITestCase):

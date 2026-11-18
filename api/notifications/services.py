@@ -5,11 +5,13 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from notifications.models import Notification, PushSubscription
 from notifications.serializers import is_allowed_push_endpoint
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

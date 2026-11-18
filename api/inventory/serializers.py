@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from common.serializers import UserSummarySerializer
@@ -19,6 +19,8 @@ from .s3 import (
     maintenance_attachment_key,
     maintenance_attachment_key_prefix,
 )
+
+User = get_user_model()
 
 
 class InventoryCategorySerializer(serializers.ModelSerializer):

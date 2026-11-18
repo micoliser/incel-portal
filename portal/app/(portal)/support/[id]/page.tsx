@@ -66,7 +66,7 @@ const STATUS_CONFIG: Record<
   resolved: {
     label: "Resolved",
     badgeClass:
-      "border-[#16a34a]/30 bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80] dark:border-[#16a34a]/40",
+      "border-[#16a34a]/30 bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80] dark:border-[#16a34a]/40",
     dotClass: "bg-[#16a34a]",
   },
   closed: {
@@ -98,7 +98,7 @@ const PRIORITY_CONFIG: Record<
   urgent: {
     label: "Urgent",
     badgeClass:
-      "border-[#dc2626]/30 bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400 font-semibold",
+      "border-[#dc2626]/30 bg-[#dc2626]/10 text-destructive-text dark:bg-[#dc2626]/20 dark:text-red-400 font-semibold",
   },
 };
 
@@ -330,7 +330,7 @@ export default function SupportDetailPage({
                 {isIT ? (
                   <Laptop className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
                 ) : (
-                  <HelpCircle className="size-3.5 text-amber-600 dark:text-amber-400" />
+                  <HelpCircle className="size-3.5 text-amber-700 dark:text-amber-400" />
                 )}
                 <span>{isIT ? "IT Support" : "General"}</span>
               </span>
@@ -410,7 +410,7 @@ export default function SupportDetailPage({
                           href={att.download_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:text-[#0d47a1] transition-colors"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:text-[#0d47a1] dark:hover:text-[#38bdf8] transition-colors"
                         >
                           <Download className="size-3" />
                           <span>Download</span>
@@ -458,7 +458,7 @@ export default function SupportDetailPage({
                         {comment.is_system && (
                           <Badge
                             variant="outline"
-                            className="text-[10px] uppercase font-bold tracking-wider py-0 px-1.5 border-border bg-muted/60"
+                            className="text-[11px] uppercase font-bold tracking-wider py-0 px-1.5 border-border bg-muted/60"
                           >
                             System Audit
                           </Badge>
@@ -647,7 +647,7 @@ export default function SupportDetailPage({
                 {request.resolved_at && (
                   <div>
                     <span className="text-muted-foreground">Resolved at</span>
-                    <p className="mt-0.5 font-medium text-[#16a34a]">
+                    <p className="mt-0.5 font-medium text-success-text">
                       {formatFullDateTime(request.resolved_at)}
                     </p>
                   </div>
@@ -690,7 +690,7 @@ export default function SupportDetailPage({
                     placeholder="Select team member..."
                   />
                   {assignUserId === String(request.requester.id) && (
-                    <p className="text-xs text-[#dc2626]">
+                    <p className="text-xs text-destructive-text">
                       Cannot assign to requester.
                     </p>
                   )}

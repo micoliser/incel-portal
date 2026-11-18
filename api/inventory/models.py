@@ -2,12 +2,12 @@ import random
 import string
 import uuid
 
-from django.contrib.auth.models import User
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from common.models import TimeStampedModel
+from common.models import CreatedAtModel, TimeStampedModel
 
 
 class InventoryCategory(TimeStampedModel):
@@ -23,13 +23,14 @@ class InventoryCategory(TimeStampedModel):
 
 
 class InventoryItem(TimeStampedModel):
-    STATUS_CHOICES = [
-        ('available', 'Available'),
-        ('assigned', 'Assigned'),
-        ('maintenance', 'Maintenance'),
-        ('retired', 'Retired'),
-        ('unaccounted', 'Unaccounted'),
-    ]
+    class Status(models.TextChoices):
+        AVAILABLE = 'available', 'Available'
+        ASSIGNED = 'assigned', 'Assigned'
+        MAINTENANCE = 'maintenance', 'Maintenance'
+        RETIRED = 'retired', 'Retired'
+        UNACCOUNTED = 'unaccounted', 'Unaccounted'
+
+    STATUS_CHOICES = Status.choices
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
@@ -43,7 +44,7 @@ class InventoryItem(TimeStampedModel):
     quantity = models.PositiveIntegerField(default=1)
     
     current_assignee = models.ForeignKey(
-        User, 
+        settings.AUTH_USER_MODEL, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
@@ -95,9 +96,9 @@ class InventoryItem(TimeStampedModel):
 class InventoryAssignment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item = models.ForeignKey(InventoryItem, on_delete=models.CASCADE, related_name='assignments')
-    assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='inventory_assignment_history', null=True, blank=True)
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='inventory_assignment_history', null=True, blank=True)
     assigned_to_department = models.ForeignKey('organization.Department', on_delete=models.CASCADE, related_name='inventory_assignment_history', null=True, blank=True)
-    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='inventory_assignments_made')
+    assigned_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='inventory_assignments_made')
     assigned_at = models.DateTimeField(default=timezone.now)
     returned_at = models.DateTimeField(null=True, blank=True)
     condition_notes = models.TextField(blank=True)
@@ -122,20 +123,21 @@ class InventoryAssignment(models.Model):
 
 
 class InventoryMaintenanceLog(TimeStampedModel):
-    STATUS_CHOICES = [
-        ('open', 'Open'),
-        ('in_progress', 'In Progress'),
-        ('completed', 'Completed'),
-    ]
+    class Status(models.TextChoices):
+        OPEN = 'open', 'Open'
+        IN_PROGRESS = 'in_progress', 'In Progress'
+        COMPLETED = 'completed', 'Completed'
+
+    STATUS_CHOICES = Status.choices
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item = models.ForeignKey(InventoryItem, on_delete=models.CASCADE, related_name='maintenance_logs')
     date = models.DateField(default=timezone.now)
     issue_reported = models.TextField()
     action_taken = models.TextField(blank=True)
-    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_maintenance_logs')
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_maintenance_logs')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_maintenance_logs')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_maintenance_logs')
 
     class Meta:
         ordering = ['-date', '-created_at']
@@ -147,7 +149,7 @@ class InventoryMaintenanceLog(TimeStampedModel):
     def __str__(self):
         return f"Maintenance for {self.item} on {self.date}"
 
-class MaintenanceLogAttachment(models.Model):
+class MaintenanceLogAttachment(CreatedAtModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     log = models.ForeignKey(
         InventoryMaintenanceLog,
@@ -158,7 +160,6 @@ class MaintenanceLogAttachment(models.Model):
     file_name = models.CharField(max_length=255)
     content_type = models.CharField(max_length=255)
     size = models.PositiveBigIntegerField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['created_at']

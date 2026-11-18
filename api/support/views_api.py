@@ -12,7 +12,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.viewsets import GenericViewSet
 
 from common.pagination import page_size
-from common.params import choice_param, uuid_param
+from common.params import choice_param
 from common.uploads import checked_upload
 from common.users import display_name
 
@@ -335,7 +335,7 @@ class SupportRequestViewSet(
         )
 
         # Determine where to attach — if a comment_id was provided, attach to comment
-        comment_id = uuid_param(request.data, 'comment_id')
+        comment_id = data.get('comment_id')
         comment = None
         if comment_id:
             comment = get_object_or_404(SupportComment, id=comment_id, request=request_obj)

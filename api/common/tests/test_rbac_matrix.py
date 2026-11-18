@@ -13,13 +13,15 @@ Run with RBAC_MATRIX_PRINT=1 to print the table.
 import os
 from datetime import timedelta
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from accounts.models import ServiceApiKey, StaffProfile
 from applications.models import InternalApplication
 from common.test_utils import BaseAPITestCase
 from organization.models import Department, Role
+
+User = get_user_model()
 
 STAFF, MANAGER, INVENTORY, EXECUTIVE, ADMIN_ROLE, SUPERUSER = (
     'staff', 'manager', 'inventory', 'executive', 'admin role', 'superuser',

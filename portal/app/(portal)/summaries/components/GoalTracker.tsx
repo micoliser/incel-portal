@@ -53,14 +53,14 @@ const GOAL_CONFIG: Record<
   high_priority_completed: {
     label: "High Priority Tasks",
     icon: Flame,
-    accentClass: "text-rose-600 dark:text-rose-400",
-    iconBgClass: "bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+    accentClass: "text-rose-700 dark:text-rose-400",
+    iconBgClass: "bg-rose-500/10 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400",
   },
   files_attached: {
     label: "Files Attached",
     icon: Paperclip,
-    accentClass: "text-sky-600 dark:text-sky-400",
-    iconBgClass: "bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+    accentClass: "text-sky-700 dark:text-sky-400",
+    iconBgClass: "bg-sky-500/10 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400",
   },
   comments_added: {
     label: "Comments Added",
@@ -122,7 +122,7 @@ export function GoalTracker({
             </div>
             <div>
               <CardTitle className="text-lg font-semibold tracking-tight text-foreground">
-                {title}
+                <h2>{title}</h2>
               </CardTitle>
               <CardDescription className="text-xs text-muted-foreground sm:text-sm">
                 {description}
@@ -143,7 +143,7 @@ export function GoalTracker({
                 className={cn(
                   "flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold tabular-nums",
                   stats.overallPct >= 100
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                     : "border-border/80 bg-muted/60 text-foreground",
                 )}
               >
@@ -201,7 +201,7 @@ export function GoalTracker({
                             {config.label}
                           </p>
                           {isAchieved ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                               <CheckCircle2 className="size-3" />
                               Achieved
                             </span>
@@ -231,7 +231,7 @@ export function GoalTracker({
                           className={cn(
                             "ml-1 text-sm font-semibold tabular-nums",
                             isAchieved
-                              ? "text-emerald-600 dark:text-emerald-400"
+                              ? "text-emerald-700 dark:text-emerald-400"
                               : "text-muted-foreground",
                           )}
                         >
