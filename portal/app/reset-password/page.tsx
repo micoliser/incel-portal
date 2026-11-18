@@ -172,14 +172,14 @@ function ResetPasswordForm() {
         <CardContent>
           {isValidating ? (
             <div className="flex flex-col items-center justify-center py-10 space-y-3">
-              <Loader2 className="size-8 animate-spin text-[#0d47a1]" />
+              <Loader2 className="size-8 animate-spin text-[#0d47a1] dark:text-[#38bdf8]" />
               <p className="text-xs text-muted-foreground font-medium">
                 Validating security credentials...
               </p>
             </div>
           ) : !tokenValid ? (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-4 text-[#dc2626]">
+              <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-4 text-destructive-text">
                 <ShieldAlert className="size-5 shrink-0 mt-0.5" />
                 <div className="text-xs space-y-1">
                   <p className="font-semibold text-sm">Reset link expired or invalid</p>
@@ -214,8 +214,8 @@ function ResetPasswordForm() {
             </div>
           ) : isSuccess ? (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="flex items-start gap-3 rounded-xl border border-[#16a34a]/30 bg-[#16a34a]/10 p-4 text-[#16a34a] dark:text-[#4ade80]">
-                <CheckCircle2 className="size-5 text-[#16a34a] dark:text-[#4ade80] mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-xl border border-[#16a34a]/30 bg-[#16a34a]/10 p-4 text-success-text dark:text-[#4ade80]">
+                <CheckCircle2 className="size-5 text-success-text dark:text-[#4ade80] mt-0.5 shrink-0" />
                 <div className="text-xs space-y-1 text-foreground">
                   <p className="font-semibold text-sm">Credentials Updated Successfully</p>
                   <p className="text-muted-foreground leading-relaxed">
@@ -239,7 +239,7 @@ function ResetPasswordForm() {
               {submitError ? (
                 <div
                   role="alert"
-                  className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-[#dc2626] font-medium leading-relaxed animate-in fade-in-50 duration-200"
+                  className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-destructive-text font-medium leading-relaxed animate-in fade-in-50 duration-200"
                 >
                   <AlertCircle className="size-4 shrink-0 mt-0.5" />
                   <div className="flex-1">{submitError}</div>
@@ -291,7 +291,7 @@ function ResetPasswordForm() {
                   </button>
                 </div>
                 {fieldErrors.newPassword ? (
-                  <p id="newPassword-error" className="text-xs text-[#dc2626] font-medium">
+                  <p id="newPassword-error" className="text-xs text-destructive-text font-medium">
                     {fieldErrors.newPassword}
                   </p>
                 ) : null}
@@ -342,7 +342,7 @@ function ResetPasswordForm() {
                   </button>
                 </div>
                 {fieldErrors.confirmPassword ? (
-                  <p id="confirmPassword-error" className="text-xs text-[#dc2626] font-medium">
+                  <p id="confirmPassword-error" className="text-xs text-destructive-text font-medium">
                     {fieldErrors.confirmPassword}
                   </p>
                 ) : null}
@@ -351,7 +351,7 @@ function ResetPasswordForm() {
               {/* Password Requirements Checklist */}
               <div className="rounded-xl border border-border bg-muted/40 p-3.5 space-y-2 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <KeyRound className="size-3.5 text-[#0d47a1]" />
+                  <KeyRound className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
                   <span>Security Requirements</span>
                 </div>
                 <div className="space-y-1.5 pl-0.5">
@@ -359,7 +359,7 @@ function ResetPasswordForm() {
                     <span
                       className={`inline-flex items-center justify-center size-4 rounded-full transition-colors ${
                         hasMinLength
-                          ? "bg-[#16a34a]/20 text-[#16a34a] dark:text-[#4ade80]"
+                          ? "bg-[#16a34a]/20 text-success-text dark:text-[#4ade80]"
                           : "bg-muted-foreground/20 text-muted-foreground"
                       }`}
                     >
@@ -373,7 +373,7 @@ function ResetPasswordForm() {
                     <span
                       className={`inline-flex items-center justify-center size-4 rounded-full transition-colors ${
                         passwordsMatch
-                          ? "bg-[#16a34a]/20 text-[#16a34a] dark:text-[#4ade80]"
+                          ? "bg-[#16a34a]/20 text-success-text dark:text-[#4ade80]"
                           : "bg-muted-foreground/20 text-muted-foreground"
                       }`}
                     >

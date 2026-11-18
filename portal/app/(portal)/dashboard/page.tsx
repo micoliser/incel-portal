@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Crown,
-  Sparkles,
   CheckCircle,
   Clock,
   AlertCircle,
@@ -416,10 +415,6 @@ export default function DashboardPage() {
           <div className="pointer-events-none absolute -bottom-16 right-16 size-44 rounded-full bg-[#0d47a1]/50 blur-xl" />
           <CardHeader className="relative z-10 pb-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white backdrop-blur-xs">
-                <Sparkles className="size-3.5" aria-hidden="true" />
-                Active Workspace
-              </span>
               <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white/95 backdrop-blur-xs">
                 Role: {roleLabel} · {departmentLabel}
               </span>
@@ -428,7 +423,7 @@ export default function DashboardPage() {
               {fullName}
             </CardTitle>
             <CardDescription className="text-sm text-white/85">
-              You are signed in and ready to manage your tasks, reports, and internal applications.
+              Open your tasks, write today&apos;s report, or launch an application.
             </CardDescription>
           </CardHeader>
           <CardContent className="relative z-10 pt-2">
@@ -465,7 +460,7 @@ export default function DashboardPage() {
         <Card className="justify-between">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Crown className="size-4 text-[#0d47a1]" aria-hidden="true" />
+              <Crown className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" aria-hidden="true" />
               Quick actions
             </CardTitle>
             <CardDescription>
@@ -489,7 +484,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <ArrowRight
-                  className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-[#0d47a1]"
+                  className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8]"
                   aria-hidden="true"
                 />
               </button>
@@ -522,7 +517,7 @@ export default function DashboardPage() {
             Assigned to Me
             {assignedToMeTasksCount > 0 && (
               <span
-                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
                   taskView === "assigned_to"
                     ? "bg-white/20 text-white"
                     : "bg-muted text-muted-foreground"
@@ -543,7 +538,7 @@ export default function DashboardPage() {
             Tasks I Assigned
             {assignedByMeTasksCount > 0 && (
               <span
-                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
                   taskView === "assigned_by"
                     ? "bg-white/20 text-white"
                     : "bg-muted text-muted-foreground"
@@ -563,9 +558,9 @@ export default function DashboardPage() {
           const isHighPriorityCard = card.title.toLowerCase().includes("priority");
           const isCompletedCard = card.title.toLowerCase().includes("completed");
           const iconContainerClass = isHighPriorityCard
-            ? "bg-[#dc2626]/10 text-[#dc2626] ring-1 ring-[#dc2626]/20"
+            ? "bg-[#dc2626]/10 text-destructive-text ring-1 ring-[#dc2626]/20"
             : isCompletedCard
-              ? "bg-[#16a34a]/10 text-[#16a34a] ring-1 ring-[#16a34a]/20"
+              ? "bg-[#16a34a]/10 text-success-text ring-1 ring-[#16a34a]/20"
               : "bg-[#0d47a1]/10 text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:text-[#38bdf8]";
 
           return (
@@ -671,7 +666,7 @@ export default function DashboardPage() {
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
                             task.status === "completed"
-                              ? "border-[#16a34a]/25 bg-[#16a34a]/10 text-[#16a34a] dark:text-[#4ade80]"
+                              ? "border-[#16a34a]/25 bg-[#16a34a]/10 text-success-text dark:text-[#4ade80]"
                               : task.status === "under_review"
                                 ? "border-purple-500/25 bg-purple-500/10 text-purple-700 dark:text-purple-300"
                                 : task.status === "in_progress"
@@ -692,7 +687,7 @@ export default function DashboardPage() {
                         <span
                           className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
                             task.priority === "high"
-                              ? "bg-[#dc2626]/10 text-[#dc2626] dark:text-[#f87171]"
+                              ? "bg-[#dc2626]/10 text-destructive-text dark:text-[#f87171]"
                               : task.priority === "medium"
                                 ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
                                 : "bg-muted text-muted-foreground"
@@ -779,17 +774,17 @@ export default function DashboardPage() {
                     </li>
                     <li className="flex items-center justify-between">
                       <span>High priority</span>
-                      <span className="font-semibold tabular-nums text-[#dc2626]">{assignedByMeHighPriority}</span>
+                      <span className="font-semibold tabular-nums text-destructive-text">{assignedByMeHighPriority}</span>
                     </li>
                     <li className="flex items-center justify-between">
                       <span>Completed</span>
-                      <span className="font-semibold tabular-nums text-[#16a34a]">{assignedByMeCompleted}</span>
+                      <span className="font-semibold tabular-nums text-success-text">{assignedByMeCompleted}</span>
                     </li>
                   </ul>
                 </div>
                 {assignedByMeUnderReview > 0 && (
                   <div className="flex items-start gap-3 rounded-xl border border-[#0d47a1]/30 bg-[#0d47a1]/8 p-3.5">
-                    <Eye className="mt-0.5 size-4 shrink-0 text-[#0d47a1]" aria-hidden="true" />
+                    <Eye className="mt-0.5 size-4 shrink-0 text-[#0d47a1] dark:text-[#38bdf8]" aria-hidden="true" />
                     <div>
                       <p className="text-sm font-semibold text-foreground">
                         {pluralize(assignedByMeUnderReview, "task")} waiting for review
@@ -802,9 +797,9 @@ export default function DashboardPage() {
                 )}
                 {assignedByMeOverdueOrDueSoon > 0 && (
                   <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/8 p-3.5">
-                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-[#dc2626]" aria-hidden="true" />
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive-text" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-semibold text-[#dc2626] dark:text-[#f87171]">
+                      <p className="text-sm font-semibold text-destructive-text dark:text-[#f87171]">
                         {pluralize(assignedByMeOverdueOrDueSoon, "task")} due soon or overdue
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
@@ -837,7 +832,7 @@ export default function DashboardPage() {
                       progress, {totalCompletedTasks} completed)
                     </li>
                     {totalOverdueTasks > 0 && (
-                      <li className="text-[#dc2626]">
+                      <li className="text-destructive-text">
                         • {pluralize(totalOverdueTasks, "overdue task")} across
                         teams
                       </li>
@@ -882,19 +877,19 @@ export default function DashboardPage() {
                     </li>
                     <li className="flex items-center justify-between">
                       <span>High priority</span>
-                      <span className="font-semibold tabular-nums text-[#dc2626]">{assignedToMeHighPriority}</span>
+                      <span className="font-semibold tabular-nums text-destructive-text">{assignedToMeHighPriority}</span>
                     </li>
                     <li className="flex items-center justify-between">
                       <span>Completed</span>
-                      <span className="font-semibold tabular-nums text-[#16a34a]">{assignedToMeCompleted}</span>
+                      <span className="font-semibold tabular-nums text-success-text">{assignedToMeCompleted}</span>
                     </li>
                   </ul>
                 </div>
                 {assignedToMeOverdueOrDueSoon > 0 && (
                   <div className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/8 p-3.5">
-                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-[#dc2626]" aria-hidden="true" />
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive-text" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-semibold text-[#dc2626] dark:text-[#f87171]">
+                      <p className="text-sm font-semibold text-destructive-text dark:text-[#f87171]">
                         {pluralize(assignedToMeOverdueOrDueSoon, "task")} due soon or overdue
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
@@ -962,7 +957,7 @@ export default function DashboardPage() {
                               ? "border-[#dc2626]/25 bg-[#dc2626]/10 text-[#dc2626]"
                               : application.status === "MAINTENANCE"
                                 ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                : "border-[#16a34a]/25 bg-[#16a34a]/10 text-[#16a34a] dark:text-[#4ade80]"
+                                : "border-[#16a34a]/25 bg-[#16a34a]/10 text-success-text dark:text-[#4ade80]"
                           }`}
                         >
                           {application.can_access === false

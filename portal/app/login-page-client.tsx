@@ -188,7 +188,7 @@ export default function LoginPageClient({
   return (
     <AuthShell
       headline="Welcome back to your workspace."
-      description="Sign in with your company email to access your department tools, approvals, workflows, and analytics."
+      description="Sign in with your company email to see your tasks, daily reports, applications and support requests."
     >
       <Dialog
         open={showInactivityAlert}
@@ -232,7 +232,7 @@ export default function LoginPageClient({
             {errorMessage ? (
               <div
                 role="alert"
-                className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-[#dc2626] font-medium leading-relaxed animate-in fade-in-50 duration-200"
+                className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-destructive-text font-medium leading-relaxed animate-in fade-in-50 duration-200"
               >
                 <AlertCircle className="size-4 shrink-0 mt-0.5" />
                 <div className="flex-1">{errorMessage}</div>
@@ -264,7 +264,7 @@ export default function LoginPageClient({
                 />
               </div>
               {fieldErrors.email ? (
-                <p id="email-error" className="text-xs text-[#dc2626] font-medium">
+                <p id="email-error" className="text-xs text-destructive-text font-medium">
                   {fieldErrors.email}
                 </p>
               ) : null}
@@ -320,7 +320,7 @@ export default function LoginPageClient({
                 </button>
               </div>
               {fieldErrors.password ? (
-                <p id="password-error" className="text-xs text-[#dc2626] font-medium">
+                <p id="password-error" className="text-xs text-destructive-text font-medium">
                   {fieldErrors.password}
                 </p>
               ) : null}

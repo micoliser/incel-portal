@@ -468,7 +468,7 @@ export default function DepartmentsPage() {
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
               <Network className="size-4.5" />
             </div>
             <div>
@@ -480,7 +480,7 @@ export default function DepartmentsPage() {
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400">
               <Users className="size-4.5" />
             </div>
             <div>
@@ -704,7 +704,7 @@ export default function DepartmentsPage() {
                       <Users className="size-3.5 text-muted-foreground" />
                       <span>Members</span>
                       {depMembersCount !== null && (
-                        <span className="rounded-full bg-muted border border-border/70 px-1.5 py-0.2 text-[10px] font-semibold tabular-nums text-foreground">
+                        <span className="rounded-full bg-muted border border-border/70 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-foreground">
                           {depMembersCount}
                         </span>
                       )}
@@ -730,7 +730,7 @@ export default function DepartmentsPage() {
                   <div className="p-4 sm:p-5">
                     {dep.units.length === 0 ? (
                       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 p-6 text-center text-sm text-muted-foreground">
-                        <Network className="size-6 text-muted-foreground/50 mb-1.5" />
+                        <Network className="size-6 text-muted-foreground mb-1.5" />
                         <p className="font-medium text-foreground">No units in this department</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Add a unit to start organizing teams and personnel.
@@ -776,7 +776,7 @@ export default function DepartmentsPage() {
                                     )}
                                   </Button>
 
-                                  <div className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                  <div className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                                     <Network className="size-4" />
                                   </div>
 
@@ -784,14 +784,14 @@ export default function DepartmentsPage() {
                                     <h3 className="text-sm font-bold text-foreground">
                                       {unit.name}
                                     </h3>
-                                    <span className="font-mono text-[11px] rounded border border-border/80 bg-muted/60 px-1.5 py-0.2 text-muted-foreground">
+                                    <span className="font-mono text-[11px] rounded border border-border/80 bg-muted/60 px-1.5 py-0.5 text-muted-foreground">
                                       {unit.code}
                                     </span>
-                                    <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.2 rounded-full tabular-nums">
+                                    <span className="text-[11px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full tabular-nums">
                                       {unit.teams.length} {unit.teams.length === 1 ? "Team" : "Teams"}
                                     </span>
                                     {unitMembersCount !== null && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-muted text-muted-foreground border border-border/70 px-2 py-0.2 rounded-full tabular-nums">
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-muted text-muted-foreground border border-border/70 px-2 py-0.5 rounded-full tabular-nums">
                                         <Users className="size-2.5" />
                                         {unitMembersCount} {unitMembersCount === 1 ? "Member" : "Members"}
                                       </span>
@@ -831,7 +831,7 @@ export default function DepartmentsPage() {
                                       <button
                                         type="button"
                                         onClick={() => openLeaderModal("unit", unit.id, unit.name)}
-                                        className="text-emerald-600 dark:text-emerald-400 hover:underline font-medium text-xs inline-flex items-center gap-1"
+                                        className="text-emerald-700 dark:text-emerald-400 hover:underline font-medium text-xs inline-flex items-center gap-1"
                                       >
                                         <Plus className="size-3" /> Assign Supervisor
                                       </button>
@@ -850,7 +850,7 @@ export default function DepartmentsPage() {
                                     <Users className="size-3 mr-1 text-muted-foreground" />
                                     <span>Members</span>
                                     {unitMembersCount !== null && (
-                                      <span className="ml-1 rounded-full bg-muted border border-border/70 px-1.5 py-0.2 text-[10px] font-semibold tabular-nums text-foreground">
+                                      <span className="ml-1 rounded-full bg-muted border border-border/70 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-foreground">
                                         {unitMembersCount}
                                       </span>
                                     )}
@@ -862,7 +862,7 @@ export default function DepartmentsPage() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => openCreateTeam(unit.id, unit.name)}
-                                      className="h-7 px-2.5 rounded-md text-xs text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+                                      className="h-7 px-2.5 rounded-md text-xs text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
                                     >
                                       <Plus className="size-3 mr-1" /> Add Team
                                     </Button>
@@ -888,17 +888,17 @@ export default function DepartmentsPage() {
                                             className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-border/60 bg-card p-2.5 sm:p-3 hover:bg-muted/30 transition-colors"
                                           >
                                             <div className="flex items-center flex-wrap gap-2">
-                                              <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                              <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400">
                                                 <Users className="size-3.5" />
                                               </div>
                                               <span className="font-semibold text-xs text-foreground">
                                                 {team.name}
                                               </span>
-                                              <span className="font-mono text-[10px] rounded border border-border/80 bg-muted/60 px-1.5 py-0.2 text-muted-foreground">
+                                              <span className="font-mono text-[11px] rounded border border-border/80 bg-muted/60 px-1.5 py-0.5 text-muted-foreground">
                                                 {team.code}
                                               </span>
                                               {teamMembersCount !== null && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-muted text-muted-foreground border border-border/70 px-2 py-0.2 rounded-full tabular-nums">
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-muted text-muted-foreground border border-border/70 px-2 py-0.5 rounded-full tabular-nums">
                                                   <Users className="size-2.5" />
                                                   {teamMembersCount} {teamMembersCount === 1 ? "Member" : "Members"}
                                                 </span>
@@ -910,7 +910,7 @@ export default function DepartmentsPage() {
                                               <div className="flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-xs">
                                                 {team.team_lead ? (
                                                   <div className="flex items-center gap-1">
-                                                    <span className="text-muted-foreground text-[10px]">Lead:</span>
+                                                    <span className="text-muted-foreground text-[11px]">Lead:</span>
                                                     <span className="font-medium text-foreground text-xs">
                                                       {team.team_lead.first_name} {team.team_lead.last_name}
                                                     </span>
@@ -936,7 +936,7 @@ export default function DepartmentsPage() {
                                                   <button
                                                     type="button"
                                                     onClick={() => openLeaderModal("team", team.id, team.name)}
-                                                    className="text-amber-600 dark:text-amber-400 hover:underline font-medium text-xs inline-flex items-center gap-1"
+                                                    className="text-amber-700 dark:text-amber-400 hover:underline font-medium text-xs inline-flex items-center gap-1"
                                                   >
                                                     <Plus className="size-3" /> Assign Lead
                                                   </button>
@@ -955,7 +955,7 @@ export default function DepartmentsPage() {
                                                 <Users className="size-3 mr-1" />
                                                 <span>Members</span>
                                                 {teamMembersCount !== null && (
-                                                  <span className="ml-1 rounded-full bg-muted border border-border/70 px-1.5 py-0.2 text-[10px] font-semibold tabular-nums text-foreground">
+                                                  <span className="ml-1 rounded-full bg-muted border border-border/70 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-foreground">
                                                     {teamMembersCount}
                                                   </span>
                                                 )}

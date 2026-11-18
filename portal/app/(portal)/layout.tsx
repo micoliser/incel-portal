@@ -3,8 +3,7 @@
 import axios from "axios";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Calendar,
   CheckSquare2,
@@ -59,6 +58,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // One top-level heading per page: a page that renders its own <h1> (a task,
+  // an asset, the users list) owns it, and the header title becomes plain
+  // text. Otherwise the header title is the page heading.
+  const mainRef = useRef<HTMLElement>(null);
+  const [pageHasOwnHeading, setPageHasOwnHeading] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
@@ -531,6 +535,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     });
   }
 
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const update = () => setPageHasOwnHeading(Boolean(main.querySelector("h1")));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(main, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [pathname, isCheckingAuth]);
+
   if (isCheckingAuth) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
@@ -541,8 +555,16 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const PageTitle = pageHasOwnHeading ? "p" : "h1";
+
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground focus:shadow-md"
+      >
+        Skip to main content
+      </a>
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex w-72 flex-col overflow-x-hidden overflow-y-hidden border-r border-sidebar-border bg-sidebar px-4 py-5 text-sidebar-foreground shadow-[0_4px_20px_rgba(9,9,11,0.04)] transition-transform duration-200 ease-out dark:shadow-[0_12px_32px_rgba(0,0,0,0.5)]",
@@ -560,7 +582,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 Incel Group
               </p>
               <p className="text-xs font-medium text-muted-foreground">
-                Enterprise Portal
+                Staff portal
               </p>
             </div>
           </div>
@@ -909,7 +931,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         <div className="mt-auto border-t border-sidebar-border pt-3 flex-shrink-0">
           <Button
             variant="ghost"
-            className="w-full justify-start text-muted-foreground hover:bg-[#dc2626]/10 hover:text-[#dc2626]"
+            className="w-full justify-start text-muted-foreground hover:bg-[#dc2626]/10 hover:text-destructive-text"
             onClick={() => setLogoutConfirmOpen(true)}
           >
             <LogOut className="mr-2 size-4" aria-hidden="true" />
@@ -940,9 +962,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               <Menu className="size-5" aria-hidden="true" />
             </Button>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              <PageTitle className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {pageHeader.title}
-              </h1>
+              </PageTitle>
               <p className="text-xs text-muted-foreground hidden sm:block">
                 {pathname === "/dashboard"
                   ? `Welcome${userInfo?.first_name ? `, ${userInfo.first_name}` : ""}`
@@ -959,6 +981,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               variant="outline"
               size="sm"
               onClick={() => setIsChangePasswordOpen(true)}
+              aria-label="Change password"
               className="w-9 sm:w-auto px-0 sm:px-3"
             >
               <KeyRound className="size-4 sm:mr-1.5" aria-hidden="true" />
@@ -999,7 +1022,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                   {fullName}
                 </p>
                 <p className="text-xs font-medium text-[#0d47a1] dark:text-[#38bdf8]">{roleLabel}</p>
-                <p className="text-[11px] text-muted-foreground">{departmentLabel}</p>
+                <p className="text-xs text-muted-foreground">{departmentLabel}</p>
               </div>
             </div>
           </div>
@@ -1007,8 +1030,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       </header>
 
       <main
+        id="main-content"
+        ref={mainRef}
+        tabIndex={-1}
         className={cn(
-          "h-screen max-w-full lg:ml-72",
+          "h-screen max-w-full lg:ml-72 focus:outline-none",
           pathname === "/summaries"
             ? "pt-[72px] overflow-hidden"
             : "overflow-y-auto overflow-x-hidden pt-[105px] px-4 pb-8 sm:px-6 sm:pb-10 lg:px-8",
@@ -1172,7 +1198,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader
             icon={<LogOut className="size-4.5" />}
-            iconClassName="bg-[#dc2626]/10 text-[#dc2626] ring-[#dc2626]/20 dark:bg-[#dc2626]/20 dark:text-red-400"
+            iconClassName="bg-[#dc2626]/10 text-destructive-text ring-[#dc2626]/20 dark:bg-[#dc2626]/20 dark:text-red-400"
           >
             <DialogTitle>Log out of Incel Portal?</DialogTitle>
             <DialogDescription>

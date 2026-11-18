@@ -172,7 +172,7 @@ export function ShareWithUserModal({
           <div className="max-h-60 overflow-y-auto rounded-xl border border-border/70 p-2">
             {loading ? (
               <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
-                <Loader2 className="mr-2 size-4 animate-spin text-[#0d47a1]" />
+                <Loader2 className="mr-2 size-4 animate-spin text-[#0d47a1] dark:text-[#38bdf8]" />
                 Searching team members...
               </div>
             ) : results.length > 0 ? (
@@ -199,7 +199,7 @@ export function ShareWithUserModal({
                           <p className="truncate text-xs font-semibold text-foreground">
                             {u.username}
                           </p>
-                          <p className="truncate text-[11px] text-muted-foreground">
+                          <p className="truncate text-xs text-muted-foreground">
                             {u.email}
                           </p>
                         </div>
@@ -212,7 +212,7 @@ export function ShareWithUserModal({
                             variant="outline"
                             onClick={() => handleRevoke(u.id)}
                             disabled={isRevoking}
-                            className="h-7 border-rose-500/30 px-2.5 text-xs text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
+                            className="h-7 border-rose-500/30 px-2.5 text-xs text-rose-700 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
                           >
                             {isRevoking ? (
                               <Loader2 className="size-3 animate-spin" />
@@ -251,7 +251,7 @@ export function ShareWithUserModal({
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center text-xs text-muted-foreground">
-                <Search className="mb-2 size-6 text-muted-foreground/60" />
+                <Search className="mb-2 size-6 text-muted-foreground" />
                 <p>Type a colleague&apos;s name or email to share</p>
               </div>
             )}

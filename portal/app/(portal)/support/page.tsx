@@ -58,7 +58,7 @@ const STATUS_CONFIG: Record<
   resolved: {
     label: "Resolved",
     badgeClass:
-      "border-[#16a34a]/30 bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80] dark:border-[#16a34a]/40",
+      "border-[#16a34a]/30 bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80] dark:border-[#16a34a]/40",
     dotClass: "bg-[#16a34a]",
   },
   closed: {
@@ -90,7 +90,7 @@ const PRIORITY_CONFIG: Record<
   urgent: {
     label: "Urgent",
     badgeClass:
-      "border-[#dc2626]/30 bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400 font-semibold animate-pulse",
+      "border-[#dc2626]/30 bg-[#dc2626]/10 text-destructive-text dark:bg-[#dc2626]/20 dark:text-red-400 font-semibold animate-pulse",
   },
 };
 
@@ -281,7 +281,7 @@ export default function SupportListPage() {
             <span className="text-xs font-medium text-muted-foreground">
               Awaiting Action
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-sky-500/10 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
               <Clock className="size-4" />
             </div>
           </div>
@@ -299,7 +299,7 @@ export default function SupportListPage() {
             <span className="text-xs font-medium text-muted-foreground">
               In Progress
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
               <AlertCircle className="size-4" />
             </div>
           </div>
@@ -317,7 +317,7 @@ export default function SupportListPage() {
             <span className="text-xs font-medium text-muted-foreground">
               Resolved & Closed
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
               <CheckCircle2 className="size-4" />
             </div>
           </div>
@@ -325,7 +325,7 @@ export default function SupportListPage() {
             <span className="text-2xl font-bold tracking-tight text-foreground">
               {stats.resolved}
             </span>
-            <span className="text-xs text-[#16a34a] font-medium">completed</span>
+            <span className="text-xs text-success-text font-medium">completed</span>
           </div>
         </Card>
       </div>
@@ -351,7 +351,7 @@ export default function SupportListPage() {
               <User className="size-3.5" />
               <span>My Requests</span>
               {tab === "mine" && requests.length > 0 && (
-                <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-bold">
+                <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[11px] font-bold">
                   {requests.length}
                 </span>
               )}
@@ -374,7 +374,7 @@ export default function SupportListPage() {
                 <Building2 className="size-3.5" />
                 <span>Department Requests</span>
                 {tab === "department" && requests.length > 0 && (
-                  <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-bold">
+                  <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[11px] font-bold">
                     {requests.length}
                   </span>
                 )}
@@ -428,7 +428,7 @@ export default function SupportListPage() {
                 {badgeCount > 0 && (
                   <span
                     className={cn(
-                      "flex size-4.5 items-center justify-center rounded-full text-[10px] font-bold",
+                      "flex size-4.5 items-center justify-center rounded-full text-[11px] font-bold",
                       isActive
                         ? "bg-white/25 text-white"
                         : "bg-muted text-muted-foreground",
@@ -449,9 +449,9 @@ export default function SupportListPage() {
       ) : error ? (
         <Card className="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
           <AlertCircle className="mx-auto size-8 text-destructive mb-2" />
-          <h3 className="text-base font-semibold text-foreground">
+          <h2 className="text-base font-semibold text-foreground">
             Failed to load support requests
-          </h3>
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">{error}</p>
           <Button
             variant="outline"
@@ -467,9 +467,9 @@ export default function SupportListPage() {
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground mb-3">
             <Inbox className="size-6" />
           </div>
-          <h3 className="text-base font-semibold text-foreground">
+          <h2 className="text-base font-semibold text-foreground">
             No support requests found
-          </h3>
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">
             {searchQuery
               ? `No requests matching "${searchQuery}".`
@@ -513,7 +513,7 @@ export default function SupportListPage() {
                       {isIT ? (
                         <Laptop className="size-3 text-[#0d47a1] dark:text-[#38bdf8]" />
                       ) : (
-                        <HelpCircle className="size-3 text-amber-600 dark:text-amber-400" />
+                        <HelpCircle className="size-3 text-amber-700 dark:text-amber-400" />
                       )}
                       <span>{isIT ? "IT Support" : "General"}</span>
                     </span>
@@ -551,9 +551,9 @@ export default function SupportListPage() {
 
                 {/* Card Main: Title & Description Snippet */}
                 <div className="min-w-0">
-                  <h3 className="text-base font-semibold text-foreground group-hover:text-[#0d47a1] transition-colors line-clamp-1">
+                  <h2 className="text-base font-semibold text-foreground group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8] transition-colors line-clamp-1">
                     {req.title}
-                  </h3>
+                  </h2>
                   {req.description && (
                     <p className="mt-1 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                       {req.description}
@@ -566,7 +566,7 @@ export default function SupportListPage() {
                   <div className="flex flex-wrap items-center gap-3">
                     {/* Requester */}
                     <div className="flex items-center gap-1.5">
-                      <div className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-foreground">
+                      <div className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-foreground">
                         {req.requester.full_name?.charAt(0) || "U"}
                       </div>
                       <span className="font-medium text-foreground">
@@ -585,7 +585,7 @@ export default function SupportListPage() {
                         </span>
                       </div>
                     ) : (
-                      <span className="text-muted-foreground/70 italic">
+                      <span className="text-muted-foreground italic">
                         Unassigned
                       </span>
                     )}

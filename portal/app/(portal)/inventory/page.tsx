@@ -102,7 +102,7 @@ const statusConfig: Record<
 > = {
   available: {
     label: "Available",
-    badge: "bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]",
+    badge: "bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80]",
     dot: "bg-[#16a34a] dark:bg-[#4ade80]",
   },
   assigned: {
@@ -122,7 +122,7 @@ const statusConfig: Record<
   },
   unaccounted: {
     label: "Unaccounted",
-    badge: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400",
+    badge: "bg-[#dc2626]/10 text-destructive-text dark:bg-[#dc2626]/20 dark:text-red-400",
     dot: "bg-[#dc2626] dark:bg-red-400",
   },
 };
@@ -651,7 +651,7 @@ export default function InventoryDashboard() {
             Assets & Equipment
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Track enterprise hardware, assignments, lifecycle status, and service history.
+            Company equipment: who has it, its condition and its service history.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -730,7 +730,7 @@ export default function InventoryDashboard() {
             <span className="text-xs font-medium text-muted-foreground">
               Available
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80]">
               <CheckCircle className="size-4" />
             </div>
           </div>
@@ -738,7 +738,7 @@ export default function InventoryDashboard() {
             <span className="text-2xl font-bold tracking-tight text-foreground">
               {stats.available}
             </span>
-            <span className="text-xs text-[#16a34a] font-medium">ready to assign</span>
+            <span className="text-xs text-success-text font-medium">ready to assign</span>
           </div>
         </Card>
 
@@ -766,7 +766,7 @@ export default function InventoryDashboard() {
             <span className="text-xs font-medium text-muted-foreground">
               Maintenance
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
               <Wrench className="size-4" />
             </div>
           </div>
@@ -774,7 +774,7 @@ export default function InventoryDashboard() {
             <span className="text-2xl font-bold tracking-tight text-foreground">
               {stats.maintenance}
             </span>
-            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">under repair</span>
+            <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">under repair</span>
           </div>
         </Card>
 
@@ -802,7 +802,7 @@ export default function InventoryDashboard() {
             <span className="text-xs font-medium text-muted-foreground">
               Unaccounted
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-[#dc2626]/10 text-destructive-text dark:bg-[#dc2626]/20 dark:text-red-400">
               <AlertCircle className="size-4" />
             </div>
           </div>
@@ -810,7 +810,7 @@ export default function InventoryDashboard() {
             <span className="text-2xl font-bold tracking-tight text-foreground">
               {stats.unaccounted}
             </span>
-            <span className="text-xs text-[#dc2626] dark:text-red-400 font-medium">needs audit</span>
+            <span className="text-xs text-destructive-text dark:text-red-400 font-medium">needs audit</span>
           </div>
         </Card>
       </div>
@@ -844,7 +844,7 @@ export default function InventoryDashboard() {
             {/* Category Select */}
             <div className="w-full sm:w-44 shrink-0">
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+                <SelectTrigger aria-label="Filter by category" className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
                 <SelectContent>
@@ -861,8 +861,8 @@ export default function InventoryDashboard() {
             {/* Status Select */}
             <div className="w-full sm:w-40 shrink-0">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
-                  <Filter className="mr-1.5 size-3.5 text-muted-foreground" />
+                <SelectTrigger aria-label="Filter by status" className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+                  <Filter className="mr-1.5 size-3.5 text-muted-foreground" aria-hidden="true" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -879,7 +879,7 @@ export default function InventoryDashboard() {
             {/* Managing Dept Select */}
             <div className="w-full sm:w-36 shrink-0">
               <Select value={managingDeptFilter} onValueChange={setManagingDeptFilter}>
-                <SelectTrigger className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
+                <SelectTrigger aria-label="Filter by managing department" className="h-10 rounded-lg text-xs sm:text-sm border-input bg-background/50">
                   <SelectValue placeholder="Managing Dept" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1112,7 +1112,7 @@ export default function InventoryDashboard() {
                             <td className="px-4 py-3.5 whitespace-nowrap">
                               {item.current_assignee ? (
                                 <div className="flex items-center gap-2">
-                                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[11px] font-bold">
                                     {(
                                       (item.current_assignee.first_name?.[0] || "") +
                                       (item.current_assignee.last_name?.[0] || "")
@@ -1130,7 +1130,7 @@ export default function InventoryDashboard() {
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-xs text-muted-foreground/60">—</span>
+                                <span className="text-xs text-muted-foreground">—</span>
                               )}
                             </td>
 
@@ -1434,7 +1434,7 @@ export default function InventoryDashboard() {
             {(itemForm.status === "retired" || itemForm.status === "unaccounted") && (
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="item_status_reason">
-                  Reason {itemForm.status === "unaccounted" ? <span className="text-[#dc2626]">*</span> : "(Optional)"}
+                  Reason {itemForm.status === "unaccounted" ? <span className="text-destructive-text">*</span> : "(Optional)"}
                 </Label>
                 <Textarea
                   id="item_status_reason"
@@ -1665,7 +1665,7 @@ export default function InventoryDashboard() {
             {(itemForm.status === "retired" || itemForm.status === "unaccounted") && (
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="edit_item_status_reason">
-                  Reason {itemForm.status === "unaccounted" ? <span className="text-[#dc2626]">*</span> : "(Optional)"}
+                  Reason {itemForm.status === "unaccounted" ? <span className="text-destructive-text">*</span> : "(Optional)"}
                 </Label>
                 <Textarea
                   id="edit_item_status_reason"

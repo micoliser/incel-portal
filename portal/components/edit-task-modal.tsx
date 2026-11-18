@@ -129,7 +129,7 @@ export function EditTaskModal({
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {errorMessage && (
-            <div className="rounded-md bg-[#dc2626]/10 p-3 text-sm text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-red-300">
+            <div className="rounded-md bg-[#dc2626]/10 p-3 text-sm text-destructive-text dark:bg-[#dc2626]/15 dark:text-red-300">
               {errorMessage}
             </div>
           )}

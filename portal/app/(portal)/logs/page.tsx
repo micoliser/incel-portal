@@ -107,7 +107,7 @@ function getActionBadge(action: string) {
   if (act.includes("login") || act.includes("auth")) {
     return {
       label: "AUTH",
-      badge: "bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80]",
+      badge: "bg-[#16a34a]/10 text-success-text dark:bg-[#16a34a]/20 dark:text-[#4ade80]",
       dot: "bg-[#16a34a] dark:bg-[#4ade80]",
     };
   }
@@ -128,7 +128,7 @@ function getActionBadge(action: string) {
   if (act.includes("delete") || act.includes("remove") || act.includes("revoke")) {
     return {
       label: "DELETE",
-      badge: "bg-[#dc2626]/10 text-[#dc2626] dark:bg-[#dc2626]/20 dark:text-red-400",
+      badge: "bg-[#dc2626]/10 text-destructive-text dark:bg-[#dc2626]/20 dark:text-red-400",
       dot: "bg-[#dc2626] dark:bg-red-400",
     };
   }
@@ -694,14 +694,8 @@ export default function LogsPage() {
             Audit & Activity Logs
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Immutable workspace audit trail tracking authentication, data mutations, and security events.
+            Sign-ins, changes and security events, newest first. Failed sign-in records are kept for 90 days.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#16a34a]/10 text-[#16a34a] dark:bg-[#16a34a]/20 dark:text-[#4ade80] border border-[#16a34a]/20">
-            <span className="size-1.5 rounded-full bg-[#16a34a] animate-pulse" />
-            Audit Logging Active
-          </span>
         </div>
       </div>
 
@@ -731,7 +725,7 @@ export default function LogsPage() {
             <span className="text-xs font-medium text-muted-foreground">
               Timeframe Scope
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">
               <Calendar className="size-4" />
             </div>
           </div>
@@ -774,7 +768,7 @@ export default function LogsPage() {
             <span className="text-xs font-medium text-muted-foreground">
               Latest Activity
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
               <Clock className="size-4" />
             </div>
           </div>
@@ -1037,7 +1031,7 @@ export default function LogsPage() {
                       {/* Actor */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-2.5">
-                          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
+                          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[11px] font-bold border border-primary/20">
                             {initials}
                           </div>
                           <div className="flex flex-col min-w-0">
@@ -1045,7 +1039,7 @@ export default function LogsPage() {
                               {log.actor_user?.username || "system"}
                             </span>
                             {log.actor_user && (
-                              <span className="text-[10px] text-muted-foreground font-mono">
+                              <span className="text-[11px] text-muted-foreground font-mono">
                                 ID #{log.actor_user.id}
                               </span>
                             )}
@@ -1059,7 +1053,7 @@ export default function LogsPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span
                               className={cn(
-                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-wide uppercase",
                                 badgeCfg.badge
                               )}
                             >
@@ -1083,7 +1077,7 @@ export default function LogsPage() {
                           </p>
                           {log.action_label &&
                             log.action_label !== log.message && (
-                              <p className="text-[11px] text-muted-foreground font-mono">
+                              <p className="text-xs text-muted-foreground font-mono">
                                 {log.action}
                               </p>
                             )}
@@ -1098,7 +1092,7 @@ export default function LogsPage() {
                             {log.ip_address}
                           </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground/60">
+                          <span className="text-xs text-muted-foreground">
                             —
                           </span>
                         )}
@@ -1136,7 +1130,7 @@ export default function LogsPage() {
                               <span className="font-mono text-muted-foreground block mb-1">
                                 Payload:
                               </span>
-                              <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-1.5 font-mono text-[10px] text-foreground">
+                              <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded border border-border bg-background/80 p-1.5 font-mono text-[11px] text-foreground">
                                 {formatMetadata(log.metadata)}
                               </div>
                             </div>

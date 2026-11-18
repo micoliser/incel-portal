@@ -120,12 +120,14 @@ export default function GoalsPage() {
     void fetchGoals();
   }, []);
 
+  // Goal progress comes from a weekly summary the API works out on request,
+  // so refresh when the person comes back to the tab rather than on a timer.
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void fetchGoals(true);
-    }, 30000);
-
-    return () => window.clearInterval(interval);
+    const refreshOnReturn = () => {
+      if (document.visibilityState === "visible") void fetchGoals(true);
+    };
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => document.removeEventListener("visibilitychange", refreshOnReturn);
   }, []);
 
   const handleCreateGoal = async (e?: React.FormEvent) => {
@@ -212,7 +214,7 @@ export default function GoalsPage() {
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5">
               <p className="text-xs font-medium text-muted-foreground">Achieved</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+              <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
                 {achievedGoalsCount}
               </p>
             </div>
@@ -323,7 +325,7 @@ export default function GoalsPage() {
               </div>
 
               <div className="flex items-start gap-2.5">
-                <div className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <div className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                   <Calendar className="size-3.5" />
                 </div>
                 <div>

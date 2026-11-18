@@ -275,7 +275,7 @@ export function AddMaintenanceLogModal({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-[#dc2626] hover:text-[#dc2626] hover:bg-[#dc2626]/10 px-2"
+                      className="h-6 text-destructive-text hover:text-destructive-text hover:bg-[#dc2626]/10 px-2"
                       onClick={() => removeExistingAttachment(att.id)}
                       disabled={isSubmitting || isUploading}
                     >

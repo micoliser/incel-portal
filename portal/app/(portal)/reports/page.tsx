@@ -23,7 +23,6 @@ import {
   ChevronRight,
   Clock,
   FileText,
-  Users,
 } from "lucide-react";
 
 import { PageErrorCard } from "@/components/page-error-card";
@@ -149,99 +148,100 @@ export default function ReportsPage() {
           </CardHeader>
 
           <CardContent className="p-4 sm:p-6">
-            <div className="overflow-x-auto pb-4">
-              <div className="min-w-[700px]">
-                <div className="grid grid-cols-7 gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-                (label) => (
-                  <div key={label} className="px-3 py-2">
-                    {label}
-                  </div>
-                ),
-              )}
+            <div
+              className="grid grid-cols-7 gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:gap-2 sm:text-xs"
+              aria-hidden="true"
+            >
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+                <div key={label} className="py-2 text-center sm:px-3 sm:text-left">
+                  <span className="sm:hidden">{label.charAt(0)}</span>
+                  <span className="hidden sm:inline">{label}</span>
+                </div>
+              ))}
             </div>
 
-            <div className="mt-3 grid grid-cols-7 gap-2">
+            <div className="mt-2 grid grid-cols-7 gap-1 sm:mt-3 sm:gap-2">
               {gridDays.map((date) => {
                 const dateKey = format(date, "yyyy-MM-dd");
                 const report = reportMap.get(dateKey);
                 const inMonth = isSameMonth(date, monthDate);
                 const today = isToday(date);
                 const hasReports = report != null;
-                const subreportCount =
-                  report && report.has_your_report ? report.subreport_count : 0;
+                const yours = Boolean(report?.has_your_report);
+                const subreportCount = yours ? (report?.subreport_count ?? 0) : 0;
+                const countLabel = `${subreportCount} report${subreportCount === 1 ? "" : "s"}`;
+                const spoken = `${format(date, "EEEE d MMMM yyyy")}${today ? ", today" : ""}: ${
+                  yours ? `your report, ${countLabel}` : hasReports ? "department reports" : "no reports"
+                }`;
 
                 return (
                   <button
                     key={dateKey}
                     type="button"
                     onClick={() => goToDay(date)}
+                    aria-label={spoken}
                     className={[
-                      "group relative min-h-28 rounded-xl border p-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50",
-                      inMonth
-                        ? "hover:-translate-y-0.5 hover:shadow-md"
-                        : "opacity-55 saturate-75",
+                      "group relative flex min-h-14 flex-col items-center rounded-lg border p-1.5 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-24 sm:items-stretch sm:rounded-xl sm:p-2.5 lg:min-h-28",
                       inMonth
                         ? hasReports
-                          ? "border-[#0d47a1]/35 bg-[#0d47a1]/5 text-foreground"
-                          : "border-border bg-card text-foreground hover:border-[#0d47a1]/30"
-                        : "border-dashed border-border/50 bg-muted/20 text-muted-foreground",
+                          ? "border-[#0d47a1]/35 bg-[#0d47a1]/5 text-foreground hover:border-[#0d47a1]/60"
+                          : "border-border bg-card text-foreground hover:border-[#0d47a1]/40"
+                        : "border-dashed border-border bg-muted/40 text-muted-foreground hover:border-border",
                       today ? "ring-2 ring-[#0d47a1]/40" : "",
                     ].join(" ")}
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex w-full items-start justify-center sm:justify-start">
                       <span
                         className={[
-                          "inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold tabular-nums",
-                          today
+                          "inline-flex size-7 items-center justify-center rounded-md text-sm font-semibold tabular-nums sm:size-8 sm:rounded-lg",
+                          today || (inMonth && hasReports)
                             ? "bg-[#0d47a1] text-white"
-                            : inMonth && hasReports
-                              ? "bg-[#0d47a1] text-white"
-                              : inMonth
-                                ? "bg-muted text-foreground"
-                                : "bg-muted/60 text-muted-foreground",
+                            : inMonth
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground",
                         ].join(" ")}
                       >
                         {format(date, "d")}
                       </span>
-                      {report?.has_your_report && (
-                        <span className="rounded-md border border-[#16a34a]/25 bg-[#16a34a]/10 px-2 py-0.5 text-[11px] font-semibold text-[#16a34a] dark:text-[#4ade80]">
-                          {subreportCount} report
-                          {subreportCount === 1 ? "" : "s"}
-                        </span>
-                      )}
                     </div>
 
-                    <div className="mt-3 space-y-2">
-                      {hasReports ? (
-                        <>
-                          <p className="line-clamp-2 text-sm font-medium">
-                            {report?.has_your_report
-                              ? "You have a report here"
-                              : "Department reports available"}
-                          </p>
-                          {report?.has_your_report ? (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Users className="h-3.5 w-3.5" />
-                              <span>
-                                {subreportCount} report
-                                {subreportCount === 1 ? "" : "s"}
-                              </span>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No reports found.
-                        </p>
-                      )}
-                    </div>
+                    {/* Phone: a marker under the date. Wider: a short line of text. */}
+                    {hasReports && (
+                      <span
+                        className={[
+                          "mt-1.5 size-1.5 rounded-full sm:hidden",
+                          yours ? "bg-success" : "bg-[#0d47a1] dark:bg-[#38bdf8]",
+                        ].join(" ")}
+                        aria-hidden="true"
+                      />
+                    )}
+                    {hasReports && (
+                      <p className="mt-2 hidden text-[11px] font-medium leading-snug sm:block">
+                        {yours ? (
+                          <>
+                            <span className="block text-success-text">Your report</span>
+                            <span className="block text-muted-foreground">{countLabel}</span>
+                          </>
+                        ) : (
+                          "Department reports"
+                        )}
+                      </p>
+                    )}
                   </button>
                 );
               })}
-                </div>
-              </div>
             </div>
+
+            <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:hidden">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
+                Your report
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-[#0d47a1] dark:bg-[#38bdf8]" aria-hidden="true" />
+                Department reports
+              </span>
+            </p>
           </CardContent>
         </Card>
 

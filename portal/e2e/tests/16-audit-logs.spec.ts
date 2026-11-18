@@ -14,7 +14,7 @@ test.describe("audit logs for an administrator", () => {
     await expect(body.getByRole("columnheader")).toHaveText([
       "Timestamp", "Actor", "Event / Action", "IP Address", "Metadata",
     ]);
-    await expect(body.getByText("Audit Logging Active")).toBeVisible();
+    await expect(body.getByText("Sign-ins, changes and security events, newest first.", { exact: false })).toBeVisible();
     await expect(body.getByRole("row").filter({ hasText: "AUTH_LOGIN_SUCCESS" }).first()).toContainText(
       "User logged in successfully.",
     );

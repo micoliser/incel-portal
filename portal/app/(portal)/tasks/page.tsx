@@ -376,11 +376,12 @@ export default function TasksPage() {
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex max-w-full items-center overflow-x-auto rounded-xl border border-border bg-muted/60 p-1 scrollbar-none">
+        <div className="flex max-w-full flex-wrap items-center gap-1 rounded-xl border border-border bg-muted/60 p-1 sm:flex-nowrap" role="group" aria-label="Task views">
           <Button
             type="button"
             size="sm"
             variant={activeView === "assigned" ? "default" : "ghost"}
+            aria-pressed={activeView === "assigned"}
             className="rounded-lg flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9 font-medium"
             onClick={() => {
               setActiveView("assigned");
@@ -393,6 +394,7 @@ export default function TasksPage() {
             type="button"
             size="sm"
             variant={activeView === "created" ? "default" : "ghost"}
+            aria-pressed={activeView === "created"}
             className="rounded-lg flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9 font-medium"
             onClick={() => {
               setActiveView("created");
@@ -406,13 +408,14 @@ export default function TasksPage() {
               type="button"
               size="sm"
               variant={activeView === "team" ? "default" : "ghost"}
+              aria-pressed={activeView === "team"}
               className="rounded-lg gap-1.5 flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9 font-medium"
               onClick={() => {
                 setActiveView("team");
                 router.push("?view=team");
               }}
             >
-              <Users className="h-3.5 w-3.5" />
+              <Users className="h-3.5 w-3.5" aria-hidden="true" />
               Team Tasks
             </Button>
           )}
@@ -420,16 +423,17 @@ export default function TasksPage() {
             type="button"
             size="sm"
             variant={activeView === "drafts" ? "default" : "ghost"}
+            aria-pressed={activeView === "drafts"}
             className="rounded-lg gap-1.5 flex-shrink-0 text-xs sm:text-sm h-8 sm:h-9 font-medium"
             onClick={() => {
               setActiveView("drafts");
               router.push("?view=drafts");
             }}
           >
-            <Bookmark className="h-3.5 w-3.5" />
+            <Bookmark className="h-3.5 w-3.5" aria-hidden="true" />
             Drafts
             {drafts.length > 0 && (
-              <span className="ml-1 rounded-full bg-primary/20 px-1.5 py-0.2 text-[10px] sm:text-xs font-semibold text-primary">
+              <span className="ml-1 rounded-full bg-primary/20 px-1.5 py-0.5 text-[11px] sm:text-xs font-semibold text-primary">
                 {drafts.length}
               </span>
             )}
@@ -450,8 +454,8 @@ export default function TasksPage() {
 
       {error && (
         <div className="rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-4 flex gap-3">
-          <AlertCircle className="h-5 w-5 text-[#dc2626] flex-shrink-0 mt-0.5" />
-          <div className="text-[#dc2626] text-sm font-medium">{error}</div>
+          <AlertCircle className="h-5 w-5 text-destructive-text flex-shrink-0 mt-0.5" />
+          <div className="text-destructive-text text-sm font-medium">{error}</div>
         </div>
       )}
 
@@ -466,7 +470,7 @@ export default function TasksPage() {
                 ? `${managerScope.title}: ${managerScope.scope_name}`
                 : "Team Oversight"}
             </p>
-            <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 break-words">
+            <p className="text-xs sm:text-xs text-muted-foreground mt-0.5 break-words">
               {managerScope?.description ||
                 "Viewing all tasks related to your team members."}
             </p>
@@ -636,7 +640,7 @@ export default function TasksPage() {
                           </span>
                         </div>
                       ) : (
-                        <span className="text-[11px] italic text-muted-foreground/70">
+                        <span className="text-[11px] italic text-muted-foreground">
                           No assignees selected
                         </span>
                       )}
@@ -662,7 +666,7 @@ export default function TasksPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-8 px-2.5 text-xs text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 gap-1"
+                        className="h-8 px-2.5 text-xs text-muted-foreground hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-400 gap-1"
                         onClick={() => handleDeleteDraft(draft.id)}
                       >
                         <Trash2 className="size-3.5" />
@@ -764,14 +768,14 @@ export default function TasksPage() {
 
                       <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1.5 min-w-0 truncate">
-                          <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[9px] font-bold text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                          <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[11px] font-bold text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
                             {getInitials(schedule.assigned_to?.full_name || schedule.assigned_to?.username)}
                           </div>
                           <span className="truncate text-foreground font-medium text-[11px]">
                             {schedule.assigned_to.full_name || schedule.assigned_to.username}
                           </span>
                         </div>
-                        <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#0d47a1]" />
+                        <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8]" />
                       </div>
                     </Card>
                   </Link>
@@ -874,7 +878,7 @@ export default function TasksPage() {
                       {/* Assignee & Assigner Row */}
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[10px] font-bold text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                          <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[11px] font-bold text-[#0d47a1] ring-1 ring-[#0d47a1]/20 dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
                             {getInitials(
                               task.assigned_to?.full_name ||
                                 task.assigned_to?.username,
@@ -911,7 +915,7 @@ export default function TasksPage() {
                             className={cn(
                               "flex items-center gap-1.5 text-[11px] font-medium truncate",
                               isOverdue
-                                ? "text-[#dc2626] dark:text-red-400 font-semibold"
+                                ? "text-destructive-text dark:text-red-400 font-semibold"
                                 : "text-muted-foreground",
                             )}
                           >
@@ -931,7 +935,7 @@ export default function TasksPage() {
                         )}
 
                         <ArrowUpRight
-                          className="size-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8]"
+                          className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8]"
                           aria-hidden="true"
                         />
                       </div>

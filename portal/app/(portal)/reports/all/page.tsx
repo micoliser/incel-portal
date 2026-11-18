@@ -512,7 +512,7 @@ export default function AllReportsPage() {
       {/* 3. Reports Feed Grouped By Date */}
       {dateGroups.length === 0 ? (
         <Card className="rounded-xl border border-dashed border-border bg-card p-12 text-center shadow-xs">
-          <Calendar className="mx-auto size-10 text-muted-foreground/60 mb-3" />
+          <Calendar className="mx-auto size-10 text-muted-foreground mb-3" />
           <h2 className="text-base font-semibold text-foreground">
             No department reports found
           </h2>
@@ -597,7 +597,7 @@ export default function AllReportsPage() {
                                 </p>
                               </div>
                             </div>
-                            <span className="shrink-0 rounded-md border border-[#16a34a]/25 bg-[#16a34a]/10 px-2 py-0.5 text-[11px] font-semibold text-[#16a34a] dark:text-[#4ade80]">
+                            <span className="shrink-0 rounded-md border border-[#16a34a]/25 bg-[#16a34a]/10 px-2 py-0.5 text-[11px] font-semibold text-success-text dark:text-[#4ade80]">
                               {report.subreport_count}{" "}
                               {report.subreport_count === 1 ? "entry" : "entries"}
                             </span>
@@ -615,7 +615,7 @@ export default function AllReportsPage() {
                                     {sub.title}
                                   </span>
                                   {sub.comments_count > 0 && (
-                                    <span className="inline-flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
+                                    <span className="inline-flex items-center gap-1 shrink-0 text-[11px] text-muted-foreground">
                                       <MessageSquare className="size-3" />
                                       {sub.comments_count}
                                     </span>
@@ -623,7 +623,7 @@ export default function AllReportsPage() {
                                 </div>
                               ))}
                               {report.subreports.length > 2 && (
-                                <p className="text-[11px] text-muted-foreground pl-1">
+                                <p className="text-xs text-muted-foreground pl-1">
                                   +{report.subreports.length - 2} more entries
                                 </p>
                               )}

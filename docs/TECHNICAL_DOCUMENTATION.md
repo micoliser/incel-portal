@@ -868,6 +868,35 @@ Web app: `NEXT_PUBLIC_API_BASE_URL` (build time).
 - **Uploads** go straight to S3 (`lib/file-utils.ts` compresses images and
   enforces 5 MB). Support replies queue files until the reply is sent.
 - **Push**: `public/sw.js` and `components/notification-center.tsx`.
+  The unread count is polled every 30 seconds only while the tab is visible;
+  the Goals page refreshes when the tab comes back into view.
+- **Charts** (`recharts`) load on demand (`next/dynamic`) on the summary page.
+
+### 12.1 Accessibility and visual rules
+
+The target is WCAG 2.2 AA (see `PRODUCT.md`). Checked with axe on every page
+in light and dark mode, desktop and phone.
+
+- **One `<h1>` per page.** A page that renders its own `<h1>` (a task, an
+  asset, the users list) owns it; otherwise the header title is the `<h1>`
+  (the layout detects this). Headings below go in order (`h2`, then `h3`).
+- **Skip link** "Skip to main content" is the first focusable element; the
+  content area is `#main-content`.
+- **Every control has a name**: visible text, a `<Label htmlFor>`, or
+  `aria-label` (icon-only buttons, filter dropdowns). Focus stays visible
+  (`focus-visible:ring-ring`); never `focus:outline-none` alone.
+- **Status text colours** must read at 4.5:1 on white, on a 10% tint of
+  their colour and in dark mode: use `text-success-text` and
+  `text-destructive-text` (theme tokens in `app/globals.css`) or a Tailwind
+  `-700` shade with its `dark:` `-400`. The `-600` shades and `#16a34a` /
+  `#dc2626` are for fills, borders and dots, not text. Brand-blue text
+  (`#0d47a1`) needs `dark:text-[#38bdf8]` unless it sits on a white surface.
+- **No faded text**: `text-muted-foreground` at full strength (opacity
+  variants fall below 4.5:1).
+- **Sizes**: labels and badges at least 11px; sentences at least 12px
+  (`text-xs`).
+- **Copy**: plain descriptions of what things are and do; no invented
+  figures or claims (the sign-in page lists what the portal does).
 
 ## 13. Deployment and operations
 

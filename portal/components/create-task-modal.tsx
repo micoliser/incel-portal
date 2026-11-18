@@ -570,8 +570,8 @@ export function CreateTaskModal({
 
         {apiError && (
           <div className="rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-3 flex gap-3">
-            <AlertCircle className="h-5 w-5 text-[#dc2626] flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-[#dc2626]">{apiError}</div>
+            <AlertCircle className="h-5 w-5 text-destructive-text flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-destructive-text">{apiError}</div>
           </div>
         )}
 
@@ -697,7 +697,7 @@ export function CreateTaskModal({
                               ),
                             }))
                           }
-                          className="text-[#0d47a1] hover:text-[#dc2626] dark:hover:text-red-400 focus:outline-none"
+                          className="text-[#0d47a1] dark:text-[#38bdf8] hover:text-destructive-text dark:hover:text-red-400 focus:outline-none"
                           title="Remove user"
                         >
                           <X className="h-3 w-3" />

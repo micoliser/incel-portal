@@ -416,7 +416,7 @@ export default function TaskDetailPage() {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4 flex items-center gap-3 text-sm text-red-600 dark:text-red-400">
+        <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4 flex items-center gap-3 text-sm text-red-700 dark:text-red-400">
           <AlertCircle className="size-5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -557,7 +557,7 @@ export default function TaskDetailPage() {
                     disabled={!canComment || isPostingComment}
                     maxLength={COMMENT_MAX_LENGTH}
                     rows={3}
-                    className="w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-sm shadow-2xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#0d47a1] disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-muted-foreground/70"
+                    className="w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-sm shadow-2xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#0d47a1] disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-muted-foreground"
                   />
 
                   {/* Hidden file input */}
@@ -692,7 +692,7 @@ export default function TaskDetailPage() {
                           <span className="max-w-[180px] truncate font-medium">
                             {file.name}
                           </span>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[11px] text-muted-foreground">
                             ({(file.size / 1024).toFixed(0)} KB)
                           </span>
                           <button
@@ -713,7 +713,7 @@ export default function TaskDetailPage() {
                   )}
 
                   {commentError && (
-                    <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                    <p className="text-xs text-red-700 dark:text-red-400 font-medium">
                       {commentError}
                     </p>
                   )}
@@ -796,7 +796,7 @@ export default function TaskDetailPage() {
                   {/* If task is completed, render completion header node */}
                   {hasCompletedTimelineItem && (
                     <div className="relative flex items-start gap-3">
-                      <div className="absolute -left-6 flex size-6 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 ring-4 ring-background dark:text-emerald-400">
+                      <div className="absolute -left-6 flex size-6 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-700 ring-4 ring-background dark:text-emerald-400">
                         <CheckCircle2 className="size-4" />
                       </div>
                       <div className="flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-300">
@@ -826,7 +826,7 @@ export default function TaskDetailPage() {
                           <div className="flex-1 rounded-xl border border-border bg-card p-4 shadow-2xs space-y-3">
                             <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2.5">
                               <div className="flex items-center gap-2">
-                                <div className="flex size-6 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[10px] font-bold text-[#0d47a1] dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]">
+                                <div className="flex size-6 items-center justify-center rounded-full bg-[#0d47a1]/10 text-[11px] font-bold text-[#0d47a1] dark:bg-[#0d47a1]/25 dark:text-[#38bdf8]">
                                   {getInitials(activity.user.full_name)}
                                 </div>
                                 <span className="font-semibold text-xs sm:text-sm text-foreground">
@@ -887,7 +887,7 @@ export default function TaskDetailPage() {
                           {isStatusChange ? (
                             <CheckCircle2 className="size-3.5 text-[#0d47a1] dark:text-[#38bdf8]" />
                           ) : isEdited ? (
-                            <Pencil className="size-3 text-amber-600" />
+                            <Pencil className="size-3 text-amber-700" />
                           ) : (
                             <Plus className="size-3.5 text-muted-foreground" />
                           )}
@@ -1030,7 +1030,7 @@ export default function TaskDetailPage() {
                     variant="outline"
                     onClick={() => setIsRejectModalOpen(true)}
                     disabled={isApproving}
-                    className="flex-1 border-red-500/30 text-red-600 hover:bg-red-500/10 dark:text-red-400"
+                    className="flex-1 border-red-500/30 text-red-700 hover:bg-red-500/10 dark:text-red-400"
                   >
                     <XCircle className="size-3.5 mr-1.5" />
                     Request Changes
@@ -1061,7 +1061,7 @@ export default function TaskDetailPage() {
             <div className="space-y-4">
               {/* Assignee */}
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Assignee
                 </p>
                 <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-2.5">
@@ -1072,7 +1072,7 @@ export default function TaskDetailPage() {
                     <p className="font-semibold text-xs text-foreground truncate">
                       {task.assigned_to.full_name}
                     </p>
-                    <p className="text-[11px] text-muted-foreground truncate">
+                    <p className="text-xs text-muted-foreground truncate">
                       {task.assigned_to.email}
                     </p>
                   </div>
@@ -1081,7 +1081,7 @@ export default function TaskDetailPage() {
 
               {/* Assigner */}
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Assigner
                 </p>
                 <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-2.5">
@@ -1092,7 +1092,7 @@ export default function TaskDetailPage() {
                     <p className="font-semibold text-xs text-foreground truncate">
                       {task.assigned_by.full_name}
                     </p>
-                    <p className="text-[11px] text-muted-foreground truncate">
+                    <p className="text-xs text-muted-foreground truncate">
                       {task.assigned_by.email}
                     </p>
                   </div>
@@ -1116,7 +1116,7 @@ export default function TaskDetailPage() {
                       className={cn(
                         "font-medium",
                         isOverdue
-                          ? "text-red-600 dark:text-red-400 font-semibold"
+                          ? "text-red-700 dark:text-red-400 font-semibold"
                           : "text-foreground",
                       )}
                     >
@@ -1129,7 +1129,7 @@ export default function TaskDetailPage() {
                 {task.completed_at && (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground flex items-center gap-1.5">
-                      <CheckCircle2 className="size-3.5 text-[#16a34a]" /> Completed:
+                      <CheckCircle2 className="size-3.5 text-success-text" /> Completed:
                     </span>
                     <span className="font-medium text-foreground">
                       {format(new Date(task.completed_at), "MMM dd, yyyy HH:mm")}
@@ -1211,7 +1211,7 @@ export default function TaskDetailPage() {
             <DialogContent className="max-w-md">
               <DialogHeader
                 icon={<CheckCircle2 className="size-4.5" />}
-                iconClassName="bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400"
+                iconClassName="bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400"
               >
                 <DialogTitle>Approve Task Completion</DialogTitle>
                 <DialogDescription>
@@ -1268,7 +1268,7 @@ function AttachmentCard({ attachment }: { attachment: TaskAttachment }) {
           >
             {attachment.file_name}
           </p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {(attachment.size / 1024).toFixed(1)} KB
           </p>
         </div>

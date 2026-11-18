@@ -315,8 +315,8 @@ export function EditRecurringScheduleModal({
 
         {apiError ? (
           <div className="flex gap-3 rounded-lg border border-[#dc2626]/25 bg-[#dc2626]/10 p-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#dc2626]" />
-            <div className="text-sm text-[#dc2626]">{apiError}</div>
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive-text" />
+            <div className="text-sm text-destructive-text">{apiError}</div>
           </div>
         ) : null}
 

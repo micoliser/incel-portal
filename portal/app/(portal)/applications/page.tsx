@@ -1189,7 +1189,7 @@ export default function ApplicationsPage() {
                 <AppWindow className="size-5" />
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                Enterprise Applications
+                Applications
               </h1>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -1229,7 +1229,7 @@ export default function ApplicationsPage() {
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
               <ShieldCheck className="size-4.5" />
             </div>
             <div>
@@ -1374,7 +1374,7 @@ export default function ApplicationsPage() {
           <DialogContent className="sm:max-w-xl">
             <DialogHeader icon={<AppWindow className="size-4.5" />}>
               <DialogTitle>Create Application</DialogTitle>
-              <DialogDescription>Add a new enterprise application and configure access controls.</DialogDescription>
+              <DialogDescription>Add an application and choose who can open it.</DialogDescription>
             </DialogHeader>
 
             <form
@@ -2145,7 +2145,7 @@ export default function ApplicationsPage() {
                         placeholder="Search for a user..."
                       />
                       {overrideSelectedUser && !canBeGranted && (
-                        <p className="text-xs text-[#dc2626] mt-1">This user already has access or is inactive.</p>
+                        <p className="text-xs text-destructive-text mt-1">This user already has access or is inactive.</p>
                       )}
                     </div>
 
@@ -2215,7 +2215,7 @@ export default function ApplicationsPage() {
                         placeholder="Search for a user..."
                       />
                       {denySelectedUser && !canBeDenied && (
-                        <p className="text-xs text-[#dc2626] mt-1">This user does not have removable access.</p>
+                        <p className="text-xs text-destructive-text mt-1">This user does not have removable access.</p>
                       )}
                     </div>
 
@@ -2270,7 +2270,7 @@ export default function ApplicationsPage() {
           </div>
           <h2 className="text-lg font-semibold text-foreground">No Applications Found</h2>
           <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
-            No enterprise applications match your current filters or access level.
+            No applications match these filters.
           </p>
           {(searchInput || selectedDepartmentFilterIds.length > 0 || userVisibilityFilter !== "all") && (
             <Button
@@ -2331,17 +2331,17 @@ export default function ApplicationsPage() {
                             {application.name}
                           </h2>
                           {application.status === "ACTIVE" ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 shrink-0">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 shrink-0">
                               <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Active
                             </span>
                           ) : application.status === "MAINTENANCE" ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 shrink-0">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 shrink-0">
                               <span className="size-1.5 rounded-full bg-amber-500" />
                               Maintenance
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
+                            <span className="inline-flex items-center rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground shrink-0">
                               Inactive
                             </span>
                           )}
@@ -2349,12 +2349,12 @@ export default function ApplicationsPage() {
 
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           {application.access_scope === "RESTRICTED" ? (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:text-purple-300">
+                            <span className="inline-flex items-center gap-1 rounded-md border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-[11px] font-medium text-purple-700 dark:text-purple-300">
                               <Lock className="size-3" />
                               Restricted
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            <span className="inline-flex items-center rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                               All Users
                             </span>
                           )}
@@ -2389,7 +2389,7 @@ export default function ApplicationsPage() {
                         className={`inline-flex items-center gap-1.5 self-end rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-colors shadow-xs ${
                           canAccess
                             ? "border-[#0d47a1] bg-[#0d47a1] text-white hover:bg-[#0a3880]"
-                            : "border-[#dc2626]/30 bg-[#dc2626]/10 text-[#dc2626] hover:bg-[#dc2626]/20"
+                            : "border-[#dc2626]/30 bg-[#dc2626]/10 text-destructive-text hover:bg-[#dc2626]/20"
                         } ${isOpening ? "pointer-events-none opacity-70" : ""}`}
                       >
                         Open

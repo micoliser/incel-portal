@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -57,10 +58,29 @@ import {
 } from "@/lib/api/summaries";
 import { goalsAPI, type GoalRecord } from "@/lib/api/goals";
 import { MemoizedSummaryComparison } from "./components/SummaryComparison";
-import { MemoizedSummaryCharts } from "./components/SummaryCharts";
 import { MemoizedDelegatedWorkCard } from "./components/DelegatedWorkCard";
 import { MemoizedWeeklyGoalsSnapshot } from "./components/WeeklyGoalsSnapshot";
 import ShareWithUserModal from "./components/ShareWithUserModal";
+
+// The charting library is large; load it on demand, behind a placeholder of
+// the same size so the page does not jump.
+const MemoizedSummaryCharts = dynamic(
+  () => import("./components/SummaryCharts").then((m) => m.MemoizedSummaryCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-4" aria-busy="true" aria-label="Loading charts">
+        {[0, 1].map((row) => (
+          <div key={row} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {[0, 1].map((col) => (
+              <div key={col} className="h-[21rem] rounded-xl border border-border/80 bg-card" />
+            ))}
+          </div>
+        ))}
+      </div>
+    ),
+  },
+);
 
 function SummariesContent() {
   const searchParams = useSearchParams();
@@ -452,7 +472,7 @@ function SummariesContent() {
                           </p>
                           {idx === 0 && (
                             <span
-                              className={`mt-0.5 inline-block text-[10px] uppercase font-bold tracking-wider ${
+                              className={`mt-0.5 inline-block text-[11px] uppercase font-bold tracking-wider ${
                                 isSelected
                                   ? "text-white/80"
                                   : "text-[#0d47a1] dark:text-[#38bdf8]"
@@ -571,7 +591,7 @@ function SummariesContent() {
                           }}
                         />
                       </div>
-                      <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
                         {summary.completion_rate_percent}% completion rate
                       </p>
                     </div>
@@ -580,7 +600,7 @@ function SummariesContent() {
                   <Card className="border-border/80 bg-card p-5 shadow-xs">
                     <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
                       <span>On-Time Rate</span>
-                      <Clock className="size-4 text-emerald-600 dark:text-emerald-400" />
+                      <Clock className="size-4 text-emerald-700 dark:text-emerald-400" />
                     </div>
                     <div className="mt-3 flex items-baseline gap-2">
                       <span className="text-3xl font-bold tabular-nums text-foreground">
@@ -597,9 +617,7 @@ function SummariesContent() {
                         />
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {summary.on_time_completion_rate_percent >= 80
-                          ? "Exemplary turnaround time"
-                          : "Focus on deadline milestones"}
+                        Tasks finished by their deadline
                       </p>
                     </div>
                   </Card>
@@ -614,7 +632,7 @@ function SummariesContent() {
                         {summary.tasks_created}
                       </span>
                       <span className="text-sm text-muted-foreground">
-                        new initiatives
+                        tasks you created
                       </span>
                     </div>
                     <div className="mt-3">
@@ -622,7 +640,7 @@ function SummariesContent() {
                         <div className="h-full w-full rounded-full bg-amber-500" />
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Initiated during this reporting cycle
+                        This week
                       </p>
                     </div>
                   </Card>
@@ -657,10 +675,10 @@ function SummariesContent() {
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                        <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">
                           <Paperclip className="size-4.5" />
                         </div>
-                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
                           View
                           <ArrowRight className="size-3" />
                         </span>
@@ -671,8 +689,8 @@ function SummariesContent() {
                       <p className="text-xs font-semibold text-foreground">
                         Files Attached
                       </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Documents & assets sent by you
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Files you attached
                       </p>
                     </div>
                   </Link>
@@ -702,8 +720,8 @@ function SummariesContent() {
                       <p className="text-xs font-semibold text-foreground">
                         Files Received
                       </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Incoming files from collaborators
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Files others attached to your tasks
                       </p>
                     </div>
                   </Link>
@@ -720,8 +738,8 @@ function SummariesContent() {
                       <p className="text-xs font-semibold text-foreground">
                         Comments Added
                       </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Collaboration updates logged
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Comments you wrote
                       </p>
                     </div>
                   </div>
@@ -729,7 +747,7 @@ function SummariesContent() {
                   {/* Recurring Schedules Card */}
                   <div className="flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4.5 shadow-xs">
                     <div>
-                      <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+                      <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
                         <Repeat className="size-4.5" />
                       </div>
                       <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">
@@ -738,7 +756,7 @@ function SummariesContent() {
                       <p className="text-xs font-semibold text-foreground">
                         Active Schedules
                       </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {summary.recurring_schedules_created} created this week
                       </p>
                     </div>
@@ -802,7 +820,7 @@ function SummariesContent() {
                     </div>
                   ) : (
                     <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center text-xs text-muted-foreground">
-                      No daily reports were filed during this week cycle.
+                      No daily reports this week.
                     </div>
                   )}
                 </CardContent>
@@ -901,7 +919,7 @@ function SummariesContent() {
                   description="Performance against the targets you set for this week."
                   goals={goalsForWeek}
                   emptyStateTitle="No goals recorded for this week"
-                  emptyStateDescription="Goals established during this week cycle will appear here."
+                  emptyStateDescription="Goals you set for this week appear here."
                 />
               )}
 
@@ -956,7 +974,7 @@ function SummariesContent() {
                           >
                             {copiedToken === shares[selectedWeek || ""] ? (
                               <>
-                                <Check className="mr-1.5 size-3.5 text-emerald-600" />
+                                <Check className="mr-1.5 size-3.5 text-emerald-700" />
                                 Copied
                               </>
                             ) : (
@@ -1084,7 +1102,7 @@ function SummariesContent() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader
             icon={<AlertCircle className="size-4.5" />}
-            iconClassName="bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30"
+            iconClassName="bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30"
           >
             <DialogTitle>Revoke Share Link</DialogTitle>
             <DialogDescription>

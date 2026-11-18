@@ -211,7 +211,7 @@ export default function MyAssetsPage() {
               </h1>
             </div>
             <p className="text-sm text-muted-foreground">
-              Hardware, devices, and enterprise equipment currently assigned to your profile.
+              Equipment assigned to you, with its condition and serial number.
             </p>
           </div>
 
@@ -244,7 +244,7 @@ export default function MyAssetsPage() {
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
               <ShieldCheck className="size-4.5" />
             </div>
             <div>
@@ -256,7 +256,7 @@ export default function MyAssetsPage() {
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400">
               <Tag className="size-4.5" />
             </div>
             <div>
@@ -361,7 +361,7 @@ export default function MyAssetsPage() {
           {/* Results Grid */}
           {filteredItems.length === 0 ? (
             <Card className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border-border/80 p-8 text-center shadow-xs">
-              <Search className="size-8 text-muted-foreground/60 mb-2" />
+              <Search className="size-8 text-muted-foreground mb-2" />
               <h3 className="font-semibold text-foreground">No matching assets</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 No items match your filter criteria. Try adjusting your search query.
@@ -439,7 +439,7 @@ export default function MyAssetsPage() {
                       {item.serial_number && (
                         <div className="flex items-center justify-between rounded-xl border border-border/70 bg-muted/30 px-3 py-2 text-xs">
                           <div className="flex items-center gap-2 text-muted-foreground min-w-0">
-                            <span className="font-semibold uppercase tracking-wider text-[10px] text-muted-foreground/80">
+                            <span className="font-semibold uppercase tracking-wider text-[11px] text-muted-foreground">
                               Serial:
                             </span>
                             <span className="font-mono text-foreground truncate">
@@ -455,7 +455,7 @@ export default function MyAssetsPage() {
                             className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
                           >
                             {isCopied ? (
-                              <Check className="size-3.5 text-emerald-600" />
+                              <Check className="size-3.5 text-emerald-700" />
                             ) : (
                               <Copy className="size-3.5" />
                             )}
@@ -471,7 +471,7 @@ export default function MyAssetsPage() {
                               Assignment Details
                             </span>
                             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <CheckCircle2 className="size-3 text-emerald-600" />
+                              <CheckCircle2 className="size-3 text-emerald-700" />
                               Active
                             </span>
                           </div>
@@ -479,7 +479,7 @@ export default function MyAssetsPage() {
                           <div className="space-y-1.5 pt-1 border-t border-border/50">
                             <div className="flex items-center justify-between">
                               <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                <Calendar className="size-3.5 text-muted-foreground/70" />
+                                <Calendar className="size-3.5 text-muted-foreground" />
                                 Assigned Date
                               </span>
                               <span className="font-medium text-foreground tabular-nums">
@@ -493,7 +493,7 @@ export default function MyAssetsPage() {
                             {assignedByName && (
                               <div className="flex items-center justify-between">
                                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                  <User className="size-3.5 text-muted-foreground/70" />
+                                  <User className="size-3.5 text-muted-foreground" />
                                   Assigned By
                                 </span>
                                 <span className="font-medium text-foreground truncate max-w-[150px]">

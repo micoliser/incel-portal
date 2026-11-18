@@ -321,9 +321,9 @@ export default function RecurringTaskDetailPage() {
                 {isPausingOrResuming ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : schedule.is_paused ? (
-                  <Play className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <Play className="size-3.5 text-emerald-700 dark:text-emerald-400" />
                 ) : (
-                  <Pause className="size-3.5 text-amber-600 dark:text-amber-400" />
+                  <Pause className="size-3.5 text-amber-700 dark:text-amber-400" />
                 )}
                 <span>{schedule.is_paused ? "Resume Schedule" : "Pause Schedule"}</span>
               </Button>
@@ -345,7 +345,7 @@ export default function RecurringTaskDetailPage() {
                 size="sm"
                 onClick={() => setEndConfirmOpen(true)}
                 disabled={isEnding}
-                className="gap-1.5 font-medium text-[#dc2626] border-[#dc2626]/30 hover:bg-[#dc2626]/10 hover:text-[#dc2626] dark:border-[#dc2626]/40 dark:hover:bg-[#dc2626]/20"
+                className="gap-1.5 font-medium text-destructive-text border-[#dc2626]/30 hover:bg-[#dc2626]/10 hover:text-destructive-text dark:border-[#dc2626]/40 dark:hover:bg-[#dc2626]/20"
               >
                 <XCircle className="size-3.5" />
                 <span>End Schedule</span>
@@ -464,7 +464,7 @@ export default function RecurringTaskDetailPage() {
             <div className="grid gap-3.5 sm:grid-cols-2">
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Repeat className="size-3.5 text-muted-foreground/80" />
+                  <Repeat className="size-3.5 text-muted-foreground" />
                   Pattern Summary
                 </p>
                 <p className="text-sm font-semibold text-foreground">
@@ -474,7 +474,7 @@ export default function RecurringTaskDetailPage() {
 
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="size-3.5 text-muted-foreground/80" />
+                  <Clock className="size-3.5 text-muted-foreground" />
                   Scheduled Run Times
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
@@ -491,7 +491,7 @@ export default function RecurringTaskDetailPage() {
 
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Globe className="size-3.5 text-muted-foreground/80" />
+                  <Globe className="size-3.5 text-muted-foreground" />
                   Timezone
                 </p>
                 <p className="text-sm font-semibold text-foreground font-mono">
@@ -501,7 +501,7 @@ export default function RecurringTaskDetailPage() {
 
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Timer className="size-3.5 text-muted-foreground/80" />
+                  <Timer className="size-3.5 text-muted-foreground" />
                   Deadline Offset
                 </p>
                 <p className="text-sm font-semibold text-foreground">
@@ -514,7 +514,7 @@ export default function RecurringTaskDetailPage() {
 
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Calendar className="size-3.5 text-muted-foreground/80" />
+                  <Calendar className="size-3.5 text-muted-foreground" />
                   Starts At
                 </p>
                 <p className="text-sm font-semibold text-foreground">
@@ -524,7 +524,7 @@ export default function RecurringTaskDetailPage() {
 
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <CalendarOff className="size-3.5 text-muted-foreground/80" />
+                  <CalendarOff className="size-3.5 text-muted-foreground" />
                   Ends At
                 </p>
                 <p className="text-sm font-semibold text-foreground">
@@ -538,7 +538,7 @@ export default function RecurringTaskDetailPage() {
             {/* Paused or Ended Alert Banners */}
             {schedule.is_paused && (
               <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3.5 items-start">
-                <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <AlertTriangle className="size-5 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
                     Schedule Currently Paused
@@ -599,7 +599,7 @@ export default function RecurringTaskDetailPage() {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Assigned Performer
                   </span>
-                  <span className="rounded-full bg-[#0d47a1]/10 px-2 py-0.5 text-[10px] font-semibold text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                  <span className="rounded-full bg-[#0d47a1]/10 px-2 py-0.5 text-[11px] font-semibold text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
                     Task Assignee
                   </span>
                 </div>
@@ -624,7 +624,7 @@ export default function RecurringTaskDetailPage() {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Created By
                   </span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
                     Schedule Creator
                   </span>
                 </div>
@@ -706,7 +706,7 @@ export default function RecurringTaskDetailPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader
             icon={<AlertTriangle className="size-4.5" />}
-            iconClassName="bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
+            iconClassName="bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400"
           >
             <DialogTitle>End Recurring Task Schedule?</DialogTitle>
             <DialogDescription>

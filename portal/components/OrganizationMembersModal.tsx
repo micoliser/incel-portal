@@ -238,7 +238,7 @@ export function OrganizationMembersModal({
         </div>
       ) : filteredMembers.length === 0 ? (
         <div className="text-center py-10 text-muted-foreground text-sm border border-dashed rounded-xl bg-muted/20">
-          <Users className="size-8 mx-auto mb-2 text-muted-foreground/60" />
+          <Users className="size-8 mx-auto mb-2 text-muted-foreground" />
           <p className="font-medium text-foreground">
             {search ? "No matching members found" : `No members assigned to this ${entityType}`}
           </p>
@@ -314,7 +314,7 @@ export function OrganizationMembersModal({
           </div>
         ) : list.length === 0 ? (
           <div className="text-center py-10 text-muted-foreground text-sm border border-dashed rounded-xl bg-muted/20">
-            <Users className="size-8 mx-auto mb-2 text-muted-foreground/60" />
+            <Users className="size-8 mx-auto mb-2 text-muted-foreground" />
             <p className="font-medium text-foreground">No eligible users found</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               {mode === "add" ? "All active eligible personnel are already members." : "No members are currently in this entity to remove."}
@@ -356,12 +356,12 @@ export function OrganizationMembersModal({
                    {mode === "add" && (
                      <div className="text-xs text-right shrink-0">
                        {entityType === "team" && user.team_name && (
-                         <span className="text-amber-600 dark:text-amber-400 block truncate max-w-[130px] font-medium text-[11px]">
+                         <span className="text-amber-700 dark:text-amber-400 block truncate max-w-[130px] font-medium text-[11px]">
                            Team: {user.team_name}
                          </span>
                        )}
                        {(entityType === "team" || entityType === "unit") && user.unit_name && (
-                         <span className="text-emerald-600 dark:text-emerald-400 block truncate max-w-[130px] font-medium text-[11px]">
+                         <span className="text-emerald-700 dark:text-emerald-400 block truncate max-w-[130px] font-medium text-[11px]">
                            Unit: {user.unit_name}
                          </span>
                        )}
@@ -411,7 +411,7 @@ export function OrganizationMembersModal({
     <div className="space-y-4">
       <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300">
         <div className="flex gap-2.5 items-start">
-          <ShieldAlert className="size-5 shrink-0 text-amber-600 mt-0.5" />
+          <ShieldAlert className="size-5 shrink-0 text-amber-700 mt-0.5" />
           <div className="text-xs space-y-1">
             <p className="font-semibold text-sm text-foreground">Reassignment Notice</p>
             <p className="leading-relaxed">
@@ -490,7 +490,7 @@ export function OrganizationMembersModal({
               <Users className="size-3.5" />
               Members
               <span className={cn(
-                "rounded-full px-1.5 py-0.2 text-[10px] tabular-nums font-medium",
+                "rounded-full px-1.5 py-0.5 text-[11px] tabular-nums font-medium",
                 mode === "view" ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
               )}>
                 {members.length}

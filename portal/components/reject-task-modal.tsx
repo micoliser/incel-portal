@@ -62,7 +62,7 @@ export function RejectTaskModal({
       <DialogContent className="max-w-md">
         <DialogHeader
           icon={<AlertTriangle className="size-4.5" />}
-          iconClassName="bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400 dark:ring-amber-500/30"
+          iconClassName="bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400 dark:ring-amber-500/30"
         >
           <DialogTitle>Request Revisions</DialogTitle>
           <DialogDescription>
@@ -74,7 +74,7 @@ export function RejectTaskModal({
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {errorMessage && (
-            <div className="rounded-md bg-[#dc2626]/10 p-3 text-sm text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-red-300">
+            <div className="rounded-md bg-[#dc2626]/10 p-3 text-sm text-destructive-text dark:bg-[#dc2626]/15 dark:text-red-300">
               {errorMessage}
             </div>
           )}

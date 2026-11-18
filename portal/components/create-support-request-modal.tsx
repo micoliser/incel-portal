@@ -235,10 +235,11 @@ export function CreateSupportRequestModal() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="size-5"
+                      className="size-6"
                       onClick={() => removeFile(i)}
+                      aria-label={`Remove ${file.name}`}
                     >
-                      <X className="size-3" />
+                      <X className="size-3.5" aria-hidden="true" />
                     </Button>
                   </li>
                 ))}
