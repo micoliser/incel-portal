@@ -58,6 +58,7 @@ import {
 import { goalsAPI, type GoalRecord } from "@/lib/api/goals";
 import { MemoizedSummaryComparison } from "./components/SummaryComparison";
 import { MemoizedSummaryCharts } from "./components/SummaryCharts";
+import { MemoizedDelegatedWorkCard } from "./components/DelegatedWorkCard";
 import { MemoizedWeeklyGoalsSnapshot } from "./components/WeeklyGoalsSnapshot";
 import ShareWithUserModal from "./components/ShareWithUserModal";
 
@@ -77,12 +78,20 @@ function SummariesContent() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [creatingShare, setCreatingShare] = useState(false);
   const [shares, setShares] = useState<Record<string, string>>({});
-  const [shareStatuses, setShareStatuses] = useState<Record<string, ShareStatus>>({});
+  const [shareStatuses, setShareStatuses] = useState<
+    Record<string, ShareStatus>
+  >({});
   const [shareConfirmOpen, setShareConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
   const [shareWithUserOpen, setShareWithUserOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // On a phone the week list would take most of the screen, so it starts closed.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      setSidebarCollapsed(true);
+    }
+  }, []);
   const [comparisonMetrics, setComparisonMetrics] =
     useState<ComparisonMetrics | null>(null);
   const [goalsForWeek, setGoalsForWeek] = useState<GoalRecord[]>([]);
@@ -354,7 +363,8 @@ function SummariesContent() {
               No Weekly Summaries Available
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Weekly performance summaries are compiled every Monday at midnight. Check back next week to view historical progress!
+              Weekly performance summaries are compiled every Monday at
+              midnight. Check back next week to view historical progress!
             </p>
           </Card>
         </div>
@@ -376,7 +386,9 @@ function SummariesContent() {
           <div
             className={cn(
               "flex h-12 shrink-0 items-center border-b border-border/80",
-              sidebarCollapsed ? "justify-center px-1" : "justify-between px-3.5",
+              sidebarCollapsed
+                ? "justify-center px-1"
+                : "justify-between px-3.5",
             )}
           >
             {!sidebarCollapsed && (
@@ -435,12 +447,15 @@ function SummariesContent() {
                       <div className="flex items-center justify-between">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-medium tabular-nums">
-                            {format(startDate, "MMM d")} – {format(endDate, "MMM d, yyyy")}
+                            {format(startDate, "MMM d")} –{" "}
+                            {format(endDate, "MMM d, yyyy")}
                           </p>
                           {idx === 0 && (
                             <span
                               className={`mt-0.5 inline-block text-[10px] uppercase font-bold tracking-wider ${
-                                isSelected ? "text-white/80" : "text-[#0d47a1] dark:text-[#38bdf8]"
+                                isSelected
+                                  ? "text-white/80"
+                                  : "text-[#0d47a1] dark:text-[#38bdf8]"
                               }`}
                             >
                               Most Recent
@@ -515,86 +530,112 @@ function SummariesContent() {
 
           {summary ? (
             <>
-              {/* Primary KPI Metrics Strip */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Card className="border-border/80 bg-card p-5 shadow-xs">
-                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                    <span>Task Completion</span>
-                    <CheckSquare2 className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" />
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-bold tabular-nums text-foreground">
-                      {summary.tasks_completed}
-                    </span>
-                    <span className="text-sm text-muted-foreground tabular-nums">
-                      / {summary.tasks_assigned} assigned
-                    </span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-[#0d47a1] dark:bg-[#38bdf8] transition-all duration-500"
-                        style={{
-                          width: `${Math.min(summary.completion_rate_percent, 100)}%`,
-                        }}
-                      />
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                      {summary.completion_rate_percent}% completion rate
-                    </p>
-                  </div>
-                </Card>
+              {summary.lead_section === "delegated" && (
+                <MemoizedDelegatedWorkCard
+                  summary={summary}
+                  comparison={comparisonMetrics}
+                  isSharedView={isSharedView}
+                />
+              )}
 
-                <Card className="border-border/80 bg-card p-5 shadow-xs">
-                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                    <span>On-Time Rate</span>
-                    <Clock className="size-4 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-bold tabular-nums text-foreground">
-                      {summary.on_time_completion_rate_percent}%
-                    </span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500"
-                        style={{
-                          width: `${Math.min(summary.on_time_completion_rate_percent, 100)}%`,
-                        }}
-                      />
+              {/* Own work: tasks assigned to this person */}
+              <div className="space-y-3">
+                {summary.has_delegated_work && (
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                    Own work
+                  </h2>
+                )}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Card className="border-border/80 bg-card p-5 shadow-xs">
+                    <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                      <span>Task Completion</span>
+                      <CheckSquare2 className="size-4 text-[#0d47a1] dark:text-[#38bdf8]" />
                     </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {summary.on_time_completion_rate_percent >= 80
-                        ? "Exemplary turnaround time"
-                        : "Focus on deadline milestones"}
-                    </p>
-                  </div>
-                </Card>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-3xl font-bold tabular-nums text-foreground">
+                        {summary.tasks_completed}
+                      </span>
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        /{" "}
+                        {summary.tasks_open_during_week ??
+                          summary.tasks_assigned}{" "}
+                        on the list
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-[#0d47a1] dark:bg-[#38bdf8] transition-all duration-500"
+                          style={{
+                            width: `${Math.min(summary.completion_rate_percent, 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        {summary.completion_rate_percent}% completion rate
+                      </p>
+                    </div>
+                  </Card>
 
-                <Card className="border-border/80 bg-card p-5 shadow-xs">
-                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                    <span>Tasks Created</span>
-                    <Sparkles className="size-4 text-amber-500" />
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-bold tabular-nums text-foreground">
-                      {summary.tasks_created}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      new initiatives
-                    </span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div className="h-full w-full rounded-full bg-amber-500" />
+                  <Card className="border-border/80 bg-card p-5 shadow-xs">
+                    <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                      <span>On-Time Rate</span>
+                      <Clock className="size-4 text-emerald-600 dark:text-emerald-400" />
                     </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Initiated during this reporting cycle
-                    </p>
-                  </div>
-                </Card>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-3xl font-bold tabular-nums text-foreground">
+                        {summary.on_time_completion_rate_percent}%
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500"
+                          style={{
+                            width: `${Math.min(summary.on_time_completion_rate_percent, 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {summary.on_time_completion_rate_percent >= 80
+                          ? "Exemplary turnaround time"
+                          : "Focus on deadline milestones"}
+                      </p>
+                    </div>
+                  </Card>
+
+                  <Card className="border-border/80 bg-card p-5 shadow-xs">
+                    <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                      <span>Tasks Created</span>
+                      <Sparkles className="size-4 text-amber-500" />
+                    </div>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-3xl font-bold tabular-nums text-foreground">
+                        {summary.tasks_created}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        new initiatives
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full w-full rounded-full bg-amber-500" />
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Initiated during this reporting cycle
+                      </p>
+                    </div>
+                  </Card>
+                </div>
               </div>
+
+              {summary.lead_section !== "delegated" && (
+                <MemoizedDelegatedWorkCard
+                  summary={summary}
+                  comparison={comparisonMetrics}
+                  isSharedView={isSharedView}
+                />
+              )}
 
               {/* Engagement & Files Sub-Pages Gateway */}
               <div className="space-y-3">
@@ -715,8 +756,8 @@ function SummariesContent() {
                       </CardTitle>
                       <CardDescription className="text-xs">
                         {summary.daily_reports_created} daily update
-                        {summary.daily_reports_created === 1 ? "" : "s"} submitted
-                        this week
+                        {summary.daily_reports_created === 1 ? "" : "s"}{" "}
+                        submitted this week
                       </CardDescription>
                     </div>
                   </div>
@@ -822,7 +863,9 @@ function SummariesContent() {
                                   ? "In Progress"
                                   : status === "completed"
                                     ? "Completed"
-                                    : "Pending"}
+                                    : status === "under_review"
+                                      ? "Under Review"
+                                      : "Pending"}
                               </span>
                               <span className="font-bold tabular-nums text-foreground">
                                 {count}
@@ -875,7 +918,8 @@ function SummariesContent() {
                           Share This Summary
                         </CardTitle>
                         <CardDescription className="text-xs">
-                          Share this weekly summary with colleagues or generate a public link
+                          Share this weekly summary with colleagues or generate
+                          a public link
                         </CardDescription>
                       </div>
                     </div>
@@ -939,7 +983,8 @@ function SummariesContent() {
                           A public share link is active
                           {shareStatuses[selectedWeek || ""]?.expires_at
                             ? ` until ${new Date(
-                                shareStatuses[selectedWeek || ""]?.expires_at as string,
+                                shareStatuses[selectedWeek || ""]
+                                  ?.expires_at as string,
                               ).toLocaleDateString()}`
                             : ""}
                           . For security the link is shown only when it is
@@ -953,7 +998,9 @@ function SummariesContent() {
                             disabled={creatingShare}
                             className="h-9 text-xs"
                           >
-                            {creatingShare ? "Creating Link..." : "Create New Link"}
+                            {creatingShare
+                              ? "Creating Link..."
+                              : "Create New Link"}
                           </Button>
                           <Button
                             size="sm"
@@ -974,7 +1021,9 @@ function SummariesContent() {
                           className="bg-[#0d47a1] text-white hover:bg-[#0a3880] text-xs h-9"
                         >
                           <Share2 className="mr-2 size-3.5" />
-                          {creatingShare ? "Creating Link..." : "Create Public Share Link"}
+                          {creatingShare
+                            ? "Creating Link..."
+                            : "Create Public Share Link"}
                         </Button>
                       </div>
                     )}
@@ -998,7 +1047,9 @@ function SummariesContent() {
           <DialogHeader icon={<Share2 className="size-4.5" />}>
             <DialogTitle>Create Public Share Link</DialogTitle>
             <DialogDescription>
-              This creates a view-only share link. Any signed-in colleague with this link can review this weekly summary report. The link expires after 30 days, and creating it replaces any earlier link.
+              This creates a view-only share link. Any signed-in colleague with
+              this link can review this weekly summary report. The link expires
+              after 30 days, and creating it replaces any earlier link.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-end gap-2">
@@ -1037,7 +1088,8 @@ function SummariesContent() {
           >
             <DialogTitle>Revoke Share Link</DialogTitle>
             <DialogDescription>
-              Are you sure you want to revoke this share link? Anyone holding the link will immediately lose access to this report.
+              Are you sure you want to revoke this share link? Anyone holding
+              the link will immediately lose access to this report.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-end gap-2">

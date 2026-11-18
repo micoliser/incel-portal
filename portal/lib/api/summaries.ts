@@ -24,6 +24,26 @@ export interface WeeklySummary {
   priority_distribution: Record<string, number>;
   status_distribution: Record<string, number>;
   summary_message: string;
+  /** Fields below exist on summaries calculated from November 2026. */
+  /** Tasks on the person's list during the week (open at some point). */
+  tasks_open_during_week?: number;
+  has_own_work?: boolean;
+  has_delegated_work?: boolean;
+  /** Which section led the week: the person's own tasks, or work they gave out. */
+  lead_section?: "own" | "delegated";
+  delegated_tasks_given?: number;
+  delegated_people?: number;
+  delegated_tasks_open_during_week?: number;
+  delegated_tasks_completed?: number;
+  delegated_completion_rate_percent?: number;
+  delegated_on_time_completion_rate_percent?: number;
+  delegated_reviews_total?: number;
+  delegated_reviews_approved?: number;
+  delegated_reviews_sent_back?: number;
+  /** Null when there were no reviews that week. */
+  delegated_avg_review_hours?: number | null;
+  delegated_waiting_for_review?: number;
+  delegated_overdue?: number;
 }
 
 export interface DailyReportSummary {
@@ -43,6 +63,12 @@ export interface ComparisonMetrics {
   trend: "up" | "down" | "flat";
   velocity_change_percent?: number;
   previous_week_start?: string;
+  delta_delegated_tasks_given?: number;
+  delta_delegated_tasks_completed?: number;
+  delta_delegated_completion_rate?: number;
+  delta_delegated_on_time_completion_rate?: number;
+  delta_delegated_reviews?: number;
+  delta_delegated_avg_review_hours?: number;
 }
 
 export interface SharedWeeklySummary extends WeeklySummary {

@@ -1,10 +1,12 @@
 # End-to-end tests
 
 These tests drive the real portal in a browser against the real API and a real
-Postgres database. They assert what a user sees on screen and never mention an
-API URL or a response field, so they should keep passing, unchanged, when the
-API is restructured. A failure after an API change means the portal's
-behaviour changed.
+Postgres database. They assert what a user sees on screen and almost never
+mention an API URL or a response field, so a failure after an API change
+usually means the portal's behaviour changed. (Two tests intercept a request:
+one sign-in test simulates a server error, and one summary test adds a
+manager's delegated-work figures, because the seeded people do not delegate
+during the summary week.)
 
 ## Running
 
@@ -59,7 +61,8 @@ The test API never sends email. Each message is written as a file to
 `e2e/.mail/` (emptied at every start), which `e2e/support/mail.ts` reads so a
 test can follow an emailed link, for example the one a new user sets their
 password with. Browser push is switched off, and object storage points at an
-unroutable address. Your working database is never touched: `seed_e2e` refuses to run against a database
+unroutable address, so uploads are not covered (the test API also sets
+`VERIFY_UPLOADS=False`). Your working database is never touched: `seed_e2e` refuses to run against a database
 whose name does not end in `_e2e`.
 
 ## The dataset

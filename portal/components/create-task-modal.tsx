@@ -64,8 +64,8 @@ const WEEKDAY_OPTIONS = [
 ];
 
 const TIMEZONE_OPTIONS = [
-  { value: "Asia/Dubai", label: "Dubai (GST, UTC+4)" },
   { value: "Africa/Lagos", label: "Nigeria (WAT, UTC+1)" },
+  { value: "Asia/Dubai", label: "Dubai (GST, UTC+4)" },
 ];
 
 const initialForm = {
@@ -80,7 +80,7 @@ const initialForm = {
   include_weekends: false,
   weekdays: [] as number[],
   times: ["09:00"],
-  timezone: "Asia/Dubai",
+  timezone: "Africa/Lagos",
   start_at: "",
   end_at: "",
   deadline_offset_minutes: "0",
@@ -298,7 +298,7 @@ export function CreateTaskModal({
         include_weekends: rec.include_weekends ?? false,
         weekdays: rec.weekdays || [],
         times: rec.times && rec.times.length > 0 ? rec.times : ["09:00"],
-        timezone: rec.timezone || "Asia/Dubai",
+        timezone: rec.timezone || "Africa/Lagos",
         start_at: formatIsoToLocalInput(rec.start_at),
         end_at: formatIsoToLocalInput(rec.end_at),
         deadline_offset_minutes: String(rec.deadline_offset_minutes ?? "0"),

@@ -1,0 +1,10 @@
+<h2>{% if is_manager_copy %}{{ user_name }}'s own work{% else %}Your own work{% endif %}</h2>
+<table role="presentation" class="metrics" cellpadding="0" cellspacing="0">
+  <tr><th></th><th>This week</th>{% if comparison %}<th>vs last week</th>{% endif %}</tr>
+  <tr><td>Tasks completed</td><td class="value">{{ summary.tasks_completed }} of {{ summary.tasks_open_during_week }}</td>{% if comparison %}<td class="change">{% include "emails/_delta.html" with value=comparison.delta_tasks_completed decimals=0 suffix="" only %}</td>{% endif %}</tr>
+  <tr><td>Completion rate</td><td class="value">{{ summary.completion_rate_percent|floatformat:1 }}%</td>{% if comparison %}<td class="change">{% include "emails/_delta.html" with value=comparison.delta_completion_rate decimals=1 suffix="%" only %}</td>{% endif %}</tr>
+  <tr><td>Completed on time</td><td class="value">{{ summary.on_time_completion_rate_percent|floatformat:1 }}%</td>{% if comparison %}<td class="change">{% include "emails/_delta.html" with value=comparison.delta_on_time_completion_rate decimals=1 suffix="%" only %}</td>{% endif %}</tr>
+  <tr><td>High-priority completed</td><td class="value">{{ summary.high_priority_completed }}</td>{% if comparison %}<td class="change">{% include "emails/_delta.html" with value=comparison.delta_high_priority_completed decimals=0 suffix="" only %}</td>{% endif %}</tr>
+  <tr><td>Comments added</td><td class="value">{{ summary.comments_added }}</td>{% if comparison %}<td class="change">{% include "emails/_delta.html" with value=comparison.delta_comments decimals=0 suffix="" only %}</td>{% endif %}</tr>
+  <tr><td>Files attached</td><td class="value">{{ summary.files_attached }}</td>{% if comparison %}<td class="change">{% include "emails/_delta.html" with value=comparison.delta_files decimals=0 suffix="" only %}</td>{% endif %}</tr>
+</table>

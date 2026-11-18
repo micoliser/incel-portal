@@ -323,6 +323,7 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
     metrics_table = build_metric_table([
         ['Tasks Created', str(to_int(summary_data.get('tasks_created')))],
         ['Tasks Assigned', str(to_int(summary_data.get('tasks_assigned')))],
+        ['Tasks On List This Week', str(to_int(summary_data.get('tasks_open_during_week', summary_data.get('tasks_assigned'))))],
         ['Tasks Completed', str(to_int(summary_data.get('tasks_completed')))],
         ['Completion Rate', pct_text(summary_data.get('completion_rate_percent'))],
         ['On-Time Completion Rate', pct_text(summary_data.get('on_time_completion_rate_percent'))],
@@ -332,6 +333,21 @@ def generate_summary_pdf(summary_data: dict, user: User, comparison_data: dict |
     ])
     story.append(metrics_table)
     story.append(Spacer(1, 0.18 * inch))
+
+    if summary_data.get('has_delegated_work'):
+        review_hours = summary_data.get('delegated_avg_review_hours')
+        story.append(Paragraph('Delegated Work', section_style('Delegated Work', palette['navy'])))
+        story.append(build_metric_table([
+            ['Tasks Given Out', f"{to_int(summary_data.get('delegated_tasks_given'))} (to {to_int(summary_data.get('delegated_people'))} people)"],
+            ['Completed', f"{to_int(summary_data.get('delegated_tasks_completed'))} of {to_int(summary_data.get('delegated_tasks_open_during_week'))}"],
+            ['Completion Rate', pct_text(summary_data.get('delegated_completion_rate_percent'))],
+            ['On-Time Completion Rate', pct_text(summary_data.get('delegated_on_time_completion_rate_percent'))],
+            ['Reviews', f"{to_int(summary_data.get('delegated_reviews_total'))} ({to_int(summary_data.get('delegated_reviews_approved'))} approved, {to_int(summary_data.get('delegated_reviews_sent_back'))} sent back)"],
+            ['Average Review Time', '-' if review_hours is None else f'{to_float(review_hours):.1f} hours'],
+            ['Waiting for Review at Week End', str(to_int(summary_data.get('delegated_waiting_for_review')))],
+            ['Overdue at Week End', str(to_int(summary_data.get('delegated_overdue')))],
+        ]))
+        story.append(Spacer(1, 0.18 * inch))
 
     story.append(Paragraph('Engagement Metrics', section_style('Engagement Metrics', palette['amber'])))
     engagement_table = build_metric_table([

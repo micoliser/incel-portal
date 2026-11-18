@@ -32,8 +32,8 @@ const WEEKDAY_OPTIONS = [
 ];
 
 const TIMEZONE_OPTIONS = [
-  { value: "Asia/Dubai", label: "Dubai (GST, UTC+4)" },
   { value: "Africa/Lagos", label: "Nigeria (WAT, UTC+1)" },
+  { value: "Asia/Dubai", label: "Dubai (GST, UTC+4)" },
 ];
 
 type FormErrors = Partial<{
@@ -182,7 +182,7 @@ export function EditRecurringScheduleModal({
     include_weekends: false,
     weekdays: [] as number[],
     times: ["09:00"],
-    timezone: "Asia/Dubai",
+    timezone: "Africa/Lagos",
     start_at: "",
     end_at: "",
     deadline_offset_minutes: "0",

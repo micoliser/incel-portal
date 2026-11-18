@@ -1,6 +1,7 @@
 """Email service for weekly summary notifications."""
 
 import logging
+from datetime import date
 from typing import Any, Dict
 
 from django.contrib.auth.models import User
@@ -9,6 +10,7 @@ from django.utils import timezone
 from common.users import display_name
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
+from emails.services.daily_report_emails import get_portal_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,16 @@ class WeeklySummaryEmailService(BaseEmailService):
         return f"Your Weekly Summary - Week of {week_start}"
 
 
+def _display_date(value, with_year: bool = True) -> str:
+    """'2026-11-09' -> '9 Nov 2026' (or '9 Nov'); anything else is returned as it is."""
+    try:
+        day = date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return value or ''
+    text = f'{day.day} {day:%b}'
+    return f'{text} {day.year}' if with_year else text
+
+
 class SummaryEmailManager:
     @staticmethod
     def send_weekly_summary_notification(
@@ -35,20 +47,19 @@ class SummaryEmailManager:
         comparison_data: dict | None = None,
     ):
         """Send email notification when weekly summary is ready."""
+        summary = dict(summary_data or {})
+        # Weeks summarised before the delegated-work figures existed.
+        summary.setdefault('tasks_open_during_week', summary.get('tasks_assigned', 0))
+        summary.setdefault('has_own_work', True)
+        summary.setdefault('has_delegated_work', False)
+        summary.setdefault('lead_section', 'own')
         context = {
             'user_name': display_name(user),
-            'tasks_completed': summary_data.get('tasks_completed', 0),
-            'tasks_assigned': summary_data.get('tasks_assigned', 0),
-            'completion_rate': summary_data.get('completion_rate_percent', 0),
-            'on_time_completion_rate': summary_data.get('on_time_completion_rate_percent', 0),
-            'comments_added': summary_data.get('comments_added', 0),
-            'files_attached': summary_data.get('files_attached', 0),
-            'summary_message': summary_data.get('summary_message', ''),
-            'comparison_metrics': comparison_data or {},
-            'week_start_display': summary_data.get('week_start_date'),
-            'week_end_display': summary_data.get('week_end_date'),
-            'dashboard_url': '/summaries',
-            'unsubscribe_url': '/settings/notifications',
+            'summary': summary,
+            'comparison': comparison_data or {},
+            'week_start_display': _display_date(summary.get('week_start_date'), with_year=False),
+            'week_end_display': _display_date(summary.get('week_end_date')),
+            'dashboard_url': f'{get_portal_base_url()}/summaries',
         }
 
         service = WeeklySummaryEmailService()
@@ -120,7 +131,7 @@ class SummaryEmailManager:
             'week_start': summary_week,
             'week_end': week_end or summary_week,
             'shared_date_display': timezone.now().strftime('%B %d, %Y at %I:%M %p'),
-            'view_summary_url': view_summary_url or '/summaries',
+            'view_summary_url': view_summary_url or f'{get_portal_base_url()}/summaries',
         }
 
         subject = f"{display_name(sharer)} shared a summary with you"

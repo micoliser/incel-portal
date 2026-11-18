@@ -1,182 +1,30 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <style>
-      body {
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "Helvetica Neue", Arial, sans-serif;
-        color: #333;
-        line-height: 1.6;
-      }
-      .container {
-        max-width: 600px;
-        margin: 0 auto;
-        padding: 20px;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-      }
-      .header {
-        text-align: center;
-        padding-bottom: 20px;
-        border-bottom: 2px solid #f0f0f0;
-      }
-      .header h1 {
-        color: #9b59b6;
-        margin: 0;
-        font-size: 24px;
-      }
-      .recurring-badge {
-        display: inline-block;
-        background-color: #9b59b6;
-        color: white;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 14px;
-        margin-top: 10px;
-      }
-      .content {
-        padding: 20px 0;
-      }
-      .task-details {
-        background-color: #f5f0f8;
-        border-left: 4px solid #9b59b6;
-        padding: 15px;
-        margin: 15px 0;
-        border-radius: 4px;
-      }
-      .task-details p {
-        margin: 8px 0;
-      }
-      .label {
-        font-weight: bold;
-        color: #2c3e50;
-      }
-      .cta-button {
-        display: inline-block;
-        background-color: #9b59b6;
-        color: white;
-        padding: 12px 30px;
-        text-decoration: none;
-        border-radius: 4px;
-        margin: 20px 0;
-        text-align: center;
-      }
-      .info-box {
-        background-color: #ecf0f1;
-        border: 1px solid #bdc3c7;
-        padding: 15px;
-        border-radius: 4px;
-        margin: 15px 0;
-      }
-      .footer {
-        border-top: 2px solid #f0f0f0;
-        padding-top: 20px;
-        text-align: center;
-        font-size: 12px;
-        color: #999;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <h1>
-          {% if recipient_type == 'manager_assignee' %}Recurring Task Assigned to Team Member{% elif recipient_type == 'manager_assigner' %}Recurring Task Delegated by Team Member{% elif recipient_type == 'manager_both' %}Team Recurring Task Created{% elif recipient_type == 'assigner' %}Recurring Task Created{% else %}Recurring Task Assigned{% endif %}
-        </h1>
-        <div class="recurring-badge">📅 Recurring Task</div>
-      </div>
-
-      <div class="content">
-        {% if recipient_type == 'manager_assignee' %}
-        <p>Hi {{ recipient_name }},</p>
-        <p>
-          <strong>{{ assigner_name }}</strong> has assigned a new recurring task to your team member <strong>{{ assignee_name }}</strong>.
-        </p>
-        {% elif recipient_type == 'manager_assigner' %}
-        <p>Hi {{ recipient_name }},</p>
-        <p>
-          Your team member <strong>{{ assigner_name }}</strong> has created a new recurring task assigned to <strong>{{ assignee_name }}</strong>.
-        </p>
-        {% elif recipient_type == 'manager_both' %}
-        <p>Hi {{ recipient_name }},</p>
-        <p>
-          <strong>{{ assigner_name }}</strong> has assigned a recurring task to <strong>{{ assignee_name }}</strong> within your team.
-        </p>
-        {% elif recipient_type == 'assigner' %}
-        <p>Hi {{ recipient_name }},</p>
-        <p>
-          You have created a new recurring task and assigned it to
-          <strong>{{ assignee_name }}</strong>.
-        </p>
-        {% else %}
-        <p>Hi {{ recipient_name }},</p>
-        <p>
-          <strong>{{ assigner_name }}</strong> has assigned you a new recurring
-          task.
-        </p>
-        {% endif %}
-
-        <div class="task-details">
-          <p><span class="label">Task:</span> {{ task_name }}</p>
-          {% if description %}
-          <p><span class="label">Description:</span> {{ description }}</p>
-          {% endif %} {% if recurrence_pattern %}
-          <p><span class="label">Recurrence:</span> {{ recurrence_pattern }}</p>
-          {% endif %}
-        </div>
-
-        <div class="info-box">
-          <p><strong>ℹ️ About Recurring Tasks</strong></p>
-          <p>
-            This task will repeat on the specified schedule. New instances will
-            be created automatically, and notifications will be sent for each
-            occurrence.
-          </p>
-        </div>
-
-        {% if recipient_type == 'manager_assignee' or recipient_type == 'manager_assigner' or recipient_type == 'manager_both' %}
-        <p>You can manage and monitor this recurring schedule from your dashboard.</p>
-        {% elif recipient_type == 'assigner' %}
-        <p>
-          You can manage this recurring task and monitor its progress from your
-          task dashboard.
-        </p>
-        {% else %}
-        <p>
-          Please note that you will need to complete each occurrence of this
-          task as it comes up.
-        </p>
-        {% endif %}
-
-        <a
-          href="https://workspace.incelgroup.com/tasks/{{ task_id }}"
-          class="cta-button"
-          >View Task</a
-        >
-
-        <p>
-          If the button is not clickable, copy and paste this link into your
-          browser:<br />
-          <a href="https://workspace.incelgroup.com/tasks/{{ task_id }}"
-            >https://workspace.incelgroup.com/tasks/{{ task_id }}</a
-          >
-        </p>
-
-        <p>
-          If you have any questions about this recurring task, please contact
-          the task creator.
-        </p>
-      </div>
-
-      <div class="footer">
-        <p>© 2026 Incel Portal. All rights reserved.</p>
-        <p>
-          This is an automated email, please do not reply directly to this
-          message.
-        </p>
-      </div>
-    </div>
-  </body>
-</html>
+{% extends "emails/_base.html" %}
+{% block title %}Recurring task: {{ task_name }}{% endblock %}
+{% block preheader %}{{ task_name }}{% if recurrence_pattern %}, {{ recurrence_pattern }}{% endif %}{% endblock %}
+{% block heading %}{% if recipient_type == 'manager_assignee' %}New recurring task for your team member{% elif recipient_type == 'manager_assigner' %}Your team member set up a recurring task{% elif recipient_type == 'manager_both' %}New recurring task in your team{% elif recipient_type == 'assigner' %}Recurring task created{% else %}You have a new recurring task{% endif %}{% endblock %}
+{% block content %}
+<p>Hi {{ recipient_name }},</p>
+{% if recipient_type == 'manager_assignee' %}
+<p><strong>{{ assigner_name }}</strong> assigned a recurring task to your team member <strong>{{ assignee_name }}</strong>.</p>
+{% elif recipient_type == 'manager_assigner' %}
+<p>Your team member <strong>{{ assigner_name }}</strong> set up a recurring task for <strong>{{ assignee_name }}</strong>.</p>
+{% elif recipient_type == 'manager_both' %}
+<p><strong>{{ assigner_name }}</strong> assigned a recurring task to <strong>{{ assignee_name }}</strong> in your team.</p>
+{% elif recipient_type == 'assigner' %}
+<p>You set up a recurring task for <strong>{{ assignee_name }}</strong>.</p>
+{% else %}
+<p><strong>{{ assigner_name }}</strong> assigned you a recurring task.</p>
+{% endif %}
+<table role="presentation" class="details" cellpadding="0" cellspacing="0">
+  <tr><th>Task</th><td>{{ task_name }}</td></tr>
+  {% if description %}<tr><th>Description</th><td class="text">{{ description }}</td></tr>{% endif %}
+  {% if recurrence_pattern %}<tr><th>Repeats</th><td>{{ recurrence_pattern|capfirst }}</td></tr>{% endif %}
+</table>
+<p class="muted">A new task is created on each date in the schedule, and you are notified each time.</p>
+{% if recipient_type == 'manager_assignee' or recipient_type == 'manager_assigner' or recipient_type == 'manager_both' or recipient_type == 'assigner' %}
+<p>You can follow and manage the schedule in the portal.</p>
+{% else %}
+<p>Each task in the schedule needs to be completed on its own.</p>
+{% endif %}
+{% include "emails/_button.html" with url=portal_url path="/tasks/recurring/" id=task_id label="View schedule" only %}
+{% endblock %}

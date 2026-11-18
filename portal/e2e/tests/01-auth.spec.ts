@@ -81,6 +81,26 @@ test.describe("signing in", () => {
     await expect(page).toHaveURL("/");
   });
 
+  test("shows a plain message, not an error page, when the server fails", async ({ page }) => {
+    // Simulates the API answering with its HTML "Server Error (500)" page.
+    await page.route("**/api/v1/auth/login", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "text/html",
+        body: '<!doctype html><html lang="en"><head><title>Server Error (500)</title></head><body><h1>Server Error (500)</h1></body></html>',
+      }),
+    );
+    await page.goto("/");
+    await page.getByRole("textbox", { name: "Company Email Address" }).fill(USERS.staff.email);
+    await page.getByRole("textbox", { name: "Password" }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in to Workspace" }).click();
+
+    const message = page.getByRole("alert").filter({ hasText: "Something went wrong on our side" });
+    await expect(message).toBeVisible();
+    await expect(message).not.toContainText("<");
+    await expect(message).not.toContainText("Server Error (500)");
+  });
+
   test("sends a signed-out visitor to sign in and back to the page they asked for", async ({ page }) => {
     await page.goto("/todos?view=upcoming");
     await expect(page).toHaveURL("/?next=%2Ftodos%3Fview%3Dupcoming");

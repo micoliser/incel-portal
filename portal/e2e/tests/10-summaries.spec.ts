@@ -10,10 +10,12 @@ test.describe("weekly summary for a staff member", () => {
     await expect(
       body.getByRole("heading", {
         level: 1,
-        name: "You created 0 task(s), completed 3 of 3 assigned task(s) (100.0%), and added 0 comment(s).",
+        name: "You completed 3 of 3 tasks on your list (100.0%).",
       }),
     ).toBeVisible();
-    await expectSequence(body, "Task Completion", "3", "/ 3 assigned");
+    await expectSequence(body, "Task Completion", "3", "/ 3 on the list");
+    // A staff member who gave out no work has no delegated section.
+    await expect(body.getByText("Work you delegated")).toHaveCount(0);
     await expect(body.getByText("100% completion rate")).toBeVisible();
     await expectSequence(body, "On-Time Rate", "100%");
     await expectSequence(body, "Tasks Created", "0");
@@ -45,10 +47,56 @@ test.describe("weekly summary for a staff member", () => {
     await expect(
       body.getByRole("heading", {
         level: 1,
-        name: "You created 0 task(s), completed 0 of 0 assigned task(s) (0%), and added 0 comment(s).",
+        name: "No task activity this week.",
       }),
     ).toBeVisible();
-    await expectSequence(body, "Task Completion", "0", "/ 0 assigned");
+    await expectSequence(body, "Task Completion", "0", "/ 0 on the list");
+  });
+
+  test("leads with delegated work for someone who mostly gives work out", async ({ page }) => {
+    // The seeded people do not delegate during the summary week, so this test
+    // adds a manager's delegated figures to the real summary response.
+    const delegated = {
+      has_own_work: true,
+      has_delegated_work: true,
+      lead_section: "delegated",
+      delegated_tasks_given: 18,
+      delegated_people: 6,
+      delegated_tasks_open_during_week: 24,
+      delegated_tasks_completed: 15,
+      delegated_completion_rate_percent: 62.5,
+      delegated_on_time_completion_rate_percent: 86.67,
+      delegated_reviews_total: 11,
+      delegated_reviews_approved: 9,
+      delegated_reviews_sent_back: 2,
+      delegated_avg_review_hours: 7.3,
+      delegated_waiting_for_review: 3,
+      delegated_overdue: 2,
+    };
+    await page.route(/\/api\/v1\/summaries\/weeks\/\d{4}-\d{2}-\d{2}$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), ...delegated } });
+    });
+    await page.route(/\/api\/v1\/summaries\/weeks\/\d{4}-\d{2}-\d{2}\/comparison$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        json: { ...(await response.json()), delta_delegated_tasks_given: 4, delta_delegated_avg_review_hours: -4.5 },
+      });
+    });
+
+    await page.goto("/summaries");
+    const body = main(page);
+    await expect(body.getByText("Work you delegated")).toBeVisible();
+    const text = await body.innerText();
+    expect(text.toLowerCase().indexOf("work you delegated")).toBeLessThan(text.toLowerCase().indexOf("own work"));
+    await expectSequence(body, "Tasks given out", "to 6 people", "18", "+4");
+    await expectSequence(body, "Completed", "of those open this week", "15 of 24");
+    await expectSequence(body, "Reviews", "9 approved, 2 sent back", "11");
+    await expectSequence(body, "Average review time", "Submission to decision", "7.3 h", "-4.5 h");
+    await expectSequence(body, "Waiting for your review", "At week end", "3");
+    await expectSequence(body, "Overdue", "Past deadline at week end", "2");
+    await expect(body.getByRole("link", { name: "Tasks I assigned" })).toHaveAttribute("href", "/tasks?view=created");
   });
 
   test("opens the files attached and received during the week", async ({ page }) => {

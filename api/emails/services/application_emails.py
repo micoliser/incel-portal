@@ -1,5 +1,7 @@
 from typing import Any, Dict, List
 
+from django.conf import settings
+
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
 
@@ -53,7 +55,7 @@ class ApplicationEmailManager:
             'application_id': str(application.id),
             'application_name': application.name,
             'application_url': application.app_url,
-            'applications_page_url': 'https://workspace.incelgroup.com/applications',
+            'applications_page_url': f"{settings.PORTAL_BASE_URL.rstrip('/')}/applications",
             'description': application.description,
             'logo_url': application.logo_url,
         }
@@ -124,7 +126,7 @@ class ApplicationEmailManager:
             'application_id': str(application.id),
             'application_name': application.name,
             'application_url': application.app_url,
-            'applications_page_url': 'https://workspace.incelgroup.com/applications',
+            'applications_page_url': f"{settings.PORTAL_BASE_URL.rstrip('/')}/applications",
             'description': application.description,
             'logo_url': application.logo_url,
         }

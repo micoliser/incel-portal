@@ -343,21 +343,36 @@ def cache_organization_summaries() -> dict[str, int]:
     return {'cached': cached, 'errors': errors}
 @shared_task(name='tasks.send_eod_daily_reports')
 def send_eod_daily_reports() -> dict[str, int]:
+    """Weekdays at 17:05 Lagos time: email each of today's reports to its author and their manager.
 
+    Only reports with at least one entry, written by active accounts, are sent.
+    """
     today = timezone.localdate()
     lock_key = f"eod_emails_sent_{today.isoformat()}"
     if not cache.add(lock_key, True, timeout=60 * 60 * 24):
-        return {'sent': 0, 'status': 'already_sent'}
+        return {'reports': 0, 'sent': 0, 'status': 'already_sent'}
 
-    reports = DailyReport.objects.filter(report_date=today)
-    
-    count = 0
+    reports = (
+        DailyReport.objects.filter(
+            report_date=today,
+            user__is_active=True,
+            subreports__isnull=False,
+        )
+        .distinct()
+        .select_related('user', 'department')
+    )
+
+    report_count = 0
+    emails_sent = 0
     for report in reports:
-        sent = DailyReportEmailManager.send_manager_notification(report, report.user, is_eod=True)
-        if sent:
-            count += 1
-            
-    return {'sent': count}
+        report_count += 1
+        try:
+            emails_sent += DailyReportEmailManager.send_end_of_day(report)
+        except Exception:
+            logger.exception('End-of-day email failed for daily report %s', report.id)
+
+    logger.info('End-of-day reports: %s reports, %s emails sent', report_count, emails_sent)
+    return {'reports': report_count, 'sent': emails_sent}
 
 
 @shared_task(name='tasks.check_due_todo_reminders')

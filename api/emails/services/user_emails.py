@@ -69,7 +69,7 @@ class UserEmailManager:
             'first_name': user.first_name or user.username,
             'setup_url': setup_url,
             'expiry_hours': expiry_hours,
-            'login_url': f"{settings.PORTAL_BASE_URL.rstrip('/')}/login",
+            'login_url': f"{settings.PORTAL_BASE_URL.rstrip('/')}/",
         }
 
         service = UserCreatedEmailService()

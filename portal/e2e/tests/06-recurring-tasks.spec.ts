@@ -106,8 +106,8 @@ test.describe("managing a recurring schedule", () => {
 
     await link.click();
     await expect(main(page).getByText("Every day (including weekends)")).toBeVisible();
-    // The form defaults to one run at the start time, in the Dubai timezone.
-    await expectSequence(main(page), "Run Times", "10:00", "Asia/Dubai");
+    // The form defaults to one run at the start time, in Nigerian time.
+    await expectSequence(main(page), "Run Times", "10:00", "Africa/Lagos");
   });
 
   test("pauses, resumes and then ends a schedule", async ({ page }) => {
