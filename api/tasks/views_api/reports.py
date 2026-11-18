@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -12,13 +12,13 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework.views import APIView
 
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.exceptions import BadGateway, ServiceUnavailable
 from common.params import int_param, uuid_param
 from common.permissions import has_global_access
+from common.viewsets import GenericViewSet
 from emails.config import EmailConfig
 from emails.services.daily_report_emails import DailyReportEmailManager
 
@@ -37,6 +37,8 @@ from ..serializers import (
     DailyReportSubreportDetailSerializer,
     DailyReportSummarySerializer,
 )
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +91,20 @@ def _parse_report_date(value):
     return datetime.strptime(str(value), '%Y-%m-%d').date()
 
 
-class ReportsMonthCalendarView(APIView):
+class DailyReportViewSet(GenericViewSet):
+    """Daily reports: the month calendar, a day (read or add an entry), the
+    department's reports, one report, adding an entry to it, and emailing it.
+    Wired in `api_urls.py`. Emailing has its own rate limit."""
+
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get_throttles(self):
+        if self.action == 'send_email':
+            self.throttle_scope = 'email'
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
+
+    def month(self, request):
         month_str = request.query_params.get('month')
         if not month_str:
             raise ValidationError('month query parameter is required')
@@ -144,11 +156,7 @@ class ReportsMonthCalendarView(APIView):
             ],
         })
 
-
-class ReportsDayView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
+    def day(self, request):
         report_date_str = request.query_params.get('report_date')
         if not report_date_str:
             raise ValidationError('report_date query parameter is required')
@@ -180,7 +188,7 @@ class ReportsDayView(APIView):
         })
 
     @transaction.atomic
-    def post(self, request):
+    def add_to_day(self, request):
         serializer = DailyReportCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -220,11 +228,7 @@ class ReportsDayView(APIView):
 
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 
-
-class DepartmentReportsAllView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
+    def department_all(self, request):
         scope_users = _report_scope_users(request.user)
         qs = DailyReport.objects.filter(user__in=scope_users)
 
@@ -310,20 +314,16 @@ class DepartmentReportsAllView(APIView):
             'results': DailyReportDetailSerializer(reports_for_date, many=True).data,
         })
 
-
-class DailyReportDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get_object(self, report_id):
+    def _get_report(self, report_id):
         return DailyReport.objects.select_related('user__staff_profile__department').prefetch_related(
             'subreports__comments__author',
             'subreports__created_by',
             'user__staff_profile__department',
         ).get(id=report_id)
 
-    def get(self, request, report_id):
+    def retrieve(self, request, report_id):
         try:
-            report = self.get_object(report_id)
+            report = self._get_report(report_id)
         except DailyReport.DoesNotExist:
             raise NotFound('Report not found')
 
@@ -334,18 +334,8 @@ class DailyReportDetailView(APIView):
 
         return Response(_serialize_daily_report_detail(report))
 
-
-def _handle_first_subreport_notification(daily_report, user):
-    """Trigger the manager notification email if this is the first report of the day for the user."""
-    if daily_report.subreports.count() == 1:
-        DailyReportEmailManager.send_manager_notification(daily_report, user)
-
-
-class DailyReportSubreportCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @transaction.atomic
-    def post(self, request, report_id):
+    def add_subreport(self, request, report_id):
         serializer = DailyReportSubreportCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -378,63 +368,7 @@ class DailyReportSubreportCreateView(APIView):
 
         return Response(DailyReportSubreportDetailSerializer(subreport).data, status=status.HTTP_201_CREATED)
 
-
-class DailyReportSubreportDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get_object(self, subreport_id):
-        return DailyReportSubreport.objects.select_related(
-            'daily_report__user__staff_profile__department',
-            'created_by__staff_profile__department',
-        ).prefetch_related('comments__author').get(id=subreport_id)
-
-    def get(self, request, subreport_id):
-        try:
-            subreport = self.get_object(subreport_id)
-        except DailyReportSubreport.DoesNotExist:
-            raise NotFound('Subreport not found')
-
-        if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
-            department = _get_user_department(request.user)
-            if department is None or subreport.daily_report.department_id != department.id:
-                raise PermissionDenied('Forbidden')
-
-        return Response(DailyReportSubreportDetailSerializer(subreport).data)
-
-
-class DailyReportSubreportCommentView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, subreport_id):
-        serializer = DailyReportCommentCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            subreport = DailyReportSubreport.objects.select_related('daily_report__user').get(id=subreport_id)
-        except DailyReportSubreport.DoesNotExist:
-            raise NotFound('Subreport not found')
-
-        if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
-            raise PermissionDenied('Forbidden')
-
-        if subreport.daily_report.report_date != timezone.localdate():
-            raise ValidationError('You can only add comments on the current day.')
-
-        comment = DailyReportComment.objects.create(
-            subreport=subreport,
-            author=request.user,
-            body=serializer.validated_data['body'],
-        )
-
-        return Response(DailyReportCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
-
-
-class DailyReportSendEmailView(APIView):
-    permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'email'
-
-    def get_report(self, report_id):
+    def _get_report_to_send(self, report_id):
         return DailyReport.objects.select_related(
             'user',
             'department',
@@ -443,12 +377,12 @@ class DailyReportSendEmailView(APIView):
             'subreports__created_by',
         ).get(id=report_id)
 
-    def post(self, request, report_id):
+    def send_email(self, request, report_id):
         if not EmailConfig.is_enabled():
             raise ServiceUnavailable('Email sending is disabled.')
 
         try:
-            report = self.get_report(report_id)
+            report = self._get_report_to_send(report_id)
         except DailyReport.DoesNotExist:
             raise NotFound('Report not found')
 
@@ -478,3 +412,59 @@ class DailyReportSendEmailView(APIView):
             else f'Report forwarded to {recipient_count} recipients.'
         )
         return Response({'detail': detail})
+
+
+def _handle_first_subreport_notification(daily_report, user):
+    """Trigger the manager notification email if this is the first report of the day for the user."""
+    if daily_report.subreports.count() == 1:
+        DailyReportEmailManager.send_manager_notification(daily_report, user)
+
+
+class DailyReportSubreportViewSet(GenericViewSet):
+    """One report entry, and commenting on it. Wired in `api_urls.py`."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_subreport(self, subreport_id):
+        return DailyReportSubreport.objects.select_related(
+            'daily_report__user__staff_profile__department',
+            'created_by__staff_profile__department',
+        ).prefetch_related('comments__author').get(id=subreport_id)
+
+    def retrieve(self, request, subreport_id):
+        try:
+            subreport = self._get_subreport(subreport_id)
+        except DailyReportSubreport.DoesNotExist:
+            raise NotFound('Subreport not found')
+
+        if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
+            department = _get_user_department(request.user)
+            if department is None or subreport.daily_report.department_id != department.id:
+                raise PermissionDenied('Forbidden')
+
+        return Response(DailyReportSubreportDetailSerializer(subreport).data)
+
+    def add_comment(self, request, subreport_id):
+        serializer = DailyReportCommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            subreport = DailyReportSubreport.objects.select_related('daily_report__user').get(id=subreport_id)
+        except DailyReportSubreport.DoesNotExist:
+            raise NotFound('Subreport not found')
+
+        if not has_global_access(request.user) and subreport.daily_report.user_id != request.user.id:
+            raise PermissionDenied('Forbidden')
+
+        if subreport.daily_report.report_date != timezone.localdate():
+            raise ValidationError('You can only add comments on the current day.')
+
+        comment = DailyReportComment.objects.create(
+            subreport=subreport,
+            author=request.user,
+            body=serializer.validated_data['body'],
+        )
+
+        return Response(DailyReportCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+
+

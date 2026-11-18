@@ -5,7 +5,7 @@ import socket
 import time
 import uuid
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.cache import cache, caches
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -13,6 +13,8 @@ from rest_framework.test import APIClient
 from accounts.models import StaffProfile
 from common.cache import ResilientRedisCache
 from organization.models import Department, Role
+
+User = get_user_model()
 
 UNREACHABLE = {
     'default': {

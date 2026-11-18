@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
 from django.core.cache import cache
@@ -13,6 +13,8 @@ from rest_framework import status
 from accounts.models import StaffProfile
 from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
+
+User = get_user_model()
 
 
 class PasswordResetApiTests(BaseAPITestCase):

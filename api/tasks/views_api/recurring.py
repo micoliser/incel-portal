@@ -9,11 +9,17 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
 
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.permissions import has_global_access
+from common.viewsets import (
+    CreateModelMixin,
+    GenericViewSet,
+    ListModelMixin,
+    PartialUpdateModelMixin,
+    RetrieveModelMixin,
+)
 from emails.services.task_emails import TaskEmailManager
 
 from ..hierarchy import get_subordinate_user_ids
@@ -28,12 +34,17 @@ from ..services import calculate_next_run_at
 
 logger = logging.getLogger(__name__)
 
-class RecurringScheduleViewSet(ModelViewSet):
+class RecurringScheduleViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    GenericViewSet,
+):
     serializer_class = RecurringScheduleSerializer
     permission_classes = [IsAuthenticated, IsRecurringScheduleAssignerOrAssignee]
     # No DELETE: a schedule is stopped with the audited `end` action, which
     # keeps its history. Deleting would silently drop its occurrences.
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
     lookup_value_converter = 'uuid'
 
     def get_queryset(self):

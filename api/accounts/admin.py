@@ -3,11 +3,13 @@ import secrets
 
 from django import forms
 from django.contrib import admin, messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
-from django.contrib.auth.models import User
 from django.utils.html import format_html
 
 from .models import SERVICE_API_SCOPES, ServiceApiKey, StaffProfile
+
+User = get_user_model()
 
 # Generated keys are 43 random characters; a hand-chosen one must not be weaker
 # than something guessable.

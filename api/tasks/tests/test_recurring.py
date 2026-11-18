@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -12,6 +12,8 @@ from emails.services.task_emails import TaskEmailManager
 from tasks.models import RecurrenceOccurrence, RecurringSchedule, Task
 from tasks.services import calculate_next_run_at
 from tasks.tasks import generate_recurring_task_occurrences
+
+User = get_user_model()
 
 
 class RecurringScheduleApiTests(BaseAPITestCase):

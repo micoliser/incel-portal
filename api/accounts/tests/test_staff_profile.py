@@ -1,9 +1,11 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from accounts.models import StaffProfile
 from organization.models import Department, Role, Team, Unit
+
+User = get_user_model()
 
 
 class StaffProfileModelTests(TestCase):

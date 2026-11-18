@@ -52,12 +52,16 @@ api/
 │   ├── services.py       session revocation, password links, sign-in guard
 │   └── tasks.py          token cleanup, audit-log pruning
 ├── organization/         Department, Unit, Team, Role; services.py (placement rules)
-├── applications/         applications, access overrides, recent apps, AuditLog
-│   ├── audit.py          log_audit()
-│   ├── audit_actions.py  AuditAction constants (every action name)
-│   └── audit_messages.py human-readable audit text
+├── applications/         applications, access overrides, recent apps, the AuditLog model
+├── audit/                audit logging code (no models; the table is applications.AuditLog)
+│   ├── log.py            log_audit(), also importable as `audit.log_audit`
+│   ├── actions.py        AuditAction constants (every action name)
+│   └── messages.py       human-readable audit text
 ├── tasks/                tasks, recurring schedules, to-dos, goals, reports, summaries
-│   ├── views_api/        tasks.py, recurring.py, todos.py, goals.py, reports.py, summaries.py
+│   ├── models/           one module per area: tasks, recurring, todos, goals, reports, summaries
+│   ├── serializers/      the same areas
+│   ├── services/         recurring, tasks, summaries, goals
+│   ├── views_api/        tasks, recurring, todos, goals, reports, summaries
 │   ├── permissions.py    task and schedule permissions, who-may-change rules
 │   ├── hierarchy.py      manager and oversight helpers
 │   └── tasks.py          Celery jobs
@@ -73,7 +77,9 @@ api/
 │   ├── params.py         query and body parameter parsing (400 on bad input)
 │   ├── exceptions.py     error envelope and extra exception types
 │   ├── routers.py        ApiRouter (no trailing slash)
-│   ├── serializers.py    UserSummarySerializer
+│   ├── viewsets.py       GenericViewSet and the mixins resources use (PATCH-only update)
+│   ├── models.py         TimeStampedModel, CreatedAtModel
+│   ├── serializers.py    UserSummarySerializer, OptionalUUIDField, OptionalDateField
 │   ├── storage.py        S3 helpers and upload verification
 │   ├── uploads.py        checked_upload() for views
 │   ├── cache.py          ResilientRedisCache
@@ -137,14 +143,47 @@ not enforced; `/health/` reports `{"status": "degraded", "cache": "unreachable"}
 
 ### 3.4 Audit log
 
-`applications.audit.log_audit(action=AuditAction.X, request=..., target_type=..., target_id=..., metadata=...)`.
-Every action name is a constant in `applications/audit_actions.py`
+`audit.log_audit(action=AuditAction.X, request=..., target_type=..., target_id=..., metadata=...)`.
+Every action name is a constant in `audit/actions.py`
 (`UPPER_SNAKE`, for example `ADMIN_USER_CREATED`, `INVENTORY_ITEM_ASSIGNED`,
-`ORG_MEMBERS_ADDED`). Readable text comes from `audit_messages.py`. Share
+`ORG_MEMBERS_ADDED`). Readable text comes from `audit/messages.py`. The old
+`applications.audit*` modules forward to these for one release; import from
+`audit` in new code. Share
 tokens and passwords are never logged. Failed sign-in and failed reset rows
 are deleted after `AUDIT_AUTH_FAILURE_RETENTION_DAYS` (90).
 
-### 3.5 Data model notes
+### 3.5 Code conventions
+
+- **Views.** A resource is a `GenericViewSet` (from `common.viewsets`) with
+  only the mixins it needs, or actions written out. Changes are PATCH
+  (`PartialUpdateModelMixin`); nothing accepts PUT, and there is no
+  `ModelViewSet` or `http_method_names`. Permissions and rate limits that
+  differ per action go in `get_permissions()` and `get_throttles()`, keyed on
+  `self.action`. Viewsets go on `ApiRouter`, or, where route names or typed
+  ids must stay as they are, on explicit paths with `as_view({...})`
+  (notifications, applications, audit logs, reports, summaries). Sign-in,
+  password, `/me` and `/external/users` stay as `APIView`s: they are not
+  resources.
+- **Route table.** `common/tests/route_methods.json` lists every route with
+  its name and allowed methods; `test_route_methods` fails if one is added,
+  removed, renamed or gains or loses a method. After a deliberate change:
+  `UPDATE_ROUTE_TABLE=1 python manage.py test common.tests.test_route_methods`,
+  and review the diff.
+- **Input.** Request bodies are read through serializers, never
+  `request.data.get(...)`. `OptionalUUIDField` and `OptionalDateField` treat
+  a blank value as absent and give the same messages as `common.params`.
+- **Users.** Model fields use `settings.AUTH_USER_MODEL`; other code uses
+  `User = get_user_model()` at the top of the module. Never import `User`
+  from `django.contrib.auth.models`.
+- **Timestamps.** Models inherit `TimeStampedModel` (rows that change:
+  `created_at`, `updated_at`) or `CreatedAtModel` (rows written once:
+  history, logs, attachments, shares).
+- **Choices.** `models.TextChoices` classes. The tuple names used before
+  (`STATUS_CHOICES` and so on) remain as aliases of `.choices`. Stored values
+  are lowercase, except the applications app and support categories, which
+  have always been uppercase.
+
+### 3.6 Data model notes
 
 - Every model has a UUID primary key except Django's `User` (integer).
 - Email is unique, case-insensitive (`auth_user_email_lower_uniq`); empty
@@ -564,7 +603,7 @@ allowlist).
 - Weekly summaries are generated Mondays at 00:00 for the week just ended,
   compared at 00:15, cached for the organization view at 00:30 and emailed at
   08:00 (active users only). Calculation: `calculate_user_weekly_summary` in
-  `tasks/services.py`.
+  `tasks/services/summaries.py`.
   - Own work: tasks assigned to the person (self-assigned included). The
     completion rate is tasks completed that week divided by tasks on their
     list that week (`tasks_open_during_week`: created by Sunday and not
@@ -937,13 +976,23 @@ against the old API must be updated:
 
 `GET /external/users` did not change.
 
+The internal restructure that followed (view style, module split, model
+conventions, input validation) changed no route, method, route name or
+response, and needed no migration; the route table (section 3.5) guards it.
+
 ## 16. Common change scenarios
 
 **New endpoint:** serializer for input → view with explicit permissions (a
-`GenericViewSet` with only the mixins needed, or an `APIView`) → route in the
-app's `api_urls.py` (use `ApiRouter`) → tests for success, bad input and every
-role → add to the role test if role-gated → `portal/lib/api/` function →
-this document (sections 5 and 7).
+`GenericViewSet` from `common.viewsets` with only the mixins needed; see
+section 3.5) → route in the app's `api_urls.py` (`ApiRouter`, or an explicit
+path) → tests for success, bad input and every role → add to the role test if
+role-gated → update the route table (`UPDATE_ROUTE_TABLE=1`, section 3.5) →
+`portal/lib/api/` function → this document (sections 5 and 7).
+
+**New model:** inherit `TimeStampedModel` or `CreatedAtModel`, use
+`settings.AUTH_USER_MODEL` for user fields and `TextChoices` for choices; put
+a tasks-app model in the matching `tasks/models/<area>.py` and export it from
+`tasks/models/__init__.py`.
 
 **New list:** rely on the default pagination; parse filters with
 `common/params.py`; return `Paginated<T>` in the portal and use

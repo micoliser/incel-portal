@@ -8,9 +8,9 @@ formatter, and every weekly summary email failed in production.
 from pathlib import Path
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.core import mail
 from django.template.loader import get_template, render_to_string
-from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from emails.services.base_email_service import BaseEmailService

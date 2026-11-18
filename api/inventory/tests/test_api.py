@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -14,6 +14,8 @@ from inventory.models import (
     MaintenanceLogAttachment,
 )
 from inventory.s3 import maintenance_attachment_key_prefix
+
+User = get_user_model()
 
 PREFIX = maintenance_attachment_key_prefix()
 

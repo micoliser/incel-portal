@@ -3,12 +3,14 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import StaffProfile
 from accounts.services import send_account_setup_link
 from organization.models import Department, Role
+
+User = get_user_model()
 
 
 class Command(BaseCommand):

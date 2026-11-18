@@ -2,7 +2,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 from botocore.exceptions import ClientError
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -18,6 +18,8 @@ from support.services import (
     route_support_request,
     update_request_status,
 )
+
+User = get_user_model()
 
 
 class SupportRoutingTests(TestCase):

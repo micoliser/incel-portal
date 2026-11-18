@@ -8,13 +8,15 @@ figures and week-over-week comparisons line up. Sends no emails.
 
 from datetime import timedelta
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from tasks import tasks as task_jobs
 from tasks.models import WeeklySummary
 from tasks.services import calculate_user_weekly_summary, calculate_weekly_comparison
+
+User = get_user_model()
 
 
 class Command(BaseCommand):

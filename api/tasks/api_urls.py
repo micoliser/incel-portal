@@ -4,16 +4,10 @@ import common.converters  # noqa: F401  (registers the isodate path converter)
 from common.routers import ApiRouter
 
 from .views_api import (
-    DailyReportDetailView,
-    DailyReportSendEmailView,
-    DailyReportSubreportCommentView,
-    DailyReportSubreportCreateView,
-    DailyReportSubreportDetailView,
-    DepartmentReportsAllView,
+    DailyReportSubreportViewSet,
+    DailyReportViewSet,
     GoalsViewSet,
     RecurringScheduleViewSet,
-    ReportsDayView,
-    ReportsMonthCalendarView,
     SummaryFilesViewSet,
     TaskDraftViewSet,
     TaskViewSet,
@@ -29,20 +23,27 @@ router.register(r'recurring-schedules', RecurringScheduleViewSet, basename='recu
 router.register(r'goals', GoalsViewSet, basename='goal')
 
 summary = WeeklySummaryViewSet.as_view
+reports = DailyReportViewSet.as_view
+subreports = DailyReportSubreportViewSet.as_view
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('reports/month', ReportsMonthCalendarView.as_view(), name='reports-month-calendar'),
-    path('reports/day', ReportsDayView.as_view(), name='reports-day-hub'),
-    path('reports/all', DepartmentReportsAllView.as_view(), name='reports-department-all'),
-    path('reports/daily/<uuid:report_id>', DailyReportDetailView.as_view(), name='reports-daily-detail'),
-    path('reports/daily/<uuid:report_id>/send-email',
-        DailyReportSendEmailView.as_view(),
-        name='reports-daily-send-email',
+    path('reports/month', reports({'get': 'month'}), name='reports-month-calendar'),
+    path('reports/day', reports({'get': 'day', 'post': 'add_to_day'}), name='reports-day-hub'),
+    path('reports/all', reports({'get': 'department_all'}), name='reports-department-all'),
+    path('reports/daily/<uuid:report_id>', reports({'get': 'retrieve'}), name='reports-daily-detail'),
+    path('reports/daily/<uuid:report_id>/send-email', reports({'post': 'send_email'}), name='reports-daily-send-email'),
+    path(
+        'reports/daily/<uuid:report_id>/subreports',
+        reports({'post': 'add_subreport'}),
+        name='reports-daily-subreports-create',
     ),
-    path('reports/daily/<uuid:report_id>/subreports', DailyReportSubreportCreateView.as_view(), name='reports-daily-subreports-create'),
-    path('reports/subreports/<uuid:subreport_id>', DailyReportSubreportDetailView.as_view(), name='reports-subreport-detail'),
-    path('reports/subreports/<uuid:subreport_id>/comments', DailyReportSubreportCommentView.as_view(), name='reports-subreport-comments'),
+    path('reports/subreports/<uuid:subreport_id>', subreports({'get': 'retrieve'}), name='reports-subreport-detail'),
+    path(
+        'reports/subreports/<uuid:subreport_id>/comments',
+        subreports({'post': 'add_comment'}),
+        name='reports-subreport-comments',
+    ),
     # Weekly summaries. A summary is addressed by the Monday its week starts on.
     path('summaries/weeks', summary({'get': 'weeks'}), name='summary-weeks'),
     path('summaries/weeks/<isodate:week>', summary({'get': 'retrieve'}), name='summary-detail'),

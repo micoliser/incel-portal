@@ -1,9 +1,11 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification, PushSubscription
+
+User = get_user_model()
 
 
 class NotificationsApiTests(BaseAPITestCase):

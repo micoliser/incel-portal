@@ -1,8 +1,10 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from common.serializers import UserSummarySerializer
 from organization.models import Department, Role, Team, Unit
+
+User = get_user_model()
 
 
 def _profile_field(user, field):

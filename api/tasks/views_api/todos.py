@@ -7,9 +7,16 @@ from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
 
 from common.pagination import page_size
+from common.viewsets import (
+    CreateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+    ListModelMixin,
+    PartialUpdateModelMixin,
+    RetrieveModelMixin,
+)
 
 from ..models import (
     TodoItem,
@@ -21,8 +28,14 @@ logger = logging.getLogger(__name__)
 MAX_SNOOZE_MINUTES = 60 * 24 * 365
 
 
-class TodoItemViewSet(ModelViewSet):
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+class TodoItemViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    PartialUpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
     lookup_value_converter = 'uuid'
     serializer_class = TodoItemSerializer
     permission_classes = [IsAuthenticated]

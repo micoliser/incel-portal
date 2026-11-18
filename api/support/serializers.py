@@ -1,14 +1,16 @@
 import logging
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.validators import RegexValidator
 from rest_framework import serializers
 
-from common.serializers import UserSummarySerializer
+from common.serializers import OptionalUUIDField, UserSummarySerializer
 from common.storage import attachment_content_types, attachment_max_size
 
 from .models import SupportAttachment, SupportComment, SupportRequest
 from .s3 import generate_support_attachment_download_url
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,9 @@ class SupportAttachmentUploadRequestSerializer(serializers.Serializer):
 class SupportAttachmentConfirmSerializer(serializers.Serializer):
     """Records a file the browser uploaded. The view checks that the key
     belongs to this request and what storage actually holds."""
+
+    # Set when the file belongs to a reply; otherwise it is attached to the request.
+    comment_id = OptionalUUIDField()
 
     object_key = serializers.CharField(
         max_length=1024,

@@ -8,7 +8,7 @@ from datetime import timedelta
 from importlib import import_module
 
 from django.apps import apps as django_apps
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -19,6 +19,8 @@ from common.test_utils import BaseAPITestCase
 from organization.models import Department
 from support.models import SupportComment, SupportRequest
 from tasks.models import RecurringSchedule, Task, WeeklySummary
+
+User = get_user_model()
 
 
 class AccessControlTestCase(BaseAPITestCase):

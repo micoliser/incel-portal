@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
@@ -15,14 +15,14 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ViewSet
 
-from applications.audit import log_audit
-from applications.audit_actions import AuditAction
+from audit import log_audit
+from audit.actions import AuditAction
 from common.exceptions import Gone
 from common.params import date_param, int_param
 from common.permissions import has_global_access
 from common.users import display_name
+from common.viewsets import GenericViewSet
 from emails.services.summary_emails import SummaryEmailManager
 from notifications.models import Notification
 from notifications.services import create_notification
@@ -48,6 +48,8 @@ from ..serializers import (
     WeeklySummaryUserShareSerializer,
 )
 from ..services import calculate_weekly_comparison
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,7 @@ def _shared_payload(summary):
     }
 
 
-class WeeklySummaryViewSet(ViewSet):
+class WeeklySummaryViewSet(GenericViewSet):
     """A user's weekly summaries, addressed by the Monday the week starts on:
     /summaries/weeks/2026-11-09 and the sub-resources beneath it."""
 
@@ -349,7 +351,7 @@ class WeeklySummaryViewSet(ViewSet):
         return Response(OrganizationSummarySerializer(org_summary).data)
 
 
-class SummaryFilesViewSet(ViewSet):
+class SummaryFilesViewSet(GenericViewSet):
     """Nested viewset for files within a summary: GET /summaries/<id>/files/"""
     
     permission_classes = [IsAuthenticated]

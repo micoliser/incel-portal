@@ -13,11 +13,13 @@ from __future__ import annotations
 from datetime import time, timedelta
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
+
+User = get_user_model()
 
 E2E_PASSWORD = 'E2e-Portal!2026'
 E2E_DB_SUFFIX = '_e2e'
@@ -531,7 +533,7 @@ class Seeder:
             )
 
     def seed_audit_logs(self):
-        from applications.audit import log_audit
+        from audit import log_audit
 
         admin = self.users['admin']
         log_audit(action='AUTH_LOGIN_SUCCESS', actor_user=admin, target_type='User', target_id=admin.id)

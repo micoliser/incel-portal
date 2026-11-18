@@ -4,13 +4,15 @@ import logging
 from datetime import date
 from typing import Any, Dict
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from common.users import display_name
 from emails.config import EmailType
 from emails.services.base_email_service import BaseEmailService
 from emails.services.daily_report_emails import get_portal_base_url
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -10,6 +10,8 @@ from rest_framework import status
 from accounts.models import StaffProfile
 from common.test_utils import BaseAPITestCase
 from tasks.models import DailyReport, DailyReportComment, DailyReportSubreport
+
+User = get_user_model()
 
 
 class DailyReportsApiTests(BaseAPITestCase):

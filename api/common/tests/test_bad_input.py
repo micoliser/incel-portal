@@ -6,7 +6,7 @@ conversion and came back as a 500.
 
 from datetime import timedelta
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -17,6 +17,8 @@ from organization.models import Department
 from support.models import SupportRequest
 from support.s3 import support_attachment_key_prefix
 from tasks.models import Task, TodoItem
+
+User = get_user_model()
 
 
 class BadInputTestCase(BaseAPITestCase):
