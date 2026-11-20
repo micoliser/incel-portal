@@ -8,6 +8,7 @@ import {
   Calendar,
   CheckSquare2,
   ListTodo,
+  MessagesSquare,
   Eye,
   EyeOff,
   Building2,
@@ -185,7 +186,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     void loadUserContext();
   }, [pathname, router]);
 
-  const pageHeader = pathname.startsWith("/summaries")
+  const pageHeader = pathname.startsWith("/chat")
+    ? {
+        title: "Chat",
+        subtitle: "Private messages with colleagues, encrypted end to end.",
+      }
+    : pathname.startsWith("/summaries")
     ? {
         title: "Weekly Summary",
         subtitle: "Review your work activity and progress for the past weeks.",
@@ -686,6 +692,38 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 aria-hidden="true"
               />
               <span>Goals</span>
+            </Link>
+
+            <Link
+              href="/chat"
+              onClick={handleCloseSidebar}
+              className={cn(
+                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                pathname.startsWith("/chat")
+                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <MessagesSquare
+                className={cn(
+                  "size-4 transition-transform duration-150",
+                  pathname.startsWith("/chat")
+                    ? "text-white"
+                    : "text-muted-foreground group-hover:text-foreground",
+                )}
+                aria-hidden="true"
+              />
+              <span className="flex-1">Chat</span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                  pathname.startsWith("/chat")
+                    ? "bg-white/20 text-white"
+                    : "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#38bdf8]/15 dark:text-[#38bdf8]",
+                )}
+              >
+                Soon
+              </span>
             </Link>
           </div>
 
