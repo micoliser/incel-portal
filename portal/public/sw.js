@@ -33,6 +33,12 @@ self.addEventListener("push", (event) => {
       url: payload.url || "/dashboard",
     },
   };
+  // Chat pushes carry a tag per conversation, so a new message replaces the
+  // previous notice instead of stacking (they never contain message text).
+  if (payload.tag) {
+    options.tag = payload.tag;
+    options.renotify = true;
+  }
 
   event.waitUntil(self.registration.showNotification(title, options));
 });

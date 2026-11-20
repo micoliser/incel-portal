@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'emails',
     'support',
     'inventory',
+    'chat',
 ]
 
 MIDDLEWARE = [
@@ -95,6 +96,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'portalapi.wsgi.application'
+# The realtime app (chat WebSockets) runs this under uvicorn; the REST API stays on WSGI.
+ASGI_APPLICATION = 'portalapi.asgi.application'
 
 
 # Database
@@ -284,6 +287,10 @@ REST_FRAMEWORK = {
         'support': '100/minute',
         'uploads': '100/minute',
         'service': '120/minute',
+        'chat_messages': '60/minute',
+        'chat_uploads': '30/minute',
+        'chat_tickets': '30/minute',
+        'chat_keys': '20/minute',
     },
 }
 
@@ -345,6 +352,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.prune_auth_failure_audit_logs',
         'schedule': crontab(hour=2, minute=30),  # Daily at 02:30
     },
+    'remove-unsent-chat-attachments': {
+        'task': 'chat.remove_unsent_attachments',
+        'schedule': crontab(hour=3, minute=0),  # Daily at 03:00
+    },
     'auto-close-support-requests': {
         'task': 'support.auto_close_resolved_requests',
         'schedule': crontab(hour=1, minute=0),  # Daily at 01:00
@@ -382,6 +393,34 @@ TASK_ATTACHMENT_MAX_FILES = int(os.getenv('TASK_ATTACHMENT_MAX_FILES', '10'))
 # (common/storage.verify_upload). Off only where there is no storage to ask:
 # test runs, and the end-to-end stack (which sets VERIFY_UPLOADS=False).
 VERIFY_UPLOADS = (not IS_TESTING) and os.getenv('VERIFY_UPLOADS', 'True').lower() == 'true'
+
+# Chat (docs/CHAT_SPEC.md). Files are encrypted in the browser, so storage only
+# ever holds opaque bytes; the limit is on the original file, and the encrypted
+# copy may be slightly larger.
+CHAT_ATTACHMENT_S3_PREFIX = os.getenv('CHAT_ATTACHMENT_S3_PREFIX', 'chat-attachments')
+CHAT_ATTACHMENT_MAX_SIZE = int(os.getenv('CHAT_ATTACHMENT_MAX_SIZE', str(25 * 1024 * 1024)))
+CHAT_ATTACHMENT_ENCRYPTION_OVERHEAD = 64 * 1024
+CHAT_THUMBNAIL_MAX_SIZE = 512 * 1024
+CHAT_ATTACHMENTS_PER_MESSAGE = 10
+CHAT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('CHAT_UPLOAD_URL_EXPIRES_IN', '900'))
+CHAT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('CHAT_DOWNLOAD_URL_EXPIRES_IN', '300'))
+CHAT_EDIT_WINDOW_MINUTES = 30
+# Encrypted message payload (text plus attachment details), base64.
+CHAT_MESSAGE_MAX_CIPHERTEXT = 96 * 1024
+
+# WebSocket delivery for chat. Point CHANNEL_LAYER_URL at a Redis database of
+# its own (Celery uses 15 and the cache 14 in production). Without it, events
+# only reach sockets held by the same process: fine for development and tests.
+CHANNEL_LAYER_URL = '' if IS_TESTING else os.getenv('CHANNEL_LAYER_URL', '')
+if CHANNEL_LAYER_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [CHANNEL_LAYER_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
 MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '300'))
 TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES = _env_list(
     'TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES',

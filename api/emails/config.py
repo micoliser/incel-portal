@@ -31,6 +31,8 @@ class EmailType(Enum):
     SUPPORT_REQUEST_RESOLVED = "support_request_resolved"
     SUPPORT_REQUEST_CLOSED = "support_request_closed"
     TODO_REMINDER = "todo_reminder"
+    CHAT_INVITATION = "chat_invitation"
+    CHAT_RESET_CODE = "chat_reset_code"
 
 
 class EmailConfig:

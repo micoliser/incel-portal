@@ -28,6 +28,7 @@ import {
   X,
   Package,
   Archive,
+  MessagesSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +44,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NotificationCenter } from "@/components/notification-center";
+import { ChatDrawer } from "@/components/chat/chat-drawer";
+import { ChatProvider, useOptionalChat } from "@/components/chat/chat-provider";
+import { forgetKey } from "@/lib/chat/keystore";
+import { movePasswordLayer } from "@/lib/chat/password";
 import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
@@ -51,6 +56,7 @@ import {
 } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { lockedUntilFrom, lockoutText, useSecondsLeft } from "@/lib/lockout";
 import Image from "next/image";
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
@@ -70,6 +76,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isAdmin, setIsAdmin] = useState(false);
   const [userInfo, setUserInfo] = useState<{
+    id?: number;
     username?: string;
     first_name?: string;
     last_name?: string;
@@ -99,6 +106,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     Record<string, string | undefined>
   >({});
   const [changePasswordApiError, setChangePasswordApiError] = useState("");
+  const [changePasswordLockedUntil, setChangePasswordLockedUntil] = useState<number | null>(null);
+  const changePasswordLockLeft = useSecondsLeft(changePasswordLockedUntil);
+  const changePasswordLocked = changePasswordLockLeft > 0;
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("portal_theme");
@@ -126,6 +136,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         ]);
 
         const data = response.data as {
+          id?: number;
           username?: string;
           first_name?: string;
           last_name?: string;
@@ -185,7 +196,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     void loadUserContext();
   }, [pathname, router]);
 
-  const pageHeader = pathname.startsWith("/summaries")
+  const pageHeader = pathname.startsWith("/chat")
+    ? {
+        title: "Chat",
+        subtitle: "Private messages with colleagues, encrypted end to end.",
+      }
+    : pathname.startsWith("/summaries")
     ? {
         title: "Weekly Summary",
         subtitle: "Review your work activity and progress for the past weeks.",
@@ -273,6 +289,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(
     async (reason?: "inactivity" | "manual") => {
+      // Forget the chat key on this computer first, while the session that
+      // can end its server-side secret still exists.
+      await forgetKey().catch(() => undefined);
       try {
         await apiClient.post("/auth/logout", {});
       } catch {
@@ -489,15 +508,23 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         old_password: changePasswordForm.old_password,
         new_password: changePasswordForm.new_password,
       });
+      // Chat's key is partly locked with the password: move that lock over.
+      await movePasswordLayer(changePasswordForm.old_password, changePasswordForm.new_password);
       resetChangePasswordForm();
       setIsChangePasswordOpen(false);
       setIsSidebarOpen(false);
       toast.success("Password changed.");
     } catch (error) {
-      setChangePasswordApiError(
-        extractApiErrorMessage(error, "Failed to change password."),
-      );
-      toast.error(extractApiErrorMessage(error, "Failed to change password."));
+      const until = lockedUntilFrom(error);
+      if (until) {
+        setChangePasswordLockedUntil(until);
+        toast.error("Too many wrong passwords. Try again later.");
+      } else {
+        setChangePasswordApiError(
+          extractApiErrorMessage(error, "Failed to change password."),
+        );
+        toast.error(extractApiErrorMessage(error, "Failed to change password."));
+      }
     } finally {
       setIsChangingPassword(false);
     }
@@ -557,7 +584,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   const PageTitle = pageHasOwnHeading ? "p" : "h1";
 
-  return (
+  const chatUserId = typeof userInfo?.id === "number" ? userInfo.id : null;
+
+  const page = (
     <div className="h-screen overflow-hidden bg-background text-foreground">
       <a
         href="#main-content"
@@ -687,6 +716,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               />
               <span>Goals</span>
             </Link>
+
+            <ChatNavLink active={pathname.startsWith("/chat")} onNavigate={handleCloseSidebar} />
           </div>
 
           {/* Group 2: Insights & Workspace */}
@@ -1035,7 +1066,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         tabIndex={-1}
         className={cn(
           "h-screen max-w-full lg:ml-72 focus:outline-none",
-          pathname === "/summaries"
+          pathname === "/summaries" || pathname.startsWith("/chat")
             ? "pt-[72px] overflow-hidden"
             : "overflow-y-auto overflow-x-hidden pt-[105px] px-4 pb-8 sm:px-6 sm:pb-10 lg:px-8",
         )}
@@ -1164,12 +1195,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               ) : null}
             </div>
 
-            {changePasswordApiError ? (
+            {changePasswordLocked || changePasswordApiError ? (
               <div
                 role="alert"
                 className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
               >
-                {changePasswordApiError}
+                {changePasswordLocked ? lockoutText(changePasswordLockLeft) : changePasswordApiError}
               </div>
             ) : null}
 
@@ -1184,7 +1215,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               </Button>
               <Button
                 type="submit"
-                disabled={isChangingPassword}
+                disabled={isChangingPassword || changePasswordLocked}
                 className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
               >
                 {isChangingPassword ? "Saving..." : "Change password"}
@@ -1266,6 +1297,53 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {chatUserId !== null ? <ChatDrawer /> : null}
     </div>
+  );
+
+  return chatUserId !== null ? (
+    <ChatProvider key={chatUserId} userId={chatUserId}>
+      {page}
+    </ChatProvider>
+  ) : (
+    page
+  );
+}
+
+/** Sidebar link to the chat page, with the unread count when there is one. */
+function ChatNavLink({ active, onNavigate }: { active: boolean; onNavigate: () => void }) {
+  const chat = useOptionalChat();
+  const unread = chat?.unreadTotal ?? 0;
+  return (
+    <Link
+      href="/chat"
+      onClick={onNavigate}
+      className={cn(
+        "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+        active
+          ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <MessagesSquare
+        className={cn(
+          "size-4 transition-transform duration-150",
+          active ? "text-white" : "text-muted-foreground group-hover:text-foreground",
+        )}
+        aria-hidden="true"
+      />
+      <span className="flex-1">Chat</span>
+      {unread ? (
+        <span
+          className={cn(
+            "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold",
+            active ? "bg-white text-[#0d47a1]" : "bg-[#0d47a1] text-white",
+          )}
+        >
+          <span className="sr-only">{unread} unread</span>
+          <span aria-hidden="true">{unread > 99 ? "99+" : unread}</span>
+        </span>
+      ) : null}
+    </Link>
   );
 }

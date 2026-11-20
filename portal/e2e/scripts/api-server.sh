@@ -44,4 +44,7 @@ export SEND_PUSH_CELERY=False
 
 "$PYTHON" manage.py migrate --noinput
 "$PYTHON" manage.py seed_e2e
-exec "$PYTHON" manage.py runserver "127.0.0.1:${E2E_API_PORT:-8100}" --noreload
+# Served by uvicorn (ASGI) rather than runserver so the chat WebSocket works
+# on the same port as the REST API. One worker keeps chat tickets and
+# presence, which live in the in-process cache here, in one place.
+exec "$PYTHON" -m uvicorn portalapi.asgi:application --host 127.0.0.1 --port "${E2E_API_PORT:-8100}" --workers 1 --lifespan off --log-level warning

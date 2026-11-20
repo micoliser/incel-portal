@@ -3,7 +3,7 @@ import { expect, test } from "../support/fixtures";
 import { header, main, sidebar } from "../support/ui";
 
 const COMMON_LINKS = [
-  "Dashboard", "Tasks", "My To-Dos", "Goals", "Reports", "Summaries", "Applications", "My Assets", "Support",
+  "Dashboard", "Tasks", "My To-Dos", "Goals", "Chat", "Reports", "Summaries", "Applications", "My Assets", "Support",
 ];
 const ADMIN_LINKS = [...COMMON_LINKS, "Users", "Departments", "Inventory", "Organization", "Logs"];
 
@@ -69,6 +69,7 @@ test.describe("sidebar links", () => {
     ["Tasks", "/tasks", "Tasks"],
     ["My To-Dos", "/todos", "My To-Dos"],
     ["Goals", "/goals", "Goals"],
+    ["Chat", "/chat", "Chat"],
     ["Reports", "/reports", "Reports"],
     ["Summaries", "/summaries", "Summaries"],
     ["Applications", "/applications", "Applications"],

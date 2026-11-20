@@ -78,19 +78,31 @@ def deliver_push(notification_id) -> None:
     if notification is None:
         return
 
-    private_key = settings.WEB_PUSH_VAPID_PRIVATE_KEY
-    subject = settings.WEB_PUSH_VAPID_SUBJECT
-    subscriptions = PushSubscription.objects.filter(user_id=notification.recipient_id, is_active=True)
-    if not subscriptions.exists():
+    push_to_user(
+        notification.recipient_id,
+        {
+            'title': notification.title,
+            'body': notification.body,
+            'url': notification.link_url,
+            'notificationId': notification.id,
+            'type': notification.notification_type,
+        },
+    )
+
+
+def push_to_user(user_id, payload: dict[str, Any]) -> None:
+    """Send one push payload to every active browser subscription of a user.
+
+    Used directly by chat, whose messages are pushed without an entry in the
+    notification bell."""
+    if not _push_configured():
         return
 
-    payload = {
-        'title': notification.title,
-        'body': notification.body,
-        'url': notification.link_url,
-        'notificationId': notification.id,
-        'type': notification.notification_type,
-    }
+    private_key = settings.WEB_PUSH_VAPID_PRIVATE_KEY
+    subject = settings.WEB_PUSH_VAPID_SUBJECT
+    subscriptions = PushSubscription.objects.filter(user_id=user_id, is_active=True)
+    if not subscriptions.exists():
+        return
 
     try:
         from pywebpush import WebPushException, webpush

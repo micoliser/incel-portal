@@ -33,11 +33,13 @@ from accounts.serializers import (
 from accounts.services import (
     LoginGuard,
     burn_password_check,
+    check_signed_in_password,
     revoke_user_sessions,
     send_account_setup_link,
     send_admin_password_reset_link,
     send_self_service_reset_link,
     should_log_unknown_login,
+    tries_left_text,
     user_for_password_link,
 )
 from audit import log_audit
@@ -146,7 +148,7 @@ class LoginView(APIView):
 
         guard = LoginGuard(email, ip)
         if guard.is_locked():
-            raise AccountLocked(wait=settings.LOGIN_LOCKOUT_SECONDS)
+            raise AccountLocked(wait=guard.seconds_left())
 
         user = User.objects.filter(email__iexact=email).first()
         if user is None:
@@ -158,9 +160,10 @@ class LoginView(APIView):
                     target_type='User',
                     metadata={'email': email},
                 )
-            raise AuthenticationFailed(
-                {'detail': 'Invalid credentials.', 'attempts_remaining': guard.record_failure()}
-            )
+            left = guard.record_failure()
+            if left <= 0:
+                raise AccountLocked(wait=guard.seconds_left())
+            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': left})
 
         # The password is checked before the account status, so only someone
         # who knows the password learns that an account is disabled.
@@ -172,9 +175,10 @@ class LoginView(APIView):
                 target_id=user.id,
                 metadata={'email': email},
             )
-            raise AuthenticationFailed(
-                {'detail': 'Invalid credentials.', 'attempts_remaining': guard.record_failure()}
-            )
+            left = guard.record_failure()
+            if left <= 0:
+                raise AccountLocked(wait=guard.seconds_left())
+            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': left})
 
         if not user.is_active:
             log_audit(
@@ -323,16 +327,11 @@ class ChangePasswordView(APIView):
         old_password = serializer.validated_data['old_password']
         new_password = serializer.validated_data['new_password']
 
-        if not request.user.check_password(old_password):
-            log_audit(
-                action=AuditAction.AUTH_PASSWORD_CHANGE_FAILED,
-                request=request,
-                actor_user=request.user,
-                target_type='User',
-                target_id=request.user.id,
-                metadata={'reason': 'incorrect_old_password'},
-            )
-            raise ValidationError('Old password is incorrect.')
+        left = check_signed_in_password(
+            request, old_password, audit_action=AuditAction.AUTH_PASSWORD_CHANGE_FAILED, where='change_password'
+        )
+        if left is not None:
+            raise ValidationError(f'Old password is incorrect. {tries_left_text(left)}')
 
         request.user.set_password(new_password)
         request.user.save(update_fields=['password'])
