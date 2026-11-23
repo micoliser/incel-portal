@@ -21,6 +21,9 @@ import * as api from "@/lib/chat/api";
 import type { ChatAccount, Participant, RawConversation, RawKey, RawMessage, RawReaction } from "@/lib/chat/api";
 import {
   associatedData,
+  decryptFile,
+  encryptFile,
+  groupInfoAssociatedData,
   reactionAssociatedData,
   backUpPrivateKey,
   derivePasswordSecret,
@@ -47,10 +50,12 @@ import {
   recallPasswordSecret,
   rememberKey,
   rememberPasswordSecret,
+  writePushConfig,
 } from "@/lib/chat/keystore";
 import { releaseDecryptedFiles, uploadEncrypted, type UploadedAttachment } from "@/lib/chat/media";
 import { formatDuration } from "@/lib/chat/voice";
 import { PROFILE_CHANGED_EVENT } from "@/lib/profile-photo";
+import { getApiBaseUrl } from "@/lib/auth";
 import { ChatSocket, type ChatEvent } from "@/lib/chat/socket";
 
 export type ChatStatus = "loading" | "not_set_up" | "locked" | "ready" | "error";
@@ -89,9 +94,26 @@ export type MessageReaction = { userId: number; emoji: string };
 type ReactionPreview = { userId: number; emoji: string; target: ChatMessage; at: string };
 
 export type ChatConversation = RawConversation & {
+  /** Direct chats: the other person. Null in groups. */
   other: Participant | null;
   preview: string;
+  isGroup: boolean;
+  /** The other person's name, or the group's name. */
+  title: string;
+  /** Profile picture, or the group photo (decrypted). */
+  photoUrl: string | null;
+  /** Current members, including pending ones (not people who left). */
+  members: Participant[];
+  /** Decrypted group details (null for direct chats, or until they open). */
+  group: GroupInfo | null;
+  /** Whether you are an admin (or the owner) of this group. */
+  isAdmin: boolean;
+  /** Whether you own this group. */
+  isOwner: boolean;
 };
+
+/** A group's name, description and photo key, as decrypted in the browser. */
+export type GroupInfo = { name: string; description: string; photo: { file_key: string } | null };
 
 type Thread = { messages: ChatMessage[]; hasMore: boolean; loading: boolean; loaded: boolean };
 
@@ -161,6 +183,18 @@ type ChatContextValue = {
   markSeen: (conversationId: string, newestSeq: number) => void;
   /** Set your reaction; the same emoji again (or null) removes it. */
   react: (message: ChatMessage, emoji: string | null) => Promise<void>;
+  /** Create a group with you as admin; returns its id. `photo` is optional. */
+  createGroup: (input: { name: string; description: string; people: api.ChatPerson[]; photo?: File | null }) => Promise<string>;
+  /** Change a group's name, description or photo (photo: File to replace, null to remove, undefined to keep). */
+  updateGroup: (conversationId: string, change: { name?: string; description?: string; photo?: File | null }) => Promise<void>;
+  addGroupMembers: (conversationId: string, people: api.ChatPerson[]) => Promise<void>;
+  removeGroupMember: (conversationId: string, userId: number) => Promise<void>;
+  leaveGroup: (conversationId: string) => Promise<void>;
+  setGroupAdmin: (conversationId: string, userId: number, admin: boolean) => Promise<void>;
+  /** The owner hands the group to another member. */
+  transferOwnership: (conversationId: string, userId: number) => Promise<void>;
+  /** People typing in each conversation (user ids). */
+  typingPeople: Record<string, number[]>;
   /** Forward a message to other chats (at most 5), each followed by `note` if given. */
   forward: (message: ChatMessage, conversationIds: string[], note: string) => Promise<void>;
   /** Load older pages until the message is in the thread. False if it is not there (deleted for you, or too far back). */
@@ -202,9 +236,39 @@ function newId() {
 }
 
 /** The words for a system note, from the reader's point of view. */
-export function systemText(message: ChatMessage, userId: number): string {
+export function systemText(message: ChatMessage, userId: number, nameOf: (id: number) => string = () => "Someone"): string {
   const data = message.systemData;
+  const who = (id: unknown) => (Number(id) === userId ? "You" : nameOf(Number(id)));
+  const whom = (id: unknown) => (Number(id) === userId ? "you" : nameOf(Number(id)));
   switch (message.systemEvent) {
+    case "group_created":
+      return `${who(data.user_id)} created the group`;
+    case "member_added":
+      return `${who(data.user_id)} added ${whom(data.target_id)}`;
+    case "member_removed":
+      return `${who(data.user_id)} removed ${whom(data.target_id)}`;
+    case "member_left":
+      return `${who(data.user_id)} left`;
+    case "member_joined":
+      return Number(data.user_id) === userId ? "You joined the group" : `${nameOf(Number(data.user_id))} joined`;
+    case "info_changed": {
+      const fields = Array.isArray(data.fields) ? (data.fields as string[]) : [];
+      const what =
+        fields.length === 1
+          ? { name: "the group name", description: "the group description", photo: "the group photo" }[fields[0]] ?? "the group details"
+          : "the group details";
+      return `${who(data.user_id)} changed ${what}`;
+    }
+    case "admin_granted":
+      return data.user_id == null
+        ? `${Number(data.target_id) === userId ? "You are" : `${nameOf(Number(data.target_id))} is`} now an admin`
+        : `${who(data.user_id)} made ${whom(data.target_id)} an admin`;
+    case "admin_revoked":
+      return `${who(data.user_id)} removed ${whom(data.target_id)} as admin`;
+    case "owner_transferred":
+      return data.user_id == null
+        ? `${Number(data.target_id) === userId ? "You are" : `${nameOf(Number(data.target_id))} is`} now the group owner`
+        : `${who(data.user_id)} made ${whom(data.target_id)} the group owner`;
     case "invite_sent":
       return Number(data.inviter_id) === userId
         ? "Invitation sent"
@@ -245,11 +309,26 @@ function reactionPreviewText(preview: ReactionPreview, conversation: RawConversa
   return `${who} reacted ${preview.emoji} to "${shorten(messageSummary(preview.target))}"`;
 }
 
-function previewOf(message: ChatMessage | null, userId: number): string {
+/** How a conversation names its people: "You", or their name (first name in previews). */
+export function nameLookup(conversation: RawConversation, userId: number, first = false) {
+  return (id: number) => {
+    if (id === userId) return "You";
+    const name = conversation.participants.find((p) => p.id === id)?.name ?? "Someone";
+    return first ? name.split(" ")[0] : name;
+  };
+}
+
+function previewOf(message: ChatMessage | null, userId: number, conversation?: RawConversation): string {
   if (!message) return "No messages yet";
   if (message.deleted) return "This message was deleted";
+  const nameOf = conversation ? nameLookup(conversation, userId) : undefined;
   // The list row cuts long notes off with "…".
-  if (message.kind === "system") return systemText(message, userId);
+  if (message.kind === "system") return systemText(message, userId, nameOf);
+  // In a group, say who wrote it: "Ada: …", "You: …".
+  if (conversation?.kind === "group" && message.senderId != null) {
+    const who = nameLookup(conversation, userId, true)(message.senderId);
+    return `${who}: ${previewOf(message, userId)}`;
+  }
   if (message.state === "unreadable") return "This message is not available";
   if (message.text) return message.text;
   if (message.attachments.length) {
@@ -269,6 +348,17 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
   const [rawConversations, setRawConversations] = useState<RawConversation[]>([]);
   const [previews, setPreviews] = useState<Record<string, ChatMessage | null>>({});
   const [reactionPreviews, setReactionPreviews] = useState<Record<string, ReactionPreview>>({});
+  const [groupInfos, setGroupInfos] = useState<Record<string, GroupInfo | null>>({});
+  // Read by actions straight after a change, so it is updated at once, not after the next render.
+  const groupInfosRef = useRef(groupInfos);
+  const rememberGroupInfo = useCallback((conversationId: string, info: GroupInfo | null) => {
+    groupInfosRef.current = { ...groupInfosRef.current, [conversationId]: info };
+    setGroupInfos((g) => ({ ...g, [conversationId]: info }));
+  }, []);
+  // Decrypted group photos, by the photo's file key.
+  const [groupPhotos, setGroupPhotos] = useState<Record<string, string>>({});
+  const groupPhotosRef = useRef<Record<string, string>>({});
+  const [typingPeople, setTypingPeople] = useState<Record<string, Record<number, number>>>({});
   const [threads, setThreads] = useState<Record<string, Thread>>({});
   const [typing, setTyping] = useState<Record<string, number>>({});
   const [serverUnread, setServerUnread] = useState(0);
@@ -358,19 +448,28 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     );
   }, []);
 
+  const encryptGroupInfo = useCallback(async (conversationId: string, version: number, key: Uint8Array, value: GroupInfo) => {
+    const encrypted = await encryptJson({ v: 1, ...value }, key, groupInfoAssociatedData(conversationId, version));
+    return { key_version: version, ...encrypted };
+  }, []);
+
   /** Make a new key version for everyone currently in the conversation. */
   const rotateKey = useCallback(
     async (conversationId: string): Promise<{ version: number; key: Uint8Array }> => {
       const fresh = await api.getConversation(conversationId);
       setRawConversations((list) => list.map((c) => (c.id === fresh.id ? fresh : c)));
-      const members = fresh.participants.filter((p) => !p.left);
+      // Pending group members have no chat key yet: they are added when they join.
+      const members = fresh.participants.filter((p) => !p.left && !p.pending);
       if (members.some((m) => !m.public_key || !m.key_id)) {
         throw new Error("Someone in this chat has not set up secure chat.");
       }
       const key = await newSymmetricKey();
       const version = fresh.latest_key_version + 1;
       try {
-        await api.addKeyVersion(conversationId, version, await wrapForMembers(key, members));
+        // A group's details move to the new key too, so later members can read them.
+        const current = groupInfosRef.current[conversationId];
+        const info = fresh.kind === "group" && current ? await encryptGroupInfo(conversationId, version, key, current) : null;
+        await api.addKeyVersion(conversationId, version, await wrapForMembers(key, members), info);
         const map = keysRef.current.get(conversationId) ?? new Map();
         map.set(version, key);
         keysRef.current.set(conversationId, map);
@@ -385,7 +484,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         throw error;
       }
     },
-    [conversationKeys, wrapForMembers],
+    [conversationKeys, encryptGroupInfo, wrapForMembers],
   );
 
   const currentKey = useCallback(
@@ -489,8 +588,86 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     [conversationKeys, decryptReactions],
   );
 
+  const relocking = useRef(new Set<string>());
+  const relockGroupInfo = useCallback(
+    async (conversationId: string, version: number, info: GroupInfo) => {
+      const job = `${conversationId}:${version}`;
+      if (relocking.current.has(job)) return;
+      relocking.current.add(job);
+      try {
+        let map = await conversationKeys(conversationId);
+        if (!map.has(version)) map = await conversationKeys(conversationId, true);
+        const key = map.get(version);
+        if (!key) return;
+        const encrypted = await encryptJson({ v: 1, ...info }, key, groupInfoAssociatedData(conversationId, version));
+        await api.updateGroupInfo(conversationId, { info: { key_version: version, ...encrypted }, changed: [] });
+      } catch {
+        // Another member may have done it first, or a newer key appeared; the next load tries again.
+      } finally {
+        relocking.current.delete(job);
+      }
+    },
+    [conversationKeys],
+  );
+
+  /** Open a group's encrypted details, and its photo if it has one. */
+  const loadGroupInfo = useCallback(
+    async (conversation: RawConversation) => {
+      const raw = conversation.info;
+      if (!raw) {
+        rememberGroupInfo(conversation.id, null);
+        return;
+      }
+      let info: GroupInfo | null = null;
+      try {
+        let map = await conversationKeys(conversation.id);
+        if (!map.has(raw.key_version)) map = await conversationKeys(conversation.id, true);
+        const key = map.get(raw.key_version);
+        if (key) {
+          const value = await decryptJson<Partial<GroupInfo>>(
+            raw.ciphertext,
+            raw.nonce,
+            key,
+            groupInfoAssociatedData(conversation.id, raw.key_version),
+          );
+          info = {
+            name: typeof value.name === "string" && value.name.trim() ? value.name.slice(0, 80) : "Group",
+            description: typeof value.description === "string" ? value.description.slice(0, 500) : "",
+            photo: value.photo && typeof value.photo.file_key === "string" ? { file_key: value.photo.file_key } : null,
+          };
+        }
+      } catch {
+        info = null;
+      }
+      if (info) rememberGroupInfo(conversation.id, info);
+      else if (!(conversation.id in groupInfosRef.current)) rememberGroupInfo(conversation.id, null);
+      // Details still locked with an older key (someone who could not read them made the newest
+      // key, for example a member who just joined): re-lock them with the newest key, so everyone
+      // in the group, including new members, can read them.
+      if (info && raw.key_version < conversation.latest_key_version) {
+        void relockGroupInfo(conversation.id, conversation.latest_key_version, info);
+      }
+      const fileKey = info?.photo?.file_key;
+      if (fileKey && conversation.has_photo && !groupPhotosRef.current[fileKey]) {
+        groupPhotosRef.current[fileKey] = "loading";
+        try {
+          const response = await fetch(await api.groupPhotoUrl(conversation.id));
+          if (!response.ok) throw new Error("Download failed.");
+          const plain = await decryptFile(await response.arrayBuffer(), fileKey);
+          const url = URL.createObjectURL(new Blob([plain as BlobPart], { type: "image/jpeg" }));
+          groupPhotosRef.current[fileKey] = url;
+          setGroupPhotos((p) => ({ ...p, [fileKey]: url }));
+        } catch {
+          delete groupPhotosRef.current[fileKey];
+        }
+      }
+    },
+    [conversationKeys, rememberGroupInfo, relockGroupInfo],
+  );
+
   const updatePreview = useCallback(
     async (conversation: RawConversation) => {
+      if (conversation.kind === "group") void loadGroupInfo(conversation);
       const message = conversation.last_message ? await decrypt(conversation.last_message) : null;
       setPreviews((current) => ({ ...current, [conversation.id]: message }));
       const last = conversation.last_reaction;
@@ -503,7 +680,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         return next;
       });
     },
-    [decrypt, decryptReactions],
+    [decrypt, decryptReactions, loadGroupInfo],
   );
 
   // --- Loading ------------------------------------------------------------
@@ -871,6 +1048,18 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     await forgetKey(); // also fires portal-chat-lock, which clears memory
   }, []);
 
+  /** Drop a conversation you are no longer in (left, or removed from a group). */
+  const forgetConversation = useCallback((conversationId: string) => {
+    setRawConversations((list) => list.filter((c) => c.id !== conversationId));
+    setThreads((t) => {
+      const next = { ...t };
+      delete next[conversationId];
+      return next;
+    });
+    keysRef.current.delete(conversationId);
+    setDrawer((d) => (d.conversationId === conversationId ? { ...d, conversationId: null } : d));
+  }, []);
+
   // --- Live events ----------------------------------------------------------
 
   const handleEvent = useCallback(
@@ -885,6 +1074,11 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
             return;
           }
           if (raw.kind === "system") keysRef.current.delete(raw.conversation_id);
+          // Someone who was pending just joined a group: make the key that includes them now
+          // (with the details re-locked), so they can read the name and photo straight away.
+          if (raw.system_event === "member_joined" && Number(raw.system_data?.user_id) !== userId) {
+            void rotateKey(raw.conversation_id).catch(() => undefined);
+          }
           const message = await decrypt(raw);
           upsertMessages(setThreads, raw.conversation_id, [message]);
           setPreviews((p) => ({ ...p, [raw.conversation_id]: message }));
@@ -993,6 +1187,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           try {
             const fresh = await api.getConversation(conversationId);
             setRawConversations((list) => list.map((c) => (c.id === fresh.id ? fresh : c)));
+            // A group's details may now be on an older key than the newest: reload (and re-lock) them.
+            if (fresh.kind === "group") void updatePreview(fresh);
           } catch {
             // Picked up on the next refresh.
           }
@@ -1042,15 +1238,34 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           return;
         }
         case "typing": {
-          if (Number(data.user_id) === userId) return;
-          setTyping((t) => ({ ...t, [conversationId]: Date.now() + 4000 }));
+          const typist = Number(data.user_id);
+          if (typist === userId) return;
+          const until = Date.now() + 4000;
+          setTyping((t) => ({ ...t, [conversationId]: until }));
+          setTypingPeople((t) => ({ ...t, [conversationId]: { ...(t[conversationId] ?? {}), [typist]: until } }));
           return;
         }
+        case "conversation.updated": {
+          // Members, roles or group details changed.
+          try {
+            const fresh = await api.getConversation(conversationId);
+            setRawConversations((list) =>
+              list.some((c) => c.id === fresh.id) ? list.map((c) => (c.id === fresh.id ? fresh : c)) : list,
+            );
+            void updatePreview(fresh);
+          } catch {
+            // Picked up on the next refresh.
+          }
+          return;
+        }
+        case "conversation.removed":
+          forgetConversation(conversationId);
+          return;
         default:
           return;
       }
     },
-    [decrypt, decryptReactions, refreshConversations, userId],
+    [decrypt, decryptReactions, forgetConversation, refreshConversations, rotateKey, updatePreview, userId],
   );
 
   const handleEventRef = useRef(handleEvent);
@@ -1090,6 +1305,11 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     return () => window.clearInterval(timer);
   }, [status, refreshConversations]);
 
+  // Tell the service worker where the API is, so it can decrypt notification previews.
+  useEffect(() => {
+    if (status === "ready") void writePushConfig({ apiBase: getApiBaseUrl() });
+  }, [status]);
+
   // A new profile picture shows in chat straight away (yours, in every chat you are in).
   useEffect(() => {
     if (status !== "ready") return;
@@ -1106,6 +1326,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       setTyping((t) => {
         const next = Object.fromEntries(Object.entries(t).filter(([, until]) => until > now));
         return Object.keys(next).length === Object.keys(t).length ? t : next;
+      });
+      setTypingPeople((t) => {
+        const next: Record<string, Record<number, number>> = {};
+        for (const [conversation, people] of Object.entries(t)) {
+          const still = Object.fromEntries(Object.entries(people).filter(([, until]) => until > now));
+          if (Object.keys(still).length) next[conversation] = still;
+        }
+        return next;
       });
     }, 1000);
     return () => window.clearInterval(timer);
@@ -1124,6 +1352,171 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
   }, [status]);
 
   // --- Actions --------------------------------------------------------------
+
+  const self = useCallback((): Participant => {
+    const me = accountRef.current!;
+    return {
+      id: userId,
+      name: "",
+      email: "",
+      department: null,
+      is_active: true,
+      chat_ready: true,
+      key_id: me.key_id,
+      public_key: me.public_key,
+      last_seen_at: null,
+      last_read_seq: 0,
+      left: false,
+    };
+  }, [userId]);
+
+  const replaceConversation = useCallback(
+    (conversation: RawConversation) => {
+      setRawConversations((list) => sortConversations([conversation, ...list.filter((c) => c.id !== conversation.id)]));
+      void updatePreview(conversation);
+    },
+    [updatePreview],
+  );
+
+  /** Encrypt and upload a group photo; returns where it is stored and its key. */
+  const uploadGroupPhoto = useCallback(async (conversationId: string, photo: File) => {
+    const encrypted = await encryptFile(await photo.arrayBuffer());
+    const reserved = await api.reserveGroupPhoto(conversationId, encrypted.bytes.length);
+    const response = await fetch(reserved.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": reserved.content_type },
+      body: encrypted.bytes as BlobPart,
+    });
+    if (!response.ok) throw new Error("The photo could not be uploaded.");
+    const url = URL.createObjectURL(photo);
+    groupPhotosRef.current[encrypted.key] = url;
+    setGroupPhotos((p) => ({ ...p, [encrypted.key]: url }));
+    return { objectKey: reserved.object_key, fileKey: encrypted.key };
+  }, []);
+
+  const updateGroup = useCallback(
+    async (conversationId: string, change: { name?: string; description?: string; photo?: File | null }) => {
+      const current = groupInfosRef.current[conversationId] ?? { name: "Group", description: "", photo: null };
+      const next: GroupInfo = {
+        name: change.name?.trim() || current.name,
+        description: change.description !== undefined ? change.description.trim() : current.description,
+        photo: current.photo,
+      };
+      const changed: ("name" | "description" | "photo")[] = [];
+      if (next.name !== current.name) changed.push("name");
+      if (next.description !== current.description) changed.push("description");
+      let photoObjectKey: string | null | undefined;
+      if (change.photo !== undefined) {
+        changed.push("photo");
+        if (change.photo) {
+          const uploaded = await uploadGroupPhoto(conversationId, change.photo);
+          next.photo = { file_key: uploaded.fileKey };
+          photoObjectKey = uploaded.objectKey;
+        } else {
+          next.photo = null;
+          photoObjectKey = null;
+        }
+      }
+      if (!changed.length) return;
+      const { version, key } = await currentKey(conversationId);
+      const info = await encryptGroupInfo(conversationId, version, key, next);
+      const fresh = await api.updateGroupInfo(conversationId, {
+        info,
+        changed,
+        ...(photoObjectKey !== undefined ? { photo_object_key: photoObjectKey } : {}),
+      });
+      rememberGroupInfo(conversationId, next);
+      replaceConversation(fresh);
+    },
+    [currentKey, encryptGroupInfo, rememberGroupInfo, replaceConversation, uploadGroupPhoto],
+  );
+
+  const createGroup = useCallback(
+    async (input: { name: string; description: string; people: api.ChatPerson[]; photo?: File | null }) => {
+      if (!input.name.trim()) throw new Error("Give the group a name.");
+      // The id is made here, like message ids, so the encrypted details can be bound to it.
+      const id = newId();
+      const key = await newSymmetricKey();
+      const ready = input.people.filter((p) => p.chat_ready && p.public_key && p.key_id);
+      const keys = await wrapForMembers(key, [self(), ...ready.map((p) => ({ ...p, last_read_seq: 0, left: false }))]);
+      const value: GroupInfo = { name: input.name.trim(), description: input.description.trim(), photo: null };
+      const created = await api.createGroup({
+        id,
+        member_ids: input.people.map((p) => p.id),
+        keys,
+        info: await encryptGroupInfo(id, 1, key, value),
+      });
+      keysRef.current.set(created.id, new Map([[1, key]]));
+      rememberGroupInfo(created.id, value);
+      replaceConversation(created);
+      if (input.photo) {
+        try {
+          await updateGroup(created.id, { photo: input.photo });
+        } catch {
+          // The group exists; the photo can be added from the group info.
+        }
+      }
+      return created.id;
+    },
+    [encryptGroupInfo, rememberGroupInfo, replaceConversation, self, updateGroup, wrapForMembers],
+  );
+
+  const addGroupMembers = useCallback(
+    async (conversationId: string, people: api.ChatPerson[]) => {
+      const fresh = await api.getConversation(conversationId);
+      const version = fresh.latest_key_version + 1;
+      const key = await newSymmetricKey();
+      const current = fresh.participants.filter((p) => !p.left && !p.pending);
+      const ready = people.filter((p) => p.chat_ready && p.public_key && p.key_id);
+      const keys = await wrapForMembers(key, [...current, ...ready.map((p) => ({ ...p, last_read_seq: 0, left: false }))]);
+      const value = groupInfosRef.current[conversationId];
+      const info = value ? await encryptGroupInfo(conversationId, version, key, value) : null;
+      const updated = await api.addGroupMembers(conversationId, {
+        member_ids: people.map((p) => p.id),
+        version,
+        keys,
+        info,
+      });
+      const map = keysRef.current.get(conversationId) ?? new Map<number, Uint8Array>();
+      map.set(version, key);
+      keysRef.current.set(conversationId, map);
+      replaceConversation(updated);
+    },
+    [encryptGroupInfo, replaceConversation, wrapForMembers],
+  );
+
+  const removeGroupMember = useCallback(
+    async (conversationId: string, memberId: number) => {
+      await api.removeGroupMember(conversationId, memberId);
+      if (memberId === userId) {
+        forgetConversation(conversationId);
+        return;
+      }
+      replaceConversation(await api.getConversation(conversationId));
+    },
+    [forgetConversation, replaceConversation, userId],
+  );
+
+  const leaveGroup = useCallback(
+    (conversationId: string) => removeGroupMember(conversationId, userId),
+    [removeGroupMember, userId],
+  );
+
+  const setGroupAdmin = useCallback(
+    async (conversationId: string, memberId: number, admin: boolean) => {
+      await api.setGroupAdmin(conversationId, memberId, admin);
+      replaceConversation(await api.getConversation(conversationId));
+    },
+    [replaceConversation],
+  );
+
+  const transferOwnership = useCallback(
+    async (conversationId: string, memberId: number) => {
+      await api.transferGroupOwner(conversationId, memberId);
+      replaceConversation(await api.getConversation(conversationId));
+    },
+    [replaceConversation],
+  );
 
   const openWith = useCallback(
     async (person: api.ChatPerson) => {
@@ -1500,9 +1893,22 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
 
   const conversations = useMemo<ChatConversation[]>(
     () =>
-      rawConversations.map((c) => ({
+      rawConversations.map((c) => {
+        const isGroup = c.kind === "group";
+        const other = isGroup ? null : (c.participants.find((p) => p.id !== userId) ?? null);
+        const group = isGroup ? (groupInfos[c.id] ?? null) : null;
+        const photoKey = group?.photo?.file_key;
+        const groupPhoto = photoKey ? groupPhotos[photoKey] : undefined;
+        return {
         ...c,
-        other: c.participants.find((p) => p.id !== userId) ?? null,
+        other,
+        isGroup,
+        group,
+        title: isGroup ? (group?.name ?? "Group") : (other?.name ?? "Conversation"),
+        photoUrl: isGroup ? (groupPhoto && groupPhoto !== "loading" ? groupPhoto : null) : (other?.avatar_url ?? null),
+        members: c.participants.filter((p) => !p.left),
+        isAdmin: c.role === "admin" || c.role === "owner",
+        isOwner: c.role === "owner",
         preview: (() => {
           // A reaction newer than the last message is what the list shows.
           const reaction = reactionPreviews[c.id];
@@ -1510,10 +1916,11 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           if (reaction && (!lastAt || new Date(reaction.at).getTime() > new Date(lastAt).getTime())) {
             return reactionPreviewText(reaction, c, userId);
           }
-          return previewOf(previews[c.id] ?? null, userId);
+          return previewOf(previews[c.id] ?? null, userId, c);
         })(),
-      })),
-    [previews, rawConversations, reactionPreviews, userId],
+        };
+      }),
+    [groupInfos, groupPhotos, previews, rawConversations, reactionPreviews, userId],
   );
 
   const unreadTotal =
@@ -1555,6 +1962,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     markSeen,
     react,
     forward,
+    createGroup,
+    updateGroup,
+    addGroupMembers,
+    removeGroupMember,
+    leaveGroup,
+    setGroupAdmin,
+    transferOwnership,
+    typingPeople: Object.fromEntries(Object.entries(typingPeople).map(([c, people]) => [c, Object.keys(people).map(Number)])),
     findMessage,
     setViewing,
     sendTyping,

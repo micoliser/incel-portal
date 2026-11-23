@@ -45,3 +45,6 @@ next-env.d.ts
 /e2e/.report
 /e2e/.auth
 /e2e/.mail
+
+# copied from node_modules by scripts/copy-sodium.mjs (for the service worker)
+/public/vendor/

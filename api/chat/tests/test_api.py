@@ -19,6 +19,7 @@ from chat.models import (
     Message,
     MessageAttachment,
     MessageReaction,
+    Participant,
 )
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
@@ -663,6 +664,39 @@ class PushTests(ChatTestCase):
         self.assertEqual(user_id, self.other.pk)
         self.assertEqual(payload['body'], 'New message')
         self.assertEqual(payload['url'], f'/chat/{conversation["id"]}')
+        # The push carries the message only encrypted, for the service worker to open.
+        chat = payload['chat']
+        message = Message.objects.get(conversation_id=conversation['id'], kind='text')
+        self.assertEqual(chat['ciphertext'], message.ciphertext)
+        self.assertEqual(chat['message_id'], str(message.id))
+        self.assertEqual(chat['conversation_kind'], 'direct')
+        self.assertNotIn('text', chat)
+
+    @override_settings(WEB_PUSH_VAPID_PUBLIC_KEY='p', WEB_PUSH_VAPID_PRIVATE_KEY='k', WEB_PUSH_VAPID_SUBJECT='mailto:x@y')
+    def test_push_is_sent_even_with_the_portal_open(self):
+        from chat import realtime
+
+        self.set_up_chat(self.staff_user)
+        self.set_up_chat(self.other)
+        conversation = self.start(self.staff_user, self.other)
+        realtime.mark_online(self.other.pk)  # a portal tab open
+        with patch('notifications.services.push_to_user') as push:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.send(self.staff_user, conversation['id'])
+        push.assert_called_once()
+        self.assertEqual(push.call_args.args[0], self.other.pk)
+
+    @override_settings(WEB_PUSH_VAPID_PUBLIC_KEY='p', WEB_PUSH_VAPID_PRIVATE_KEY='k', WEB_PUSH_VAPID_SUBJECT='mailto:x@y')
+    def test_large_messages_are_fetched_not_pushed(self):
+        self.set_up_chat(self.staff_user)
+        self.set_up_chat(self.other)
+        conversation = self.start(self.staff_user, self.other)
+        with patch('notifications.services.push_to_user') as push:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.send(self.staff_user, conversation['id'], ciphertext=b64(3000))
+        chat = push.call_args.args[1]['chat']
+        self.assertNotIn('ciphertext', chat)
+        self.assertEqual(chat['key_version'], 1)
 
 
 @override_settings(
@@ -700,3 +734,189 @@ class ChatAdminTests(ChatTestCase):
         self.assertEqual(
             AuditLog.objects.filter(action=AuditAction.CHAT_ADMIN_VIEWED, actor_user=root).count(), 2
         )
+
+
+def info(version=1):
+    return {'key_version': version, 'nonce': b64(24), 'ciphertext': b64(80)}
+
+
+class GroupTests(ChatTestCase):
+    def setUp(self):
+        super().setUp()
+        self.set_up_chat(self.staff_user)
+        self.set_up_chat(self.other)
+        self.fourth = User.objects.create_user(username='f@example.com', email='f@example.com', password='x', first_name='Fola')
+        StaffProfile.objects.create(user=self.fourth, role=self.role_staff, department=self.dep_hr)
+
+    def create(self, member_ids=None, keys=None):
+        self.as_user(self.staff_user)
+        from django.core import mail
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/v1/chat/groups',
+                {
+                    'id': str(uuid.uuid4()),
+                    'member_ids': member_ids or [self.other.pk, self.outsider.pk],
+                    'keys': keys or self.wrapped_for(self.staff_user, self.other),
+                    'info': info(),
+                },
+                format='json',
+            )
+        self.mail = mail.outbox
+        return response
+
+    def test_create_with_a_pending_member_and_message(self):
+        response = self.create()
+        self.assertEqual(response.status_code, 201, response.content)
+        group = response.json()
+        self.assertEqual(group['kind'], 'group')
+        self.assertEqual(group['role'], 'owner')
+        self.assertIsNotNone(group['info'])
+        people = {p['id']: p for p in group['participants']}
+        self.assertTrue(people[self.outsider.pk]['pending'])
+        self.assertEqual(people[self.staff_user.pk]['role'], 'owner')
+        self.assertEqual([m.to for m in self.mail], [[self.outsider.email]])
+        self.assertTrue(Notification.objects.filter(recipient=self.outsider).exists())
+        notes = list(Message.objects.filter(conversation_id=group['id'], kind='system').values_list('system_event', flat=True))
+        self.assertEqual(notes, ['group_created'])
+
+        # Messages need keys for the members who have chat; pending ones are skipped.
+        self.assertEqual(self.send(self.other, group['id']).status_code, 201)
+
+        # When the pending member sets up chat they join, and the key must include them.
+        self.set_up_chat(self.outsider)
+        participant = Participant.objects.get(conversation_id=group['id'], user=self.outsider)
+        self.assertFalse(participant.pending)
+        self.assertTrue(Message.objects.filter(conversation_id=group['id'], system_event='member_joined').exists())
+        self.assertEqual(self.send(self.staff_user, group['id']).status_code, 409)
+        self.as_user(self.staff_user)
+        response = self.client.post(
+            f'/api/v1/chat/conversations/{group["id"]}/keys',
+            {'version': 2, 'keys': self.wrapped_for(self.staff_user, self.other, self.outsider), 'info': info(2)},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(Conversation.objects.get(pk=group['id']).info_key_version, 2)
+        self.assertEqual(self.send(self.staff_user, group['id'], key_version=2).status_code, 201)
+
+    def test_any_member_can_relock_the_details_with_the_newest_key(self):
+        group = self.create().json()
+        base = f'/api/v1/chat/conversations/{group["id"]}'
+        # A key made without the details (by someone who could not read them).
+        self.as_user(self.other)
+        self.client.post(f'{base}/keys', {'version': 2, 'keys': self.wrapped_for(self.staff_user, self.other)}, format='json')
+        self.assertEqual(Conversation.objects.get(pk=group['id']).info_key_version, 1)
+        # A plain member re-locks them: no note; changing them still needs an admin.
+        relocked = self.client.patch(f'{base}/info', {'info': info(2), 'changed': []}, format='json')
+        self.assertEqual(relocked.status_code, 200, relocked.content)
+        self.assertEqual(Conversation.objects.get(pk=group['id']).info_key_version, 2)
+        self.assertFalse(Message.objects.filter(conversation_id=group['id'], system_event='info_changed').exists())
+        self.assertEqual(
+            self.client.patch(f'{base}/info', {'info': info(2), 'changed': ['name']}, format='json').status_code, 403
+        )
+
+    def test_keys_must_cover_every_member_with_chat(self):
+        response = self.create(keys=self.wrapped_for(self.staff_user))
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(Conversation.objects.filter(kind='group').exists())
+
+    def test_admins_manage_members_and_removed_people_lose_access(self):
+        group = self.create().json()
+        base = f'/api/v1/chat/conversations/{group["id"]}'
+
+        # Members cannot manage the group.
+        self.as_user(self.other)
+        self.assertEqual(self.client.delete(f'{base}/members/{self.outsider.pk}').status_code, 403)
+        self.assertEqual(
+            self.client.patch(f'{base}/info', {'info': info(), 'changed': ['name']}, format='json').status_code, 403
+        )
+
+        # The admin adds someone with a new key covering everyone.
+        self.set_up_chat(self.fourth)
+        self.as_user(self.staff_user)
+        added = self.client.post(
+            f'{base}/members',
+            {
+                'member_ids': [self.fourth.pk],
+                'version': 2,
+                'keys': self.wrapped_for(self.staff_user, self.other, self.fourth),
+                'info': info(2),
+            },
+            format='json',
+        )
+        self.assertEqual(added.status_code, 201, added.content)
+        self.assertTrue(Message.objects.filter(conversation_id=group['id'], system_event='member_added').exists())
+
+        # Removing someone: they lose access, and the old key no longer covers the group.
+        self.assertEqual(self.client.delete(f'{base}/members/{self.other.pk}').status_code, 204)
+        self.as_user(self.other)
+        self.assertEqual(self.client.get(base).status_code, 404)
+        self.assertEqual(self.send(self.staff_user, group['id'], key_version=2).status_code, 409)
+
+        # Making an admin, then the owner leaving: the longest-standing admin becomes owner.
+        self.as_user(self.staff_user)
+        self.assertEqual(self.client.patch(f'{base}/members/{self.fourth.pk}', {'admin': True}, format='json').status_code, 204)
+        self.assertEqual(self.client.delete(f'{base}/members/{self.staff_user.pk}').status_code, 204)
+        roles = dict(Participant.objects.filter(conversation_id=group['id'], left_at__isnull=True).values_list('user_id', 'role'))
+        self.assertEqual(roles[self.fourth.pk], 'owner')
+        note = Message.objects.filter(conversation_id=group['id'], system_event='owner_transferred').get()
+        self.assertTrue(note.system_data['automatic'])
+
+    def test_owner_leaving_without_admins_hands_over_to_the_longest_standing_member(self):
+        group = self.create().json()
+        self.as_user(self.staff_user)
+        self.client.delete(f'/api/v1/chat/conversations/{group["id"]}/members/{self.staff_user.pk}')
+        self.assertEqual(Participant.objects.get(conversation_id=group['id'], user=self.other).role, 'owner')
+
+    def test_only_the_owner_manages_admins_and_nobody_removes_the_owner(self):
+        self.set_up_chat(self.fourth)
+        group = self.create(
+            member_ids=[self.other.pk, self.fourth.pk],
+            keys=self.wrapped_for(self.staff_user, self.other, self.fourth),
+        ).json()
+        base = f'/api/v1/chat/conversations/{group["id"]}'
+        self.as_user(self.staff_user)
+        self.client.patch(f'{base}/members/{self.other.pk}', {'admin': True}, format='json')
+        self.client.patch(f'{base}/members/{self.fourth.pk}', {'admin': True}, format='json')
+
+        # An admin cannot demote or remove another admin, or touch the owner.
+        self.as_user(self.other)
+        self.assertEqual(self.client.patch(f'{base}/members/{self.fourth.pk}', {'admin': False}, format='json').status_code, 403)
+        self.assertEqual(self.client.delete(f'{base}/members/{self.fourth.pk}').status_code, 403)
+        self.assertEqual(self.client.delete(f'{base}/members/{self.staff_user.pk}').status_code, 403)
+        self.assertEqual(self.client.patch(f'{base}/members/{self.staff_user.pk}', {'admin': False}, format='json').status_code, 403)
+        self.assertEqual(self.client.post(f'{base}/owner', {'user_id': self.other.pk}, format='json').status_code, 403)
+
+        # The owner can demote an admin and hand the group over, becoming an admin.
+        self.as_user(self.staff_user)
+        self.assertEqual(self.client.patch(f'{base}/members/{self.fourth.pk}', {'admin': False}, format='json').status_code, 204)
+        self.assertEqual(self.client.post(f'{base}/owner', {'user_id': self.other.pk}, format='json').status_code, 204)
+        roles = dict(Participant.objects.filter(conversation_id=group['id']).values_list('user_id', 'role'))
+        self.assertEqual((roles[self.other.pk], roles[self.staff_user.pk]), ('owner', 'admin'))
+        self.assertTrue(Message.objects.filter(conversation_id=group['id'], system_event='owner_transferred').exists())
+
+    def test_group_details_and_photo(self):
+        group = self.create().json()
+        base = f'/api/v1/chat/conversations/{group["id"]}'
+        self.as_user(self.staff_user)
+        self.assertEqual(
+            self.client.patch(f'{base}/info', {'info': info(2), 'changed': ['name']}, format='json').status_code, 409
+        )  # must use the newest key
+        self.assertEqual(
+            self.client.patch(
+                f'{base}/info', {'info': info(), 'changed': ['photo'], 'photo_object_key': 'elsewhere/x.bin'}, format='json'
+            ).status_code,
+            400,
+        )
+        with patch('chat.storage.upload_url', return_value='https://upload.example/x'):
+            reserved = self.client.post(f'{base}/photo', {'size': 30_000}, format='json').json()
+        saved = self.client.patch(
+            f'{base}/info',
+            {'info': info(), 'changed': ['name', 'photo'], 'photo_object_key': reserved['object_key']},
+            format='json',
+        )
+        self.assertEqual(saved.status_code, 200, saved.content)
+        self.assertTrue(saved.json()['has_photo'])
+        note = Message.objects.filter(conversation_id=group['id'], system_event='info_changed').get()
+        self.assertEqual(note.system_data['fields'], ['name', 'photo'])

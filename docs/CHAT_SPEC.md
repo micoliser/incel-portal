@@ -240,7 +240,7 @@ Online status and last seen come with the conversation and people lists, are upd
 
 Sending path: browser → `POST messages` (gunicorn, normal auth, validation, throttling) → saved in Postgres → `transaction.on_commit` → `group_send` to each participant's `user_<id>` group → their open sockets. If the socket is down, the client re-fetches messages after the last `seq` it holds on reconnect, so nothing is lost.
 
-Push: if a recipient has no presence key, send a web push "New message from {name}" with a link to the conversation, reusing `PushSubscription` and the push delivery code. Chat messages do not create entries in the notification bell. Muted conversations send no push.
+Push: every new message sends a web push to the other members (like other portal notifications, whether or not they have a portal tab open) with a link to the conversation, reusing `PushSubscription` and the push delivery code. Its plain title is the sender's name and its body "New message" (or "New message in a group"), but the push also carries the message **still encrypted** (`chat`: conversation and message ids, `seq`, `sender_id`, `conversation_kind`, `key_version`, `revision`, and `nonce` and `ciphertext` when the ciphertext is under 2,400 characters; web push payloads are limited to about 4 KB). The service worker (`public/sw.js`) loads libsodium from `/vendor` (copied from `node_modules` by `scripts/copy-sodium.mjs` on install and before `dev` and `build`; `public/vendor/` is not committed) and `public/chat-push.js`, which opens the sealed key in IndexedDB with the server session secret (exactly as a chat tab does, refreshing the sign-in once if needed), opens the conversation key, decrypts the message (fetching it by `seq` if it was too big for the push) and, for groups, the group name. Notifications then read "Ada" / "The invoices are ready", or for a group "Finance team" / "Ada: …". The server never sends readable text, and the push service only sees encrypted bytes. If chat is locked or signed out in that browser, the 12-hour session secret has expired, or previews are off, the plain title and body show. **Show message previews in notifications** in the chat settings menu turns previews off for that browser (stored in IndexedDB as `config`, with the API address the page writes there). Chat messages do not create entries in the notification bell. Muted conversations send no push; pending group members get none.
 
 ### 4.4 Deployment
 
@@ -250,6 +250,28 @@ Push: if a recipient has no presence key, send a web push "New message from {nam
 - Own hostname, e.g. `workspacews.incelgroup.com`, proxied by Cloudflare (WebSockets are on by default).
 - Same environment variables as the API, plus `CHANNEL_LAYER_URL`, `CHAT_ATTACHMENT_S3_PREFIX`, and on the portal `NEXT_PUBLIC_CHAT_WS_URL`.
 - The REST API stays on gunicorn unchanged. If the realtime app is down, chat still works by refreshing; the rest of the portal is unaffected.
+
+### 4.5 Groups
+
+A group is a `Conversation` of kind `group`. Keys work exactly as for direct chats: one conversation key per version, locked for each member; the server refuses a message unless the newest version covers exactly the current members who have chat (`_keyed_member_ids`), and the browser then makes a new version by itself.
+
+- **Details:** name (up to 80 characters), description (up to 500) and the photo's file key are encrypted together as JSON with the newest key version (`info_*` on `Conversation`, associated data `chat-info-v1|conversation|keyVersion`). Every new key version carries them re-encrypted, so people added later can read them. The server knows who is in a group, not what it is called. The photo (cropped to 512 × 512, then encrypted like a file, up to 512 KB) is stored at `<chat prefix>/<conversation>/group-photo-<uuid>.bin` and downloaded through a short-lived link.
+- **Creating:** `POST groups {id, member_ids, keys, info}`; the browser makes the id (like message ids) so the details can be bound to it. The creator is admin. Up to 100 people. People without chat join as **pending**: no key is made for them, they get the chat invitation notice and email, and when they set up chat they join (a "joined" note) and the next message makes a key that includes them. They cannot read anything sent before they joined.
+- **Roles:** the **owner** (the creator, or whoever they hand it to) cannot be removed or demoted by anyone, and can do everything. **Admins** add and remove *members*, edit the details and make members admins; they cannot remove or demote other admins or the owner. Only the owner removes or demotes admins and hands over ownership (`POST conversations/{id}/owner {user_id}`; the old owner becomes an admin). Everyone can message, react, reply, forward and leave. An owner who leaves is asked to choose who takes over; if they do not (or leave some other way), the longest-standing admin becomes owner, otherwise the longest-standing member (note `owner_transferred`, with `automatic`). Groups created before owners existed got the creator as owner (or the longest-standing admin if the creator had left).
+- **Adding:** the adder makes a new key version covering everyone now in the group, with the details re-encrypted; new members read from then on, not before. **Removing / leaving:** access ends at once (the conversation disappears for them, `conversation.removed`), and the next message makes a key without them.
+- **Notes:** `group_created`, `member_added`, `member_removed`, `member_left`, `member_joined`, `info_changed` (which fields, not their values), `admin_granted`, `admin_revoked`, `owner_transferred`.
+- **Screens:** New group (people, then name, description and photo); the group header (members, how many online, who is typing) opens Group info (members with Admin and Invited badges, Add people, Edit details, Make admin / Remove, Leave group). Messages show the sender's name (coloured per person) above their first message in a row. Ticks show "seen by everyone"; **Message info** on your own messages lists who has seen it and who has not. The conversation list shows "Ada: …" previews and finds groups by name.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `groups` | Create a group |
+| PATCH | `conversations/{id}/info` | Admins: new encrypted details (`changed`: name, description, photo; `photo_object_key` to set or null to remove the photo) |
+| GET, POST | `conversations/{id}/photo` | Download link / upload link for a new group photo (admins) |
+| POST | `conversations/{id}/members` | Admins: add people, with the next key version and re-encrypted details |
+| PATCH, DELETE | `conversations/{id}/members/{user_id}` | Make admin (admins) or not (owner) / remove members (admins) or admins (owner); DELETE yourself to leave |
+| POST | `conversations/{id}/owner` | The owner hands the group to another member |
+
+Events: `conversation.updated` (members, roles or details changed), `conversation.removed` (you were removed or left).
 
 ## 5. Portal
 

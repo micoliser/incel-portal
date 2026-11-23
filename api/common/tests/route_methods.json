@@ -169,11 +169,30 @@
       "post"
     ]
   },
+  "api/v1/chat/conversations/{}/info": {
+    "name": "chat-group-info",
+    "methods": [
+      "patch"
+    ]
+  },
   "api/v1/chat/conversations/{}/keys": {
     "name": "chat-conversation-keys",
     "methods": [
       "get",
       "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/members": {
+    "name": "chat-group-members",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/members/{}": {
+    "name": "chat-group-member",
+    "methods": [
+      "delete",
+      "patch"
     ]
   },
   "api/v1/chat/conversations/{}/messages": {
@@ -183,8 +202,27 @@
       "post"
     ]
   },
+  "api/v1/chat/conversations/{}/owner": {
+    "name": "chat-group-owner",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/photo": {
+    "name": "chat-group-photo",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
   "api/v1/chat/conversations/{}/read": {
     "name": "chat-conversation-read",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/groups": {
+    "name": "chat-groups",
     "methods": [
       "post"
     ]

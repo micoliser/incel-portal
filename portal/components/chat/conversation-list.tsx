@@ -1,10 +1,11 @@
 "use client";
 
-import { Loader2, Search, X } from "lucide-react";
+import { Loader2, Search, Users, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useChat, type ChatConversation } from "@/components/chat/chat-provider";
+import { CreateGroupDialog } from "@/components/chat/create-group-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { searchPeople, type ChatPerson } from "@/lib/chat/api";
@@ -99,8 +100,17 @@ export function ConversationList({
   activeId: string | null;
   onOpen: (conversationId: string) => void;
 }) {
-  const { conversations, openWith, invite, typing, conversationsHaveMore, loadingMoreConversations, loadMoreConversations } =
-    useChat();
+  const {
+    conversations,
+    openWith,
+    invite,
+    typing,
+    typingPeople,
+    conversationsHaveMore,
+    loadingMoreConversations,
+    loadMoreConversations,
+  } = useChat();
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -174,20 +184,23 @@ export function ConversationList({
     return () => observer.disconnect();
   }, [showingConversations, conversationsHaveMore, loadMoreConversations, conversations.length]);
 
+  const term = query.trim().toLowerCase();
+  const matchingGroups = term ? conversations.filter((c) => c.isGroup && c.title.toLowerCase().includes(term)) : [];
+
   const existing = new Map(
     conversations.filter((c) => c.kind === "direct" && c.other).map((c) => [c.other!.id, c.id] as const),
   );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-border p-3">
-        <div className="relative">
+      <div className="flex items-center gap-2 border-b border-border p-3">
+        <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people to message"
-            aria-label="Search people to message"
+            placeholder="Search people and groups"
+            aria-label="Search people and groups"
             className="pr-9 pl-9"
           />
           {query ? (
@@ -203,10 +216,39 @@ export function ConversationList({
             </Button>
           ) : null}
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => setCreatingGroup(true)}
+          aria-label="New group"
+          title="New group"
+        >
+          <Users aria-hidden="true" />
+        </Button>
+        <CreateGroupDialog open={creatingGroup} onOpenChange={setCreatingGroup} onCreated={onOpen} />
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {searchingPeople ? (
+          <>
+          {matchingGroups.length ? (
+            <ul aria-label="Groups">
+              {matchingGroups.map((conversation) => (
+                <ConversationRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  active={conversation.id === activeId}
+                  typingLabel={null}
+                  onOpen={() => {
+                    setQuery("");
+                    setPeople(null);
+                    onOpen(conversation.id);
+                  }}
+                />
+              ))}
+            </ul>
+          ) : null}
           <PeopleResults
             people={people}
             searching={searching}
@@ -220,6 +262,7 @@ export function ConversationList({
               onOpen(id);
             }}
           />
+          </>
         ) : conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
             No conversations yet. Search for someone above to send your first message.
@@ -232,7 +275,7 @@ export function ConversationList({
                   key={conversation.id}
                   conversation={conversation}
                   active={conversation.id === activeId}
-                  typing={Boolean(typing[conversation.id])}
+                  typingLabel={typingLabel(conversation, Boolean(typing[conversation.id]), typingPeople[conversation.id])}
                   onOpen={() => onOpen(conversation.id)}
                 />
               ))}
@@ -257,18 +300,32 @@ export function ConversationList({
   );
 }
 
+/** Who is typing: "Typing…" in a direct chat, "Ada is typing…" / "Ada and Femi are typing…" in a group. */
+export function typingLabel(conversation: ChatConversation, typing: boolean, people: number[] | undefined) {
+  if (!typing) return null;
+  if (!conversation.isGroup) return "Typing…";
+  const names = (people ?? [])
+    .map((id) => conversation.participants.find((p) => p.id === id)?.name.split(" ")[0])
+    .filter(Boolean) as string[];
+  if (!names.length) return "Typing…";
+  if (names.length === 1) return `${names[0]} is typing…`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+  return "Several people are typing…";
+}
+
 function ConversationRow({
   conversation,
   active,
-  typing,
+  typingLabel: typing,
   onOpen,
 }: {
   conversation: ChatConversation;
   active: boolean;
-  typing: boolean;
+  /** "Typing…", "Ada is typing…", or null. */
+  typingLabel: string | null;
   onOpen: () => void;
 }) {
-  const name = conversation.other?.name ?? "Conversation";
+  const name = conversation.title;
   const unread = conversation.unread_count;
   return (
     <li>
@@ -281,7 +338,7 @@ function ConversationRow({
           active && "bg-[#0d47a1]/8 dark:bg-[#38bdf8]/10",
         )}
       >
-        <Avatar name={name} src={conversation.other?.avatar_url} online={conversation.other?.online} />
+        <Avatar name={name} src={conversation.photoUrl} online={conversation.other?.online} />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className={cn("truncate text-sm text-foreground", unread ? "font-semibold" : "font-medium")}>{name}</span>
@@ -290,7 +347,7 @@ function ConversationRow({
           <span className="flex items-center justify-between gap-2">
             <span className={cn("truncate text-xs", typing ? "text-success-text" : unread ? "text-foreground" : "text-muted-foreground")}>
               {typing
-                ? "Typing…"
+                ? typing
                 : conversation.other && !conversation.other.is_active
                   ? "No longer has access"
                   : conversation.preview}

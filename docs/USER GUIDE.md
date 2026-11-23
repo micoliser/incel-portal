@@ -459,6 +459,10 @@ Send private messages, photos, videos and files (up to 25 MB each) to anyone in 
 
 **Forwarding:** choose **Forward** in a message's menu, pick up to 5 chats (search for anyone else), add a note if you like, and choose **Forward**. Forwarded messages are marked **Forwarded** (or **Forwarded many times**), and do not show who wrote them originally.
 
+**Group chats:** choose the people button beside the search box, pick who is in the group (people who have not set up chat are invited and join when they do), then give it a name and, if you like, a description and photo. Choose the group's name at the top of the chat to see its members, add people, change its details (admins), or leave it. The person who creates a group is its **Owner**: nobody can remove them, and only they can remove or demote admins or make someone else the owner (**Make group owner** in a member's menu). Admins can add and remove members and make members admins. If you leave a group you own, you choose who takes over. New members can read messages from when they join, not before. On your own messages, **Message info** shows who has seen them.
+
+**Notifications:** when you are not on the portal, chat notifications show who wrote and what they said (in a group, the group name and "Ada: …"). Your browser decrypts them itself; nobody else can read them. They show only while chat is unlocked in that browser; otherwise they just say "New message". To hide messages in notifications on a shared computer, turn off **Show message previews in notifications** in the chat settings menu.
+
 5. **Seen, typing and online:** one tick means sent; two ticks mean the other person has seen it. You also see when they are typing, and whether they are online or when they were last seen.
 
 6. **Message options** (the "…" next to a message):

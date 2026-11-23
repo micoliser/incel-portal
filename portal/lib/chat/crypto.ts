@@ -227,6 +227,11 @@ export function associatedData(conversationId: string, messageId: string, sender
   return `chat-v1|${conversationId}|${messageId}|${senderId}|${keyVersion}|${revision}`;
 }
 
+/** Binds a group's encrypted details to the group and the key version. */
+export function groupInfoAssociatedData(conversationId: string, keyVersion: number) {
+  return `chat-info-v1|${conversationId}|${keyVersion}`;
+}
+
 /** Binds an encrypted reaction to its conversation, message, the person reacting and the key. */
 export function reactionAssociatedData(conversationId: string, messageId: string, userId: number, keyVersion: number) {
   return `chat-reaction-v1|${conversationId}|${messageId}|${userId}|${keyVersion}`;

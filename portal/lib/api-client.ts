@@ -12,7 +12,7 @@ import {
  * in (the same `?next=` the portal layout uses).
  */
 function redirectToLogin() {
-  if (typeof window === "undefined" || window.location.pathname === "/") {
+  if (typeof window === "undefined" || window.location.pathname === "/" || loggingOut) {
     return;
   }
   const currentPath = `${window.location.pathname}${window.location.search}`;
@@ -41,6 +41,16 @@ const refreshClient = axios.create({
 
 let refreshTokenPromise: Promise<boolean> | null = null;
 
+// Set while signing out. Requests still running then get 401 once the session
+// cookies are gone; they must not try to refresh or send the browser to the
+// sign-in page with a ?next= of their own, racing the sign-out's navigation.
+let loggingOut = false;
+
+/** Call before ending the session (POST /auth/logout). Cleared by the next sign-in. */
+export function markLoggingOut() {
+  loggingOut = true;
+}
+
 function shouldSkipAuthRefresh(url?: string) {
   return Boolean(
     url &&
@@ -64,11 +74,15 @@ apiClient.interceptors.request.use((config) => {
 });
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.config.url?.includes("/auth/login")) loggingOut = false;
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 
     if (
+      loggingOut ||
       !axios.isAxiosError(error) ||
       error.response?.status !== 401 ||
       !originalRequest ||

@@ -1,7 +1,7 @@
 "use client";
 
 import { KeyRound, Loader2, Lock, Settings2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { FieldError, passwordError } from "@/components/chat/chat-gate";
@@ -17,19 +17,35 @@ import {
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getApiBaseUrl } from "@/lib/auth";
 import { checkPassword } from "@/lib/chat/api";
+import { readPushConfig, writePushConfig } from "@/lib/chat/keystore";
 import { lockedUntilFrom, lockoutText, useSecondsLeft } from "@/lib/lockout";
 
-/** Lock chat on this computer, or change the chat PIN. */
+/** Lock chat on this computer, change the chat PIN, or turn notification previews on or off. */
 export function ChatMenu() {
   const { status, lock } = useChat();
   const [open, setOpen] = useState(false);
+  const [previews, setPreviews] = useState(true);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    let cancelled = false;
+    void readPushConfig().then((config) => {
+      if (!cancelled) setPreviews(config?.previews ?? true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   if (status !== "ready") return null;
 
@@ -48,6 +64,18 @@ export function ChatMenu() {
           <DropdownMenuItem onSelect={() => void lock()}>
             <Lock aria-hidden="true" /> Lock chat on this computer
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={previews}
+            onCheckedChange={(checked) => {
+              const value = Boolean(checked);
+              setPreviews(value);
+              void writePushConfig({ apiBase: getApiBaseUrl(), previews: value });
+              toast.success(value ? "Notifications on this computer show message previews." : "Notifications on this computer hide messages.");
+            }}
+          >
+            Show message previews in notifications
+          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
 

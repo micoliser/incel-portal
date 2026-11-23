@@ -191,4 +191,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         data = message.get('data') or {}
         if event == 'conversation.new':
             self.conversations.add(str(data.get('conversation_id')))
+        elif event == 'conversation.removed':
+            # Removed from a group, or left it: no more typing to or from it.
+            self.conversations.discard(str(data.get('conversation_id')))
         await self.send_json({'event': event, 'data': data})

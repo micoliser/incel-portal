@@ -69,18 +69,18 @@ export function ForwardDialog({
 
   const targets = useMemo<Target[]>(() => {
     const chats: Target[] = conversations
-      .filter((c) => c.other?.is_active !== false && c.other?.chat_ready !== false)
-      .filter((c) => !term || (c.other?.name ?? "").toLowerCase().includes(term))
+      .filter((c) => c.isGroup || (c.other?.is_active !== false && c.other?.chat_ready !== false))
+      .filter((c) => !term || c.title.toLowerCase().includes(term))
       .map((c) => ({
         key: `c:${c.id}`,
-        name: c.other?.name ?? "Conversation",
-        detail: c.other?.department ?? "",
-        avatar: c.other?.avatar_url,
+        name: c.title,
+        detail: c.isGroup ? `Group · ${c.members.length} members` : (c.other?.department ?? ""),
+        avatar: c.photoUrl,
         online: c.other?.online,
         conversationId: c.id,
       }));
     if (!term) return chats;
-    const withChat = new Set(conversations.map((c) => c.other?.id));
+    const withChat = new Set(conversations.filter((c) => !c.isGroup).map((c) => c.other?.id));
     const others: Target[] = people
       .filter((p) => !withChat.has(p.id))
       .map((p) => ({

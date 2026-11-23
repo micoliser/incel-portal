@@ -147,10 +147,57 @@ class StartConversationSerializer(serializers.Serializer):
     keys = WrappedKeySerializer(many=True, allow_empty=False)
 
 
+class GroupInfoSerializer(serializers.Serializer):
+    """Group name, description and photo key, encrypted by the browser."""
+
+    key_version = serializers.IntegerField(min_value=1)
+    nonce = Base64Field(size=NONCE_BYTES)
+    ciphertext = Base64Field(max_size=8 * 1024)
+
+
 class KeyVersionSerializer(serializers.Serializer):
     # 1 for a chat that began as an invitation (no key until both set up).
     version = serializers.IntegerField(min_value=1)
     keys = WrappedKeySerializer(many=True, allow_empty=False)
+    # Groups: the details re-encrypted with the new key.
+    info = GroupInfoSerializer(required=False, allow_null=True)
+
+
+class CreateGroupSerializer(serializers.Serializer):
+    # Chosen by the browser, so the encrypted details can be bound to it.
+    id = serializers.UUIDField()
+    member_ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=False, max_length=99)
+    keys = WrappedKeySerializer(many=True, allow_empty=False)
+    info = GroupInfoSerializer()
+
+
+class GroupInfoUpdateSerializer(serializers.Serializer):
+    info = GroupInfoSerializer()
+    # Empty: the same details re-locked with the newest key (any member may do that).
+    changed = serializers.ListField(
+        child=serializers.ChoiceField(choices=['name', 'description', 'photo']), allow_empty=True
+    )
+    # A newly uploaded photo, null to remove the photo; leave out to keep it.
+    photo_object_key = serializers.CharField(max_length=512, required=False, allow_null=True)
+
+
+class AddMembersSerializer(serializers.Serializer):
+    member_ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=False, max_length=99)
+    version = serializers.IntegerField(min_value=2)
+    keys = WrappedKeySerializer(many=True, allow_empty=False)
+    info = GroupInfoSerializer(required=False, allow_null=True)
+
+
+class TransferOwnerSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+
+
+class MemberRoleSerializer(serializers.Serializer):
+    admin = serializers.BooleanField()
+
+
+class GroupPhotoSerializer(serializers.Serializer):
+    size = serializers.IntegerField(min_value=1)
 
 
 class SendMessageSerializer(serializers.Serializer):

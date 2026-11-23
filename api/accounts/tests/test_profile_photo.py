@@ -6,7 +6,12 @@ from applications.models import AuditLog
 from common.test_utils import BaseAPITestCase
 
 
-@override_settings(AWS_S3_BUCKET_NAME='bucket', AWS_S3_CUSTOM_DOMAIN='cdn.example.com', AWS_S3_ENDPOINT_URL='')
+@override_settings(
+    AWS_S3_BUCKET_NAME='bucket',
+    AWS_S3_CUSTOM_DOMAIN='cdn.example.com',
+    AWS_S3_ENDPOINT_URL='',
+    AWS_PROFILE_PHOTO_S3_PREFIX='profile-photos',
+)
 class ProfilePhotoTests(BaseAPITestCase):
     def setUp(self):
         super().setUp()

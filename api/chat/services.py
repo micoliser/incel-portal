@@ -118,6 +118,23 @@ def _accept_invitations(user):
         # Clients re-read the conversation to pick up the new member's key.
         realtime.broadcast(members, 'key.changed', {'conversation_id': str(conversation.id), 'user_id': user.pk})
 
+    # Groups they were added to while pending: they join now, and the next
+    # message (from anyone) makes a key that includes them.
+    pending = Participant.objects.select_related('conversation').filter(user=user, pending=True, left_at__isnull=True)
+    for participant in pending:
+        conversation = Conversation.objects.select_for_update().get(pk=participant.conversation_id)
+        Participant.objects.filter(pk=participant.pk).update(pending=False)
+        message = _append_message(
+            conversation,
+            sender=None,
+            kind=Message.Kind.SYSTEM,
+            system_event=Message.SystemEvent.MEMBER_JOINED,
+            system_data={'user_id': user.pk},
+        )
+        members = _member_ids(conversation)
+        realtime.broadcast(members, 'message.new', {'conversation_id': str(conversation.id), 'message': message_payload(message, [])})
+        realtime.broadcast(members, 'key.changed', {'conversation_id': str(conversation.id), 'user_id': user.pk})
+
 
 def update_backups(account: ChatAccount, *, pin: dict | None, recovery: dict | None) -> ChatAccount:
     fields = {}
@@ -335,6 +352,16 @@ def _member_ids(conversation) -> list[int]:
     )
 
 
+def _keyed_member_ids(conversation) -> list[int]:
+    """Members the conversation key must be locked for: current, and not
+    pending (a pending member has no chat key yet)."""
+    return list(
+        Participant.objects.filter(conversation=conversation, left_at__isnull=True, pending=False).values_list(
+            'user_id', flat=True
+        )
+    )
+
+
 def get_membership(user, conversation_id) -> Participant:
     participant = (
         Participant.objects.select_related('conversation')
@@ -420,7 +447,10 @@ def start_direct(user, *, other_id: int, keys: list[dict]):
     return conversation, True
 
 
-def add_key_version(user, conversation_id, *, version: int, keys: list[dict]) -> int:
+def add_key_version(user, conversation_id, *, version: int, keys: list[dict], info: dict | None = None) -> int:
+    """A new conversation key for everyone currently in it. For a group, the
+    browser also sends the group details re-encrypted with the new key, so
+    anyone added later can read them."""
     account = require_account(user)
     with transaction.atomic():
         participant = get_membership(user, conversation_id)
@@ -428,13 +458,17 @@ def add_key_version(user, conversation_id, *, version: int, keys: list[dict]) ->
         latest = _latest_version(conversation)
         if version != latest + 1:
             raise Conflict(f'The next key version is {latest + 1}.')
-        member_ids = _member_ids(conversation)
+        member_ids = _keyed_member_ids(conversation)
         accounts = {a.user_id: a for a in ChatAccount.objects.filter(user_id__in=member_ids)}
         if set(accounts) != set(member_ids):
             raise ValidationError({'keys': ['Someone in this conversation has no chat key.']})
         by_recipient = _check_wrapped_keys(keys, accounts)
         _store_keys(conversation, version, user, account, by_recipient, accounts)
-    realtime.broadcast(member_ids, 'key.changed', {'conversation_id': str(conversation.id), 'version': version})
+        if info and conversation.kind == Conversation.Kind.GROUP:
+            _set_info(conversation, info, version=version)
+    realtime.broadcast(
+        _member_ids(conversation), 'key.changed', {'conversation_id': str(conversation.id), 'version': version}
+    )
     return version
 
 
@@ -520,11 +554,27 @@ def conversation_payload(user, participant: Participant) -> dict:
         'muted_until': participant.muted_until,
         'archived': participant.archived,
         'last_read_seq': participant.last_read_seq,
+        'role': participant.role,
+        # Groups: encrypted name, description and photo key (null for direct chats).
+        'info': (
+            {
+                'key_version': conversation.info_key_version,
+                'nonce': conversation.info_nonce,
+                'ciphertext': conversation.info_ciphertext,
+            }
+            if conversation.kind == Conversation.Kind.GROUP and conversation.info_ciphertext
+            else None
+        ),
+        'has_photo': bool(conversation.photo_object_key),
+        'created_by_id': conversation.created_by_id,
         'participants': [
             {
                 **person_payload(m.user, online=(m.user_id in online) if m.user_id != user.pk else None),
                 'last_read_seq': m.last_read_seq,
                 'left': m.left_at is not None,
+                'role': m.role,
+                'pending': m.pending,
+                'joined_at': m.joined_at,
             }
             for m in members
         ],
@@ -666,9 +716,12 @@ def send_message(user, conversation_id, *, data: dict) -> tuple[Message, bool]:
         if conversation.kind == Conversation.Kind.DIRECT and not any(o.is_active for o in others):
             raise PermissionDenied('This person no longer has access to the portal.')
 
-        not_ready = [o for o in others if not ChatAccount.objects.filter(user=o).exists()]
-        if not_ready:
-            raise PermissionDenied(f'{display_name(not_ready[0])} has not set up chat yet.')
+        if conversation.kind == Conversation.Kind.DIRECT:
+            not_ready = [o for o in others if not ChatAccount.objects.filter(user=o).exists()]
+            if not_ready:
+                raise PermissionDenied(f'{display_name(not_ready[0])} has not set up chat yet.')
+        # Pending group members have no key yet; everyone else must be covered.
+        keyed_ids = _keyed_member_ids(conversation)
 
         latest = _latest_version(conversation)
         if data['key_version'] != latest:
@@ -677,8 +730,8 @@ def send_message(user, conversation_id, *, data: dict) -> tuple[Message, bool]:
             row.recipient_id: row.recipient_key_id
             for row in ConversationKey.objects.filter(conversation=conversation, version=latest)
         }
-        accounts = {a.user_id: a.key_id for a in ChatAccount.objects.filter(user_id__in=member_ids)}
-        if any(current.get(uid) != accounts.get(uid) for uid in member_ids):
+        accounts = {a.user_id: a.key_id for a in ChatAccount.objects.filter(user_id__in=keyed_ids)}
+        if set(current) != set(keyed_ids) or any(current.get(uid) != accounts.get(uid) for uid in keyed_ids):
             raise KeyOutdated()
 
         attachments = _attachments_for_send(user, conversation, data.get('attachment_ids'))
@@ -706,30 +759,62 @@ def send_message(user, conversation_id, *, data: dict) -> tuple[Message, bool]:
             'read.updated',
             {'conversation_id': str(conversation.id), 'user_id': user.pk, 'last_read_seq': message.seq},
         )
-        transaction.on_commit(lambda: _push_to_offline(conversation.id, user, [o.pk for o in others if o.is_active]))
+        transaction.on_commit(
+            lambda: _push_to_offline(conversation, user, [o.pk for o in others if o.is_active], message)
+        )
     return message, True
 
 
-def _push_to_offline(conversation_id, sender, recipient_ids):
+# Web push payloads are limited to about 4 KB; larger messages are fetched by
+# the browser's service worker instead of travelling in the push.
+PUSH_PREVIEW_MAX_CIPHERTEXT = 2400
+
+
+def _push_to_offline(conversation, sender, recipient_ids, message=None):
+    """Push to every other member, like other portal notifications (open
+    portal tabs or not). The push carries the message still encrypted: the recipient's service worker decrypts it with the key
+    unlocked in that browser to show a preview (or shows the plain fallback
+    title and body when it cannot). The server never sends readable text."""
     from chat.tasks import queue_message_push
 
+    conversation_id = conversation.id
     now = timezone.now()
     muted = set(
         Participant.objects.filter(conversation_id=conversation_id, user_id__in=recipient_ids, muted_until__gt=now)
         .values_list('user_id', flat=True)
     )
-    online = realtime.online_user_ids(recipient_ids)
+    pending = set(
+        Participant.objects.filter(conversation_id=conversation_id, user_id__in=recipient_ids, pending=True)
+        .values_list('user_id', flat=True)
+    )
+    is_group = conversation.kind == Conversation.Kind.GROUP
+    preview = None
+    if message is not None:
+        preview = {
+            'conversation_id': str(conversation_id),
+            'message_id': str(message.id),
+            'seq': message.seq,
+            'conversation_kind': conversation.kind,
+            'sender_id': sender.pk,
+            'kind': message.kind,
+            'key_version': message.key_version,
+            'revision': message.revision,
+        }
+        if message.ciphertext and len(message.ciphertext) <= PUSH_PREVIEW_MAX_CIPHERTEXT:
+            preview['nonce'] = message.nonce
+            preview['ciphertext'] = message.ciphertext
     for user_id in recipient_ids:
-        if user_id in muted or user_id in online:
+        if user_id in muted or user_id in pending:
             continue
         queue_message_push(
             user_id,
             {
                 'title': display_name(sender),
-                'body': 'New message',
+                'body': 'New message in a group' if is_group else 'New message',
                 'url': f'/chat/{conversation_id}',
                 'type': 'chat_message',
                 'tag': f'chat-{conversation_id}',
+                **({'chat': preview} if preview else {}),
             },
         )
 
@@ -978,3 +1063,300 @@ def remove_reaction(user, message_id) -> None:
                 'removed_user_id': user.pk,
             },
         )
+
+
+# --- Groups ----------------------------------------------------------------
+
+MAX_GROUP_MEMBERS = 100
+
+
+def _set_info(conversation, info: dict, *, version: int | None = None) -> None:
+    """Store the encrypted group details. They must use the newest key version,
+    so every current member (and anyone added later) can open them."""
+    key_version = info['key_version']
+    if key_version != (version if version is not None else _latest_version(conversation)):
+        raise KeyOutdated('The group details must use the newest key.')
+    conversation.info_key_version = key_version
+    conversation.info_nonce = info['nonce']
+    conversation.info_ciphertext = info['ciphertext']
+    conversation.save(update_fields=['info_key_version', 'info_nonce', 'info_ciphertext'])
+
+
+MANAGERS = (Participant.Role.ADMIN, Participant.Role.OWNER)
+
+
+def _group_membership(user, conversation_id, *, admin: bool = False, owner: bool = False):
+    """(participant, conversation) for a group the user is in. `admin`: admins
+    and the owner only. `owner`: the owner only."""
+    participant = get_membership(user, conversation_id)
+    conversation = Conversation.objects.select_for_update().get(pk=participant.conversation_id)
+    if conversation.kind != Conversation.Kind.GROUP:
+        raise ValidationError({'conversation': ['This is not a group.']})
+    if owner and participant.role != Participant.Role.OWNER:
+        raise PermissionDenied('Only the group owner can do that.')
+    if admin and participant.role not in MANAGERS:
+        raise PermissionDenied('Only group admins can do that.')
+    return participant, conversation
+
+
+def _system_note(conversation, event, data: dict) -> Message:
+    message = _append_message(conversation, sender=None, kind=Message.Kind.SYSTEM, system_event=event, system_data=data)
+    realtime.broadcast(
+        _member_ids(conversation),
+        'message.new',
+        {'conversation_id': str(conversation.id), 'message': message_payload(message, [])},
+    )
+    return message
+
+
+def _people_to_add(user, ids, *, existing: set[int]) -> tuple[list, list]:
+    """(ready, pending) people for a group: active staff, not already in it."""
+    wanted = {int(i) for i in ids} - {user.pk} - existing
+    people = list(User.objects.filter(pk__in=wanted, is_active=True).select_related('chat_account'))
+    if len(people) != len(wanted):
+        raise ValidationError({'member_ids': ['Someone was not found.']})
+    ready = [p for p in people if account_of(p) is not None]
+    pending = [p for p in people if account_of(p) is None]
+    return ready, pending
+
+
+def _invite_pending(user, conversation, people) -> None:
+    """Pending members get the same notice and email as a chat invitation."""
+    from emails.services.chat_emails import send_chat_invitation_email
+    from notifications.models import Notification
+    from notifications.services import create_notification
+
+    inviter_name = display_name(user)
+    for person in people:
+        create_notification(
+            person,
+            actor=user,
+            notification_type=Notification.TYPE_CHAT_NUDGE,
+            title=f'{inviter_name} added you to a group chat',
+            body='Set up chat to join.',
+            link_url='/chat',
+        )
+        transaction.on_commit(lambda person=person: send_chat_invitation_email(person, inviter_name))
+
+
+def create_group(user, *, id, member_ids: list[int], keys: list[dict], info: dict) -> Conversation:
+    """A new group with the creator as admin. Keys cover the creator and every
+    member who has set up chat; the others join as pending."""
+    account = require_account(user)
+    ready, pending = _people_to_add(user, member_ids, existing=set())
+    if not ready and not pending:
+        raise ValidationError({'member_ids': ['Add at least one person.']})
+    if len(ready) + len(pending) + 1 > MAX_GROUP_MEMBERS:
+        raise ValidationError({'member_ids': [f'A group can have up to {MAX_GROUP_MEMBERS} people.']})
+    if info['key_version'] != 1:
+        raise ValidationError({'info': ['A new group starts with key version 1.']})
+    members = {user.pk: account, **{p.pk: account_of(p) for p in ready}}
+    by_recipient = _check_wrapped_keys(keys, members)
+    if Conversation.objects.filter(pk=id).exists():
+        raise Conflict('A conversation with this id already exists.')
+    with transaction.atomic():
+        conversation = Conversation.objects.create(id=id, kind=Conversation.Kind.GROUP, created_by=user)
+        Participant.objects.bulk_create(
+            [Participant(conversation=conversation, user=user, role=Participant.Role.OWNER)]
+            + [Participant(conversation=conversation, user=p) for p in ready]
+            + [Participant(conversation=conversation, user=p, pending=True) for p in pending]
+        )
+        _store_keys(conversation, 1, user, account, by_recipient, members)
+        _set_info(conversation, info, version=1)
+        conversation = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        _system_note(conversation, Message.SystemEvent.GROUP_CREATED, {'user_id': user.pk})
+        _invite_pending(user, conversation, pending)
+        realtime.broadcast(
+            [p.pk for p in ready + pending], 'conversation.new', {'conversation_id': str(conversation.id)}
+        )
+    return conversation
+
+
+def update_group_info(user, conversation_id, *, info: dict, changed: list[str], photo_object_key=...) -> Conversation:
+    """Admins change the name, description or photo. `photo_object_key`: the
+    newly uploaded photo, None to remove it, or left out to keep it.
+
+    With nothing `changed`, any member may re-lock the same details with the
+    newest key: after someone who could not read them (a member who just
+    joined) made that key, so new members can read the name and photo. That
+    posts no note. The server cannot check the content is unchanged (it is
+    encrypted); a member who abused this would only be renaming the group."""
+    relock = not changed and photo_object_key is ...
+    with transaction.atomic():
+        _participant, conversation = _group_membership(user, conversation_id, admin=not relock)
+        if relock and conversation.info_key_version == _latest_version(conversation):
+            return conversation  # already current
+        _set_info(conversation, info)
+        if photo_object_key is not ...:
+            previous = conversation.photo_object_key
+            if photo_object_key:
+                if not photo_object_key.startswith(chat_storage.group_photo_prefix(conversation.id)):
+                    raise ValidationError({'photo_object_key': ['Upload the photo for this group first.']})
+                try:
+                    verify_upload(photo_object_key, max_size=settings.CHAT_GROUP_PHOTO_MAX_SIZE, allowed_types=None)
+                except UploadRejected as exc:
+                    raise ValidationError({'photo_object_key': [str(exc)]})
+                except StorageUnavailable as exc:
+                    raise ServiceUnavailable(str(exc))
+            conversation.photo_object_key = photo_object_key or ''
+            conversation.save(update_fields=['photo_object_key'])
+            if previous and previous != conversation.photo_object_key:
+                from chat.tasks import queue_object_deletion
+
+                transaction.on_commit(lambda: queue_object_deletion([previous]))
+        fields = [f for f in changed if f in ('name', 'description', 'photo')]
+        if fields:
+            _system_note(conversation, Message.SystemEvent.INFO_CHANGED, {'user_id': user.pk, 'fields': fields})
+        realtime.broadcast(_member_ids(conversation), 'conversation.updated', {'conversation_id': str(conversation.id)})
+    return conversation
+
+
+def reserve_group_photo(user, conversation_id, *, size: int) -> dict:
+    if size > settings.CHAT_GROUP_PHOTO_MAX_SIZE:
+        raise ValidationError({'size': ['A group photo can be up to 512 KB once encrypted.']})
+    with transaction.atomic():
+        _participant, conversation = _group_membership(user, conversation_id, admin=True)
+    key = chat_storage.group_photo_key(conversation.id)
+    try:
+        upload = chat_storage.upload_url(key)
+    except chat_storage.ChatStorageError as exc:
+        raise ServiceUnavailable(str(exc))
+    return {'object_key': key, 'upload_url': upload, 'content_type': chat_storage.CONTENT_TYPE}
+
+
+def group_photo_download(user, conversation_id) -> str:
+    participant = get_membership(user, conversation_id)
+    key = participant.conversation.photo_object_key
+    if not key:
+        raise NotFound('This group has no photo.')
+    try:
+        return chat_storage.download_url(key)
+    except chat_storage.ChatStorageError as exc:
+        raise ServiceUnavailable(str(exc))
+
+
+def add_group_members(user, conversation_id, *, member_ids, version: int, keys: list[dict], info: dict | None):
+    """Admins add people. The adder makes a new key version covering everyone
+    now in the group (so the new people can read from here on, not before)
+    and re-encrypts the group details with it. People without chat join as
+    pending."""
+    account = require_account(user)
+    with transaction.atomic():
+        _participant, conversation = _group_membership(user, conversation_id, admin=True)
+        current = set(_member_ids(conversation))
+        ready, pending = _people_to_add(user, member_ids, existing=current)
+        if not ready and not pending:
+            raise ValidationError({'member_ids': ['Everyone chosen is already in the group.']})
+        if len(current) + len(ready) + len(pending) > MAX_GROUP_MEMBERS:
+            raise ValidationError({'member_ids': [f'A group can have up to {MAX_GROUP_MEMBERS} people.']})
+        latest = _latest_version(conversation)
+        if version != latest + 1:
+            raise Conflict(f'The next key version is {latest + 1}.')
+        now = timezone.now()
+        for person in ready + pending:
+            Participant.objects.update_or_create(
+                conversation=conversation,
+                user=person,
+                defaults={'left_at': None, 'joined_at': now, 'role': Participant.Role.MEMBER,
+                          'pending': person in pending, 'last_read_seq': conversation.next_seq - 1},
+            )
+        keyed = _keyed_member_ids(conversation)
+        accounts = {a.user_id: a for a in ChatAccount.objects.filter(user_id__in=keyed)}
+        by_recipient = _check_wrapped_keys(keys, accounts)
+        _store_keys(conversation, version, user, account, by_recipient, accounts)
+        if info:
+            _set_info(conversation, info, version=version)
+        for person in ready + pending:
+            _system_note(conversation, Message.SystemEvent.MEMBER_ADDED, {'user_id': user.pk, 'target_id': person.pk})
+        _invite_pending(user, conversation, pending)
+        realtime.broadcast([p.pk for p in ready + pending], 'conversation.new', {'conversation_id': str(conversation.id)})
+        realtime.broadcast(_member_ids(conversation), 'conversation.updated', {'conversation_id': str(conversation.id)})
+        realtime.broadcast(_member_ids(conversation), 'key.changed', {'conversation_id': str(conversation.id), 'version': version})
+    return conversation
+
+
+def _ensure_owner(conversation) -> None:
+    """A group always has an owner: when the owner has gone, the longest-
+    standing admin takes over, otherwise the longest-standing member."""
+    active = Participant.objects.filter(conversation=conversation, left_at__isnull=True)
+    if active.filter(role=Participant.Role.OWNER).exists():
+        return
+    heir = (
+        active.filter(role=Participant.Role.ADMIN, pending=False).order_by('joined_at').first()
+        or active.filter(pending=False).order_by('joined_at').first()
+        or active.order_by('joined_at').first()
+    )
+    if heir is not None:
+        Participant.objects.filter(pk=heir.pk).update(role=Participant.Role.OWNER)
+        _system_note(
+            conversation,
+            Message.SystemEvent.OWNER_TRANSFERRED,
+            {'user_id': None, 'target_id': heir.user_id, 'automatic': True},
+        )
+
+
+def remove_group_member(user, conversation_id, target_id: int) -> None:
+    """Leave (yourself) or remove someone. Admins remove members; only the
+    owner removes admins; nobody removes the owner. They lose access straight
+    away, and the next message makes a key without them. An owner who leaves
+    without handing over is succeeded by the longest-standing admin (or member)."""
+    leaving = target_id == user.pk
+    with transaction.atomic():
+        participant, conversation = _group_membership(user, conversation_id, admin=not leaving)
+        target = Participant.objects.filter(conversation=conversation, user_id=target_id, left_at__isnull=True).first()
+        if target is None:
+            raise NotFound('That person is not in this group.')
+        if not leaving:
+            if target.role == Participant.Role.OWNER:
+                raise PermissionDenied('The group owner cannot be removed.')
+            if target.role == Participant.Role.ADMIN and participant.role != Participant.Role.OWNER:
+                raise PermissionDenied('Only the group owner can remove an admin.')
+        Participant.objects.filter(pk=target.pk).update(left_at=timezone.now(), role=Participant.Role.MEMBER)
+        if leaving:
+            _system_note(conversation, Message.SystemEvent.MEMBER_LEFT, {'user_id': user.pk})
+        else:
+            _system_note(conversation, Message.SystemEvent.MEMBER_REMOVED, {'user_id': user.pk, 'target_id': target_id})
+        _ensure_owner(conversation)
+        realtime.broadcast([target_id], 'conversation.removed', {'conversation_id': str(conversation.id)})
+        realtime.broadcast(_member_ids(conversation), 'conversation.updated', {'conversation_id': str(conversation.id)})
+
+
+def transfer_ownership(user, conversation_id, target_id: int) -> None:
+    """The owner hands the group to another member, and becomes an admin."""
+    with transaction.atomic():
+        participant, conversation = _group_membership(user, conversation_id, owner=True)
+        target = Participant.objects.filter(
+            conversation=conversation, user_id=target_id, left_at__isnull=True, pending=False
+        ).first()
+        if target is None or target.user_id == user.pk:
+            raise ValidationError({'user_id': ['Choose another member who has joined the group.']})
+        Participant.objects.filter(pk=participant.pk).update(role=Participant.Role.ADMIN)
+        Participant.objects.filter(pk=target.pk).update(role=Participant.Role.OWNER)
+        _system_note(conversation, Message.SystemEvent.OWNER_TRANSFERRED, {'user_id': user.pk, 'target_id': target_id})
+        realtime.broadcast(_member_ids(conversation), 'conversation.updated', {'conversation_id': str(conversation.id)})
+
+
+def set_group_admin(user, conversation_id, target_id: int, *, admin: bool) -> None:
+    """Admins make members admins; only the owner takes admin away. The owner's
+    role is changed only by handing over ownership."""
+    with transaction.atomic():
+        participant, conversation = _group_membership(user, conversation_id, admin=True)
+        target = Participant.objects.filter(conversation=conversation, user_id=target_id, left_at__isnull=True).first()
+        if target is None:
+            raise NotFound('That person is not in this group.')
+        if target.role == Participant.Role.OWNER:
+            raise PermissionDenied('The owner stays an admin. Hand over ownership to change that.')
+        if not admin and participant.role != Participant.Role.OWNER:
+            raise PermissionDenied('Only the group owner can remove an admin.')
+        if target.pending:
+            raise ValidationError({'user_id': ['They can become an admin once they have joined.']})
+        role = Participant.Role.ADMIN if admin else Participant.Role.MEMBER
+        if target.role == role:
+            return
+        Participant.objects.filter(pk=target.pk).update(role=role)
+        _system_note(
+            conversation,
+            Message.SystemEvent.ADMIN_GRANTED if admin else Message.SystemEvent.ADMIN_REVOKED,
+            {'user_id': user.pk, 'target_id': target_id},
+        )
+        realtime.broadcast(_member_ids(conversation), 'conversation.updated', {'conversation_id': str(conversation.id)})

@@ -25,7 +25,20 @@ export type ChatPerson = {
   avatar_url?: string | null;
 };
 
-export type Participant = ChatPerson & { last_read_seq: number; left: boolean };
+export type Participant = ChatPerson & {
+  last_read_seq: number;
+  left: boolean;
+  role?: GroupRole;
+  /** Added to a group before setting up chat; joins when they do. */
+  pending?: boolean;
+  joined_at?: string;
+};
+
+/** In a group: the owner (creator, cannot be removed), admins, members. */
+export type GroupRole = "member" | "admin" | "owner";
+
+/** Group name, description and photo key, encrypted with a conversation key version. */
+export type RawGroupInfo = { key_version: number; nonce: string; ciphertext: string };
 
 export type RawAttachment = { id: string; size: number | null; has_thumb: boolean };
 
@@ -70,6 +83,12 @@ export type RawConversation = {
   archived: boolean;
   last_read_seq: number;
   participants: Participant[];
+  /** Your role (groups). */
+  role?: GroupRole;
+  /** Groups only: the encrypted details. */
+  info?: RawGroupInfo | null;
+  has_photo?: boolean;
+  created_by_id?: number | null;
   /** The newest reaction and its message, for the list preview. */
   last_reaction?: (RawReaction & { message: RawMessage }) | null;
 };
@@ -188,8 +207,14 @@ export async function getKeys(conversationId: string) {
   return data.results;
 }
 
-export async function addKeyVersion(conversationId: string, version: number, keys: WrappedKeyInput[]) {
-  await apiClient.post(`/chat/conversations/${conversationId}/keys`, { version, keys });
+/** `info`: for a group, its details re-encrypted with the new version. */
+export async function addKeyVersion(
+  conversationId: string,
+  version: number,
+  keys: WrappedKeyInput[],
+  info?: RawGroupInfo | null,
+) {
+  await apiClient.post(`/chat/conversations/${conversationId}/keys`, { version, keys, ...(info ? { info } : {}) });
 }
 
 export async function getMessages(
@@ -266,4 +291,54 @@ export async function attachmentUrl(attachmentId: string, part: "file" | "thumb"
     params: { part },
   });
   return data.url;
+}
+
+
+// --- Groups ----------------------------------------------------------------
+
+export async function createGroup(body: { id: string; member_ids: number[]; keys: WrappedKeyInput[]; info: RawGroupInfo }) {
+  const { data } = await apiClient.post<RawConversation>("/chat/groups", body);
+  return data;
+}
+
+export async function updateGroupInfo(
+  conversationId: string,
+  body: { info: RawGroupInfo; changed: ("name" | "description" | "photo")[]; photo_object_key?: string | null },
+) {
+  const { data } = await apiClient.patch<RawConversation>(`/chat/conversations/${conversationId}/info`, body);
+  return data;
+}
+
+export async function reserveGroupPhoto(conversationId: string, size: number) {
+  const { data } = await apiClient.post<{ object_key: string; upload_url: string; content_type: string }>(
+    `/chat/conversations/${conversationId}/photo`,
+    { size },
+  );
+  return data;
+}
+
+export async function groupPhotoUrl(conversationId: string) {
+  const { data } = await apiClient.get<{ url: string }>(`/chat/conversations/${conversationId}/photo`);
+  return data.url;
+}
+
+export async function addGroupMembers(
+  conversationId: string,
+  body: { member_ids: number[]; version: number; keys: WrappedKeyInput[]; info: RawGroupInfo | null },
+) {
+  const { data } = await apiClient.post<RawConversation>(`/chat/conversations/${conversationId}/members`, body);
+  return data;
+}
+
+export async function removeGroupMember(conversationId: string, userId: number) {
+  await apiClient.delete(`/chat/conversations/${conversationId}/members/${userId}`);
+}
+
+export async function setGroupAdmin(conversationId: string, userId: number, admin: boolean) {
+  await apiClient.patch(`/chat/conversations/${conversationId}/members/${userId}`, { admin });
+}
+
+/** The owner hands the group over (and becomes an admin). */
+export async function transferGroupOwner(conversationId: string, userId: number) {
+  await apiClient.post(`/chat/conversations/${conversationId}/owner`, { user_id: userId });
 }

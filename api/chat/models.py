@@ -63,6 +63,14 @@ class Conversation(CreatedAtModel):
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
     next_seq = models.PositiveBigIntegerField(default=1)
 
+    # Groups: name, description and the photo's file key, encrypted together
+    # with a conversation key version (JSON), so the server cannot read them.
+    info_key_version = models.PositiveIntegerField(null=True, blank=True)
+    info_nonce = models.CharField(max_length=64, blank=True)
+    info_ciphertext = models.TextField(blank=True)
+    # The group photo's encrypted bytes in storage (its key is in the info).
+    photo_object_key = models.CharField(max_length=512, blank=True)
+
     def __str__(self):
         return f'{self.kind} conversation {self.id}'
 
@@ -71,6 +79,8 @@ class Participant(models.Model):
     class Role(models.TextChoices):
         MEMBER = 'member', 'Member'
         ADMIN = 'admin', 'Admin'
+        # Groups: the creator (or whoever they handed it to). Cannot be removed or demoted.
+        OWNER = 'owner', 'Owner'
 
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='participants')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_participations')
@@ -78,6 +88,9 @@ class Participant(models.Model):
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
     last_read_seq = models.PositiveBigIntegerField(default=0)
+    # Added to a group before setting up chat: no keys are made for them
+    # until they set it up, and then they join (a note says so).
+    pending = models.BooleanField(default=False)
     muted_until = models.DateTimeField(null=True, blank=True)
     archived = models.BooleanField(default=False)
 
@@ -122,6 +135,15 @@ class Message(models.Model):
         KEY_RESET = 'key_reset', 'Key reset'
         INVITE_SENT = 'invite_sent', 'Invitation sent'
         INVITE_ACCEPTED = 'invite_accepted', 'Invitation accepted'
+        GROUP_CREATED = 'group_created', 'Group created'
+        MEMBER_ADDED = 'member_added', 'Member added'
+        MEMBER_REMOVED = 'member_removed', 'Member removed'
+        MEMBER_LEFT = 'member_left', 'Member left'
+        MEMBER_JOINED = 'member_joined', 'Pending member joined'
+        INFO_CHANGED = 'info_changed', 'Group details changed'
+        ADMIN_GRANTED = 'admin_granted', 'Made admin'
+        ADMIN_REVOKED = 'admin_revoked', 'No longer admin'
+        OWNER_TRANSFERRED = 'owner_transferred', 'New owner'
 
     # Made by the sender's browser, so a retried send is recognised.
     id = models.UUIDField(primary_key=True, editable=False)

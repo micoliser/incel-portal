@@ -56,7 +56,7 @@ import {
   buildLoginPath,
   getUserRoleLabel,
 } from "@/lib/auth";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, markLoggingOut } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { lockedUntilFrom, lockoutText, useSecondsLeft } from "@/lib/lockout";
 import Image from "next/image";
@@ -296,6 +296,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       // Forget the chat key on this computer first, while the session that
       // can end its server-side secret still exists.
       await forgetKey().catch(() => undefined);
+      // From here, requests that fail because the session has ended must not
+      // redirect to the sign-in page themselves (this navigation does).
+      markLoggingOut();
       try {
         await apiClient.post("/auth/logout", {});
       } catch {

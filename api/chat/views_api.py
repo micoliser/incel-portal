@@ -14,6 +14,12 @@ from chat.serializers import (
     AccountBackupUpdateSerializer,
     AccountResetSerializer,
     AccountSetupSerializer,
+    AddMembersSerializer,
+    CreateGroupSerializer,
+    GroupInfoUpdateSerializer,
+    GroupPhotoSerializer,
+    MemberRoleSerializer,
+    TransferOwnerSerializer,
     ConversationSettingsSerializer,
     EditMessageSerializer,
     ForwardAttachmentSerializer,
@@ -246,6 +252,93 @@ class ConversationView(ChatView):
         serializer.is_valid(raise_exception=True)
         participant = services.update_settings(request.user, conversation_id, data=serializer.validated_data)
         return Response(services.conversation_payload(request.user, participant))
+
+
+class GroupsView(ThrottledChatView):
+    """Create a group (you become its admin)."""
+
+    throttle_scope = 'chat_keys'
+
+    def post(self, request):
+        serializer = CreateGroupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        conversation = services.create_group(request.user, **serializer.validated_data)
+        participant = services.get_membership(request.user, conversation.id)
+        return Response(services.conversation_payload(request.user, participant), status=status.HTTP_201_CREATED)
+
+
+class GroupInfoView(ThrottledChatView):
+    """Admins change the group name, description or photo (all encrypted)."""
+
+    throttle_scope = 'chat_keys'
+
+    def patch(self, request, conversation_id):
+        serializer = GroupInfoUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        if 'photo_object_key' not in request.data:
+            data.pop('photo_object_key', None)
+        conversation = services.update_group_info(request.user, conversation_id, **data)
+        participant = services.get_membership(request.user, conversation.id)
+        return Response(services.conversation_payload(request.user, participant))
+
+
+class GroupPhotoView(ThrottledChatView):
+    """POST: an upload link for a new (encrypted) group photo. GET: a short download link."""
+
+    throttle_scope = 'chat_uploads'
+
+    def get_throttles(self):
+        return [] if self.request.method == 'GET' else super().get_throttles()
+
+    def get(self, request, conversation_id):
+        return Response({'url': services.group_photo_download(request.user, conversation_id)})
+
+    def post(self, request, conversation_id):
+        serializer = GroupPhotoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(services.reserve_group_photo(request.user, conversation_id, **serializer.validated_data))
+
+
+class GroupMembersView(ThrottledChatView):
+    """Admins add people (with a new key version for everyone)."""
+
+    throttle_scope = 'chat_keys'
+
+    def post(self, request, conversation_id):
+        serializer = AddMembersSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        conversation = services.add_group_members(request.user, conversation_id, **serializer.validated_data)
+        participant = services.get_membership(request.user, conversation.id)
+        return Response(services.conversation_payload(request.user, participant), status=status.HTTP_201_CREATED)
+
+
+class GroupMemberView(ThrottledChatView):
+    """PATCH: make someone an admin or not (admins). DELETE: remove someone (admins), or leave (yourself)."""
+
+    throttle_scope = 'chat_keys'
+
+    def patch(self, request, conversation_id, user_id):
+        serializer = MemberRoleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        services.set_group_admin(request.user, conversation_id, user_id, admin=serializer.validated_data['admin'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def delete(self, request, conversation_id, user_id):
+        services.remove_group_member(request.user, conversation_id, user_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GroupOwnerView(ThrottledChatView):
+    """The owner hands the group over to another member."""
+
+    throttle_scope = 'chat_keys'
+
+    def post(self, request, conversation_id):
+        serializer = TransferOwnerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        services.transfer_ownership(request.user, conversation_id, serializer.validated_data['user_id'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ConversationKeysView(ThrottledChatView):

@@ -26,6 +26,16 @@ def thumb_key(conversation_id, attachment_id) -> str:
     return f'{_prefix()}/{conversation_id}/{attachment_id}.thumb.bin'
 
 
+def group_photo_prefix(conversation_id) -> str:
+    return f'{_prefix()}/{conversation_id}/group-photo-'
+
+
+def group_photo_key(conversation_id) -> str:
+    from uuid import uuid4
+
+    return f'{group_photo_prefix(conversation_id)}{uuid4().hex}.bin'
+
+
 def upload_url(key: str) -> str:
     bucket = bucket_name()
     if not bucket:

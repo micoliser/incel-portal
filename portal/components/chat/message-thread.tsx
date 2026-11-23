@@ -7,6 +7,7 @@ import {
   CheckCheck,
   Clock,
   Copy,
+  Info,
   Forward,
   Loader2,
   Mic,
@@ -33,7 +34,9 @@ import {
 } from "@/components/chat/chat-provider";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
 import { ReactionChips, ReactionPicker, type MessageAction } from "@/components/chat/reactions";
-import { Avatar } from "@/components/chat/conversation-list";
+import { Avatar, typingLabel } from "@/components/chat/conversation-list";
+import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
+import { MessageInfoDialog } from "@/components/chat/message-info-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -55,6 +58,21 @@ import { cn } from "@/lib/utils";
 
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 const MAX_FILES = 10;
+
+/** A steady colour per person for names in groups, readable on the bubble in both themes. */
+const NAME_COLOURS = [
+  "text-blue-700 dark:text-blue-300",
+  "text-amber-700 dark:text-amber-300",
+  "text-emerald-700 dark:text-emerald-300",
+  "text-violet-700 dark:text-violet-300",
+  "text-rose-700 dark:text-rose-300",
+  "text-cyan-700 dark:text-cyan-300",
+  "text-lime-700 dark:text-lime-300",
+  "text-fuchsia-700 dark:text-fuchsia-300",
+];
+function senderColor(id: number) {
+  return NAME_COLOURS[Math.abs(id) % NAME_COLOURS.length];
+}
 
 // From this many forwards on, the label says "Forwarded many times".
 const FORWARDED_MANY = 5;
@@ -99,7 +117,9 @@ export function MessageThread({
   backOnPhonesOnly?: boolean;
   compact?: boolean;
 }) {
-  const { threads, loadThread, typing, markSeen, setViewing, userId, findMessage } = useChat();
+  const { threads, loadThread, typing, typingPeople, markSeen, setViewing, userId, findMessage } = useChat();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const isGroup = conversation.isGroup;
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const thread = threads[conversation.id];
   const listRef = useRef<HTMLDivElement>(null);
@@ -160,7 +180,9 @@ export function MessageThread({
     }
   }
 
-  const otherRead = other?.last_read_seq ?? 0;
+  // Seen: by the other person, or in a group by everyone else who can read it.
+  const readers = conversation.members.filter((m) => m.id !== userId && !m.pending);
+  const otherRead = readers.length ? Math.min(...readers.map((m) => m.last_read_seq)) : 0;
 
   /** Scroll to a quoted message, loading older pages first if it is not on screen yet. */
   async function jumpTo(messageId: string) {
@@ -192,8 +214,11 @@ export function MessageThread({
     const person = conversation.participants.find((p) => p.id === senderId);
     return { name: person?.name || (senderId === userId ? "You" : (other?.name ?? "")), avatarUrl: person?.avatar_url };
   };
-  const isTyping = Boolean(typing[conversation.id]);
-  const name = other?.name ?? "Conversation";
+  const typingText = typingLabel(conversation, Boolean(typing[conversation.id]), typingPeople[conversation.id]);
+  const isTyping = Boolean(typingText);
+  const name = conversation.title;
+  const nameOf = (id: number) => (id === userId ? "You" : (conversation.participants.find((p) => p.id === id)?.name ?? "Someone"));
+  const onlineCount = conversation.members.filter((m) => m.id !== userId && m.online).length;
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label={`Chat with ${name}`}>
@@ -210,22 +235,44 @@ export function MessageThread({
             <ArrowLeft aria-hidden="true" />
           </Button>
         ) : null}
-        <Avatar name={name} src={other?.avatar_url} online={other?.online} size="sm" />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-foreground">{name}</h2>
-          <p className={cn("truncate text-xs", isTyping ? "text-success-text" : "text-muted-foreground")} aria-live="polite">
-            {readOnly
-              ? "No longer has access to the portal"
-              : waiting
-                ? "Invited · has not set up chat yet"
-                : isTyping
-                ? "Typing…"
-                : other?.online
-                  ? "Online"
-                  : lastSeenLabel(other?.last_seen_at ?? null)}
-          </p>
-        </div>
+        {isGroup ? (
+          // The whole header opens the group info, like other chat apps.
+          <button
+            type="button"
+            onClick={() => setInfoOpen(true)}
+            className="-my-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-[#0d47a1]"
+            aria-label={`${name}, group info`}
+          >
+            <Avatar name={name} src={conversation.photoUrl} size="sm" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-foreground">{name}</span>
+              <span className={cn("block truncate text-xs", isTyping ? "text-success-text" : "text-muted-foreground")} aria-live="polite">
+                {typingText ??
+                  `${conversation.members.length} members${onlineCount ? ` · ${onlineCount} online` : ""}`}
+              </span>
+            </span>
+          </button>
+        ) : (
+          <>
+            <Avatar name={name} src={conversation.photoUrl} online={other?.online} size="sm" />
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-semibold text-foreground">{name}</h2>
+              <p className={cn("truncate text-xs", isTyping ? "text-success-text" : "text-muted-foreground")} aria-live="polite">
+                {readOnly
+                  ? "No longer has access to the portal"
+                  : waiting
+                    ? "Invited · has not set up chat yet"
+                    : isTyping
+                      ? typingText
+                      : other?.online
+                        ? "Online"
+                        : lastSeenLabel(other?.last_seen_at ?? null)}
+              </p>
+            </div>
+          </>
+        )}
       </header>
+      {isGroup ? <GroupInfoDialog conversation={conversation} open={infoOpen} onOpenChange={setInfoOpen} /> : null}
 
       <div
         ref={listRef}
@@ -270,6 +317,9 @@ export function MessageThread({
                   </div>
                 ) : null}
                 <MessageBubble
+                  conversation={conversation}
+                  nameOf={nameOf}
+                  showSenderName={isGroup && message.senderId !== userId && !grouped}
                   sender={senderOf(message.senderId)}
                   message={message}
                   highlighted={highlighted === message.id}
@@ -278,7 +328,6 @@ export function MessageThread({
                   grouped={Boolean(grouped)}
                   repliedTo={message.replyTo ? byId.get(message.replyTo) ?? null : null}
                   seen={message.state === "sent" && message.seq <= otherRead}
-                  otherName={name}
                   canAct={!readOnly}
                   onReply={() => {
                     setEditing(null);
@@ -307,6 +356,7 @@ export function MessageThread({
           replyTo={replyTo}
           editing={editing}
           otherName={name}
+          nameOf={nameOf}
           onClearReply={() => setReplyTo(null)}
           onClearEdit={() => setEditing(null)}
           onSent={() => {
@@ -326,12 +376,19 @@ function MessageBubble({
   grouped,
   repliedTo,
   seen,
-  otherName,
   canAct,
   onReply,
   onEdit,
   sender,
+  conversation,
+  nameOf,
+  showSenderName,
 }: {
+  conversation: ChatConversation;
+  /** "You", or the person's name. */
+  nameOf: (id: number) => string;
+  /** Groups: the sender's name above the first of their messages in a row. */
+  showSenderName: boolean;
   /** Who sent it: shown as a small picture (or initials) beside the bubble. */
   sender: { name: string; avatarUrl: string | null | undefined };
   message: ChatMessage;
@@ -341,7 +398,6 @@ function MessageBubble({
   grouped: boolean;
   repliedTo: ChatMessage | null;
   seen: boolean;
-  otherName: string;
   canAct: boolean;
   onReply: () => void;
   onEdit: () => void;
@@ -352,6 +408,7 @@ function MessageBubble({
   // with the message actions (right-click, or press and hold on a phone).
   const [panel, setPanel] = useState<"react" | "menu" | null>(null);
   const [forwarding, setForwarding] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const pressTimer = useRef<number | null>(null);
   // "React" in the menu opens the reactions once the menu has fully closed,
   // so the menu handing focus back does not close them straight away.
@@ -361,7 +418,7 @@ function MessageBubble({
     return (
       <div className="my-3 flex justify-center">
         <p className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-muted px-3 py-1 text-center text-xs text-muted-foreground">
-          <span>{systemText(message, userId)}</span>
+          <span>{systemText(message, userId, nameOf)}</span>
           <span aria-hidden="true">·</span>
           <time dateTime={message.createdAt}>{clock(message.createdAt)}</time>
         </p>
@@ -405,7 +462,7 @@ function MessageBubble({
       ? "This message was deleted"
       : messageSummary(repliedTo)
     : (message.replyPreview?.text ?? "Tap to see the original message");
-  const quoteWho = quoteSender === userId ? "You" : quoteSender == null ? "Original message" : otherName;
+  const quoteWho = quoteSender == null ? "Original message" : nameOf(quoteSender);
 
   async function run(action: () => Promise<void>, failure: string) {
     setBusy(true);
@@ -432,6 +489,9 @@ function MessageBubble({
     ...(canAct && !message.deleted ? [{ label: "Reply", icon: Reply, onSelect: onReply }] : []),
     ...(message.text && !message.deleted ? [{ label: "Copy text", icon: Copy, onSelect: () => void copyText() }] : []),
     ...(canForward ? [{ label: "Forward", icon: Forward, onSelect: () => setForwarding(true) }] : []),
+    ...(conversation.isGroup && mine && message.state === "sent" && !message.deleted
+      ? [{ label: "Message info", icon: Info, onSelect: () => setInfoOpen(true) }]
+      : []),
     ...(canEdit && canAct ? [{ label: "Edit", icon: Pencil, onSelect: onEdit }] : []),
     { label: "Delete for me", icon: Trash2, onSelect: () => void run(() => deleteForMe(message), "Could not delete the message.") },
     ...(canChange
@@ -499,6 +559,11 @@ function MessageBubble({
                 <p className="italic">This message is not available.</p>
               ) : (
                 <>
+                  {showSenderName ? (
+                    <p className={cn("mb-0.5 truncate text-xs font-semibold", senderColor(message.senderId ?? 0), hasMedia && "px-2 pt-1")}>
+                      {sender.name}
+                    </p>
+                  ) : null}
                   {message.forwarded ? (
                     <p
                       className={cn(
@@ -639,6 +704,11 @@ function MessageBubble({
                     <Forward aria-hidden="true" /> Forward
                   </DropdownMenuItem>
                 ) : null}
+                {conversation.isGroup && mine && !message.deleted ? (
+                  <DropdownMenuItem onSelect={() => window.setTimeout(() => setInfoOpen(true), 0)}>
+                    <Info aria-hidden="true" /> Message info
+                  </DropdownMenuItem>
+                ) : null}
                 {canReact ? (
                   // Opens the reactions after the menu closes (see onCloseAutoFocus).
                   <DropdownMenuItem
@@ -681,12 +751,21 @@ function MessageBubble({
           reactions={message.reactions}
           userId={userId}
           mine={mine}
-          nameOf={() => otherName}
+          nameOf={nameOf}
           onToggle={(emoji) => toggleReaction(emoji)}
           disabled={!canReact}
         />
       </div>
       {forwarding ? <ForwardDialog message={message} open={forwarding} onOpenChange={setForwarding} /> : null}
+      {infoOpen ? (
+        <MessageInfoDialog
+          conversation={conversation}
+          message={message}
+          userId={userId}
+          open={infoOpen}
+          onOpenChange={setInfoOpen}
+        />
+      ) : null}
     </div>
   );
 }
@@ -726,6 +805,7 @@ function Composer({
   replyTo,
   editing,
   otherName,
+  nameOf,
   onClearReply,
   onClearEdit,
   onSent,
@@ -734,6 +814,7 @@ function Composer({
   replyTo: ChatMessage | null;
   editing: ChatMessage | null;
   otherName: string;
+  nameOf: (id: number) => string;
   onClearReply: () => void;
   onClearEdit: () => void;
   onSent: () => void;
@@ -938,7 +1019,7 @@ function Composer({
               "Editing message"
             ) : (
               <>
-                Replying to <span className="font-semibold text-foreground">{replyTo!.senderId === userId ? "yourself" : otherName}</span>:{" "}
+                Replying to <span className="font-semibold text-foreground">{replyTo!.senderId === userId ? "yourself" : replyTo!.senderId != null ? nameOf(replyTo!.senderId) : otherName}</span>:{" "}
                 {messageSummary(replyTo!)}
               </>
             )}

@@ -2,7 +2,7 @@
 
 import { Loader2, MessagesSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ChatGate } from "@/components/chat/chat-gate";
 import { ChatMenu } from "@/components/chat/chat-menu";
@@ -16,6 +16,17 @@ export function ChatWorkspace({ conversationId }: { conversationId: string | nul
   const router = useRouter();
   const { conversations, status, closeDrawer, connected, ensureConversation } = useChat();
   const active = conversations.find((c) => c.id === conversationId) ?? null;
+  // Leaving a group (or being removed) closes it: back to the list.
+  const wasOpen = useRef<string | null>(null);
+  useEffect(() => {
+    if (active) {
+      wasOpen.current = active.id;
+    } else if (conversationId && wasOpen.current === conversationId) {
+      wasOpen.current = null;
+      router.replace("/chat");
+    }
+  }, [active, conversationId, router]);
+
   // A chat opened by link (a push notification, a bookmark) may be older than
   // the conversations loaded so far: fetch it on its own.
   const [missing, setMissing] = useState<string | null>(null);

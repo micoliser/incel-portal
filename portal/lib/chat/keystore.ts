@@ -132,3 +132,30 @@ export async function forgetKey() {
     window.dispatchEvent(new Event("portal-chat-lock"));
   }
 }
+
+
+/**
+ * What the service worker needs to show chat notification previews: where the
+ * API is, and whether previews are wanted. Kept beside the sealed key; the
+ * worker reads it to decrypt pushes in the background (public/sw.js).
+ */
+export type ChatPushConfig = { apiBase: string; previews: boolean };
+const CONFIG = "config";
+
+export async function readPushConfig(): Promise<ChatPushConfig | null> {
+  try {
+    return ((await withStore("readonly", (store) => store.get(CONFIG))) as ChatPushConfig | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writePushConfig(change: Partial<ChatPushConfig> & { apiBase: string }) {
+  try {
+    const current = await readPushConfig();
+    const next: ChatPushConfig = { previews: current?.previews ?? true, ...change };
+    await withStore("readwrite", (store) => store.put(next, CONFIG));
+  } catch {
+    // Storage unavailable: notifications fall back to "New message".
+  }
+}
