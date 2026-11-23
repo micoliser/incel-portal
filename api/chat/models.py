@@ -162,6 +162,25 @@ class MessageAttachment(CreatedAtModel):
     thumb_size = models.PositiveBigIntegerField(null=True, blank=True)
 
 
+class MessageReaction(models.Model):
+    """One person's reaction to a message. The emoji is encrypted with the
+    conversation key like a message, so the server sees only that this person
+    reacted to this message, not with what. One reaction per person."""
+
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reactions')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='+')
+    key_version = models.PositiveIntegerField()
+    nonce = models.CharField(max_length=64)
+    ciphertext = models.CharField(max_length=512)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            # Also serves lookups by message (its first column).
+            models.UniqueConstraint(fields=['message', 'user'], name='chat_reaction_unique'),
+        ]
+
+
 class HiddenMessage(CreatedAtModel):
     """A message deleted for one user only."""
 

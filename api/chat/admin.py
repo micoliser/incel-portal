@@ -13,7 +13,7 @@ from django.utils.html import format_html
 
 from audit.actions import AuditAction
 from audit.log import log_audit
-from chat.models import ChatAccount, Conversation, Message, MessageAttachment, Participant
+from chat.models import ChatAccount, Conversation, Message, MessageAttachment, MessageReaction, Participant
 from common.users import display_name
 
 PREVIEW_CHARS = 48
@@ -192,3 +192,17 @@ class MessageAttachmentAdmin(ReadOnlyChatAdmin):
     @admin.display(description='Encrypted size', ordering='encrypted_size')
     def size(self, obj):
         return filesizeformat(obj.encrypted_size or 0)
+
+
+@admin.register(MessageReaction)
+class MessageReactionAdmin(ReadOnlyChatAdmin):
+    list_display = ['updated_at', 'user', 'message_id', 'key_version']
+    search_fields = ['=message__id', 'user__email']
+    list_select_related = ['user']
+    ordering = ['-updated_at']
+    fields = ['message', 'user', 'key_version', 'emoji', 'updated_at']
+    readonly_fields = fields
+
+    @admin.display(description='Emoji (encrypted)')
+    def emoji(self, obj):
+        return _scrambled(obj.ciphertext)

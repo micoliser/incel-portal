@@ -6,20 +6,32 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Forward,
   Loader2,
+  Mic,
   MoreHorizontal,
   Paperclip,
   Pencil,
   Reply,
   SendHorizontal,
+  SmilePlus,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
-import { FileCard, isMedia, MediaTile } from "@/components/chat/attachment-view";
-import { systemText, useChat, type ChatConversation, type ChatMessage } from "@/components/chat/chat-provider";
+import { FileCard, isMedia, isVoice, MediaTile, VoiceNote } from "@/components/chat/attachment-view";
+import {
+  messageSummary,
+  systemText,
+  useChat,
+  type ChatConversation,
+  type ChatMessage,
+} from "@/components/chat/chat-provider";
+import { ForwardDialog } from "@/components/chat/forward-dialog";
+import { ReactionChips, ReactionPicker } from "@/components/chat/reactions";
 import { Avatar } from "@/components/chat/conversation-list";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,11 +42,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { fileTooLarge, formatBytes } from "@/lib/chat/media";
+import {
+  canRecordVoice,
+  formatDuration,
+  VOICE_MAX_SECONDS,
+  VoiceRecorder,
+  type VoiceRecording,
+} from "@/lib/chat/voice";
 import { extractApiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 const MAX_FILES = 10;
+
+// From this many forwards on, the label says "Forwarded many times".
+const FORWARDED_MANY = 5;
 
 function withinWindow(message: ChatMessage) {
   return Date.now() - new Date(message.createdAt).getTime() < EDIT_WINDOW_MS;
@@ -76,7 +98,8 @@ export function MessageThread({
   backOnPhonesOnly?: boolean;
   compact?: boolean;
 }) {
-  const { threads, loadThread, typing, markSeen, setViewing, userId } = useChat();
+  const { threads, loadThread, typing, markSeen, setViewing, userId, findMessage } = useChat();
+  const [highlighted, setHighlighted] = useState<string | null>(null);
   const thread = threads[conversation.id];
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -137,6 +160,31 @@ export function MessageThread({
   }
 
   const otherRead = other?.last_read_seq ?? 0;
+
+  /** Scroll to a quoted message, loading older pages first if it is not on screen yet. */
+  async function jumpTo(messageId: string) {
+    const show = () => {
+      const target = listRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+      if (!target) return false;
+      stickToBottom.current = false;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+      setHighlighted(messageId);
+      window.setTimeout(() => setHighlighted((current) => (current === messageId ? null : current)), 1800);
+      return true;
+    };
+    if (show()) return;
+    stickToBottom.current = false;
+    toast.loading("Finding the message…", { id: "chat-jump" });
+    const found = await findMessage(conversation.id, messageId);
+    toast.dismiss("chat-jump");
+    if (!found) {
+      toast.info("That message is no longer available.");
+      return;
+    }
+    // Let the older messages render before scrolling to one.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => void show()));
+  }
 
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const isTyping = Boolean(typing[conversation.id]);
@@ -218,6 +266,8 @@ export function MessageThread({
                 ) : null}
                 <MessageBubble
                   message={message}
+                  highlighted={highlighted === message.id}
+                  onJump={(id) => void jumpTo(id)}
                   mine={message.senderId === userId}
                   grouped={Boolean(grouped)}
                   repliedTo={message.replyTo ? byId.get(message.replyTo) ?? null : null}
@@ -264,6 +314,8 @@ export function MessageThread({
 
 function MessageBubble({
   message,
+  highlighted,
+  onJump,
   mine,
   grouped,
   repliedTo,
@@ -274,6 +326,8 @@ function MessageBubble({
   onEdit,
 }: {
   message: ChatMessage;
+  highlighted: boolean;
+  onJump: (messageId: string) => void;
   mine: boolean;
   grouped: boolean;
   repliedTo: ChatMessage | null;
@@ -283,8 +337,14 @@ function MessageBubble({
   onReply: () => void;
   onEdit: () => void;
 }) {
-  const { deleteForEveryone, deleteForMe, retry, userId } = useChat();
+  const { deleteForEveryone, deleteForMe, retry, react, userId } = useChat();
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [forwarding, setForwarding] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  // "React" in the menu opens the reactions once the menu has fully closed,
+  // so the menu handing focus back does not close them straight away.
+  const reactAfterMenu = useRef(false);
 
   if (message.kind === "system") {
     return (
@@ -299,12 +359,42 @@ function MessageBubble({
   }
 
   const media = message.attachments.filter(isMedia);
-  const files = message.attachments.filter((a) => !isMedia(a));
+  const voices = message.attachments.filter(isVoice);
+  const files = message.attachments.filter((a) => !isMedia(a) && !isVoice(a));
   const hasMedia = media.length > 0 && message.state !== "unreadable";
   const uploadState = message.state === "failed" ? "failed" : message.state === "sending" ? "sending" : "sent";
 
   const canChange = mine && message.state === "sent" && !message.deleted && withinWindow(message);
+  // A voice note has no text to edit (it can still be deleted).
+  const canEdit = canChange && !voices.length;
   const failed = message.state === "failed";
+  const canReact = canAct && message.state === "sent" && !message.deleted;
+  // Forwarding out of a chat works even when it is read-only.
+  const canForward = message.state === "sent" && !message.deleted;
+  const myReaction = message.reactions.find((r) => r.userId === userId)?.emoji ?? null;
+
+  function toggleReaction(emoji: string | null) {
+    react(message, emoji).catch((error) => toast.error(extractApiErrorMessage(error, "Could not react to the message.")));
+  }
+
+  // A long press on a phone opens the reactions, like other chat apps.
+  function pressStart(event: React.PointerEvent) {
+    if (event.pointerType !== "touch" || !canReact) return;
+    pressTimer.current = window.setTimeout(() => setPicking(true), 450);
+  }
+  function pressEnd() {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  }
+
+  // The quote: the original if it is loaded, otherwise the preview kept in the reply.
+  const quoteSender = repliedTo ? repliedTo.senderId : message.replyPreview?.senderId;
+  const quoteText = repliedTo
+    ? repliedTo.deleted
+      ? "This message was deleted"
+      : messageSummary(repliedTo)
+    : (message.replyPreview?.text ?? "Tap to see the original message");
+  const quoteWho = quoteSender === userId ? "You" : quoteSender == null ? "Original message" : otherName;
 
   async function run(action: () => Promise<void>, failure: string) {
     setBusy(true);
@@ -318,80 +408,129 @@ function MessageBubble({
   }
 
   return (
-    <div className={cn("group flex", mine ? "justify-end" : "justify-start", grouped ? "mt-0.5" : "mt-3")}>
+    <div
+      data-message-id={message.id}
+      className={cn(
+        "group -mx-2 flex rounded-xl px-2 transition-colors duration-700",
+        mine ? "justify-end" : "justify-start",
+        grouped ? "mt-0.5" : "mt-3",
+        highlighted && "bg-[#0d47a1]/10 duration-150 dark:bg-[#38bdf8]/12",
+      )}
+    >
       <div className={cn("flex max-w-[85%] items-end gap-1 sm:max-w-[70%]", mine && "flex-row-reverse")}>
-        <div
-          className={cn(
-            "min-w-0 rounded-2xl text-sm",
-            hasMedia && !message.deleted ? "p-1" : "px-3 py-2",
-            message.deleted || message.state === "unreadable"
-              ? "border border-dashed border-border bg-transparent text-muted-foreground"
-              : mine
-                ? "bg-[#0d47a1] text-white"
-                : "bg-muted text-foreground",
-            failed && "ring-2 ring-destructive/60",
-          )}
-        >
-          {message.deleted ? (
-            <p className="italic">This message was deleted</p>
-          ) : message.state === "unreadable" ? (
-            <p className="italic">This message is not available.</p>
-          ) : (
-            <>
-              {repliedTo ? (
-                <div
-                  className={cn(
-                    "mb-1.5 rounded-lg border-l-2 px-2 py-1 text-xs",
-                    hasMedia && "mx-1 mt-1",
-                    mine ? "border-white/60 bg-white/10 text-blue-100" : "border-[#0d47a1] bg-background/60 text-muted-foreground dark:border-[#38bdf8]",
-                  )}
-                >
-                  <span className="block font-semibold">{repliedTo.senderId === message.senderId ? (mine ? "You" : otherName) : mine ? otherName : "You"}</span>
-                  <span className="line-clamp-2">
-                    {repliedTo.deleted ? "This message was deleted" : repliedTo.text || repliedTo.attachments[0]?.name || "Message"}
-                  </span>
-                </div>
-              ) : null}
-              {media.length ? (
-                <div className="flex flex-col gap-1">
-                  {media.map((attachment) => (
-                    <MediaTile key={attachment.id} attachment={attachment} mine={mine} state={uploadState} />
-                  ))}
-                </div>
-              ) : null}
-              {files.length ? (
-                <div className={cn("flex flex-col gap-2", hasMedia ? "m-1 mt-2" : "mb-1")}>
-                  {files.map((attachment) => (
-                    <FileCard key={attachment.id} attachment={attachment} mine={mine} state={uploadState} />
-                  ))}
-                </div>
-              ) : null}
-              {message.text ? (
-                <p className={cn("break-words whitespace-pre-wrap", hasMedia && "px-2 pt-1.5")}>{message.text}</p>
-              ) : null}
-            </>
-          )}
-          <p
-            className={cn(
-              "mt-0.5 flex items-center justify-end gap-1 text-[11px]",
-              hasMedia && !message.deleted && "px-2 pb-1",
-              mine && !message.deleted ? "text-blue-100" : "text-muted-foreground",
-            )}
-          >
-            {message.editedAt && !message.deleted ? <span>Edited ·</span> : null}
-            <span>{clock(message.createdAt)}</span>
-            {mine && !message.deleted ? (
-              message.state === "sending" ? (
-                <Clock className="size-3" aria-label="Sending" />
-              ) : failed ? (
-                <AlertCircle className="size-3" aria-label="Not sent" />
-              ) : seen ? (
-                <CheckCheck className="size-3.5" aria-label="Seen" />
+        <div className={cn("flex min-w-0 flex-col", mine ? "items-end" : "items-start", message.reactions.length && "pb-1")}>
+          <ReactionPicker open={picking} onOpenChange={setPicking} mine={myReaction} onPick={toggleReaction} align={mine ? "end" : "start"}>
+            <div
+              onPointerDown={pressStart}
+              onPointerUp={pressEnd}
+              onPointerLeave={pressEnd}
+              onPointerCancel={pressEnd}
+              onContextMenu={(event) => {
+                if (pressTimer.current !== null || picking) event.preventDefault();
+              }}
+              className={cn(
+                "min-w-0 rounded-2xl text-sm select-text",
+                hasMedia && !message.deleted ? "p-1" : "px-3 py-2",
+                message.deleted || message.state === "unreadable"
+                  ? "border border-dashed border-border bg-transparent text-muted-foreground"
+                  : mine
+                    ? "bg-[#0d47a1] text-white"
+                    : "bg-muted text-foreground",
+                failed && "ring-2 ring-destructive/60",
+              )}
+            >
+              {message.deleted ? (
+                <p className="italic">This message was deleted</p>
+              ) : message.state === "unreadable" ? (
+                <p className="italic">This message is not available.</p>
               ) : (
-                <Check className="size-3" aria-label="Sent" />
-              )
-            ) : null}
-          </p>
+                <>
+                  {message.forwarded ? (
+                    <p
+                      className={cn(
+                        "mb-1 flex items-center gap-1 text-[11px] italic",
+                        hasMedia && "px-2 pt-1",
+                        mine ? "text-blue-100" : "text-muted-foreground",
+                      )}
+                    >
+                      <Forward className="size-3 shrink-0" aria-hidden="true" />
+                      {message.forwarded >= FORWARDED_MANY ? "Forwarded many times" : "Forwarded"}
+                    </p>
+                  ) : null}
+                  {message.replyTo ? (
+                    <button
+                      type="button"
+                      onClick={() => onJump(message.replyTo!)}
+                      aria-label={`Replying to ${quoteWho}: ${quoteText}. Go to the original message`}
+                      className={cn(
+                        "mb-1.5 block w-full min-w-0 rounded-lg border-l-2 px-2 py-1 text-left text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-1",
+                        hasMedia && "mx-1 mt-1 w-[calc(100%-0.5rem)]",
+                        mine
+                          ? "border-white/60 bg-white/10 text-blue-100 hover:bg-white/20 focus-visible:outline-white"
+                          : "border-[#0d47a1] bg-background/60 text-muted-foreground hover:bg-background focus-visible:outline-[#0d47a1] dark:border-[#38bdf8]",
+                      )}
+                    >
+                      <span className="block font-semibold">{quoteWho}</span>
+                      <span className="line-clamp-2">{quoteText}</span>
+                    </button>
+                  ) : null}
+                  {media.length ? (
+                    <div className="flex flex-col gap-1">
+                      {media.map((attachment) => (
+                        <MediaTile key={attachment.id} attachment={attachment} mine={mine} state={uploadState} />
+                      ))}
+                    </div>
+                  ) : null}
+                  {voices.length ? (
+                    <div className="flex flex-col gap-2">
+                      {voices.map((attachment) => (
+                        <VoiceNote key={attachment.id} attachment={attachment} mine={mine} state={uploadState} />
+                      ))}
+                    </div>
+                  ) : null}
+                  {files.length ? (
+                    <div className={cn("flex flex-col gap-2", hasMedia ? "m-1 mt-2" : "mb-1")}>
+                      {files.map((attachment) => (
+                        <FileCard key={attachment.id} attachment={attachment} mine={mine} state={uploadState} />
+                      ))}
+                    </div>
+                  ) : null}
+                  {message.text ? (
+                    <p className={cn("break-words whitespace-pre-wrap", hasMedia && "px-2 pt-1.5")}>{message.text}</p>
+                  ) : null}
+                </>
+              )}
+              <p
+                className={cn(
+                  "mt-0.5 flex items-center justify-end gap-1 text-[11px]",
+                  hasMedia && !message.deleted && "px-2 pb-1",
+                  mine && !message.deleted ? "text-blue-100" : "text-muted-foreground",
+                )}
+              >
+                {message.editedAt && !message.deleted ? <span>Edited ·</span> : null}
+                <span>{clock(message.createdAt)}</span>
+                {mine && !message.deleted ? (
+                  message.state === "sending" ? (
+                    <Clock className="size-3" aria-label="Sending" />
+                  ) : failed ? (
+                    <AlertCircle className="size-3" aria-label="Not sent" />
+                  ) : seen ? (
+                    <CheckCheck className="size-3.5" aria-label="Seen" />
+                  ) : (
+                    <Check className="size-3" aria-label="Sent" />
+                  )
+                ) : null}
+              </p>
+            </div>
+          </ReactionPicker>
+          <ReactionChips
+            reactions={message.reactions}
+            userId={userId}
+            mine={mine}
+            nameOf={() => otherName}
+            onToggle={(emoji) => toggleReaction(emoji)}
+            disabled={!canReact}
+          />
         </div>
 
         {failed ? (
@@ -410,46 +549,84 @@ function MessageBubble({
             </Button>
           </div>
         ) : message.state === "sent" ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <div className={cn("flex items-center", mine && "flex-row-reverse")}>
+            {canReact ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                aria-label="Message options"
-                disabled={busy}
+                onClick={() => setPicking(true)}
+                className="hidden opacity-0 group-hover:opacity-100 focus-visible:opacity-100 sm:inline-flex"
+                aria-label="React"
               >
-                <MoreHorizontal aria-hidden="true" />
+                <SmilePlus aria-hidden="true" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align={mine ? "end" : "start"}>
-              {canAct && !message.deleted ? (
-                <DropdownMenuItem onSelect={onReply}>
-                  <Reply aria-hidden="true" /> Reply
-                </DropdownMenuItem>
-              ) : null}
-              {canChange && canAct ? (
-                <DropdownMenuItem onSelect={onEdit}>
-                  <Pencil aria-hidden="true" /> Edit
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => run(() => deleteForMe(message), "Could not delete the message.")}>
-                <Trash2 aria-hidden="true" /> Delete for me
-              </DropdownMenuItem>
-              {canChange ? (
-                <DropdownMenuItem
-                  className="text-destructive-text focus:text-destructive-text"
-                  onSelect={() => run(() => deleteForEveryone(message), "Could not delete the message.")}
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                  aria-label="Message options"
+                  disabled={busy}
                 >
-                  <Trash2 aria-hidden="true" /> Delete for everyone
+                  <MoreHorizontal aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align={mine ? "end" : "start"}
+                onCloseAutoFocus={(event) => {
+                  if (!reactAfterMenu.current) return;
+                  reactAfterMenu.current = false;
+                  event.preventDefault();
+                  setPicking(true);
+                }}
+              >
+                {canAct && !message.deleted ? (
+                  <DropdownMenuItem onSelect={onReply}>
+                    <Reply aria-hidden="true" /> Reply
+                  </DropdownMenuItem>
+                ) : null}
+                {canForward ? (
+                  <DropdownMenuItem onSelect={() => window.setTimeout(() => setForwarding(true), 0)}>
+                    <Forward aria-hidden="true" /> Forward
+                  </DropdownMenuItem>
+                ) : null}
+                {canReact ? (
+                  // Opens the reactions after the menu closes (see onCloseAutoFocus).
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      reactAfterMenu.current = true;
+                    }}
+                  >
+                    <SmilePlus aria-hidden="true" /> React
+                  </DropdownMenuItem>
+                ) : null}
+                {canEdit && canAct ? (
+                  <DropdownMenuItem onSelect={onEdit}>
+                    <Pencil aria-hidden="true" /> Edit
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => run(() => deleteForMe(message), "Could not delete the message.")}>
+                  <Trash2 aria-hidden="true" /> Delete for me
                 </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {canChange ? (
+                  <DropdownMenuItem
+                    className="text-destructive-text focus:text-destructive-text"
+                    onSelect={() => run(() => deleteForEveryone(message), "Could not delete the message.")}
+                  >
+                    <Trash2 aria-hidden="true" /> Delete for everyone
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         ) : null}
       </div>
+      {forwarding ? <ForwardDialog message={message} open={forwarding} onOpenChange={setForwarding} /> : null}
     </div>
   );
 }
@@ -508,6 +685,95 @@ function Composer({
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [voice, setVoice] = useState<VoiceState>({ phase: "idle" });
+  const recorderRef = useRef<VoiceRecorder | null>(null);
+  const reviewUrl = useRef<string | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+
+  useEffect(() => {
+    // Checked after mounting: the server render has no MediaRecorder.
+    const timer = window.setTimeout(() => setVoiceSupported(canRecordVoice()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Leaving the conversation throws away a recording in progress.
+  useEffect(
+    () => () => {
+      recorderRef.current?.cancel();
+      recorderRef.current = null;
+      if (reviewUrl.current) URL.revokeObjectURL(reviewUrl.current);
+    },
+    [],
+  );
+
+  function sendVoice(recording: VoiceRecording) {
+    reviewUrl.current = null; // now owned by the sent message
+    const outgoing = {
+      text: "",
+      files: [recording.file],
+      replyTo: replyTo?.id ?? null,
+      voice: { duration: recording.duration, waveform: recording.waveform, url: recording.url },
+    };
+    setVoice({ phase: "idle" });
+    onClearReply();
+    onSent();
+    send(conversationId, outgoing).catch((error) => {
+      toast.error(extractApiErrorMessage(error, "The voice message was not sent. Use Retry to try again."));
+    });
+  }
+
+  async function finishRecording(then: "review" | "send") {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    recorderRef.current = null;
+    const recording = await recorder.stop();
+    if (!recording) {
+      setVoice({ phase: "idle" });
+      toast.error("That recording was too short to send.");
+      return;
+    }
+    if (then === "send") {
+      sendVoice(recording);
+    } else {
+      reviewUrl.current = recording.url;
+      setVoice({ phase: "review", recording });
+    }
+  }
+
+  async function startRecording() {
+    if (voice.phase !== "idle") return;
+    setVoice({ phase: "starting" });
+    const recorder = new VoiceRecorder(
+      (level, seconds) =>
+        setVoice((v) => (v.phase === "recording" ? { ...v, seconds, levels: [...v.levels.slice(-(LIVE_BARS - 1)), level] } : v)),
+      () => {
+        toast.info(`Voice messages can be up to ${VOICE_MAX_SECONDS / 60} minutes. Recording stopped; review it and send.`);
+        void finishRecording("review");
+      },
+    );
+    try {
+      await recorder.start();
+      recorderRef.current = recorder;
+      setVoice({ phase: "recording", seconds: 0, levels: [] });
+    } catch (error) {
+      setVoice({ phase: "idle" });
+      toast.error(error instanceof Error ? error.message : "Could not start recording.");
+    }
+  }
+
+  function cancelRecording() {
+    recorderRef.current?.cancel();
+    recorderRef.current = null;
+    setVoice({ phase: "idle" });
+    inputRef.current?.focus();
+  }
+
+  function discardReview() {
+    if (reviewUrl.current) URL.revokeObjectURL(reviewUrl.current);
+    reviewUrl.current = null;
+    setVoice({ phase: "idle" });
+    inputRef.current?.focus();
+  }
 
   useEffect(() => {
     if (editing) {
@@ -613,7 +879,7 @@ function Composer({
             ) : (
               <>
                 Replying to <span className="font-semibold text-foreground">{replyTo!.senderId === userId ? "yourself" : otherName}</span>:{" "}
-                {replyTo!.text || replyTo!.attachments[0]?.name}
+                {messageSummary(replyTo!)}
               </>
             )}
           </span>
@@ -654,63 +920,208 @@ function Composer({
         </ul>
       ) : null}
 
-      <div className="flex items-end gap-2">
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) addFiles(e.target.files);
-            e.target.value = "";
-          }}
+      {voice.phase !== "idle" ? (
+        <VoiceComposer
+          voice={voice}
+          onCancel={voice.phase === "review" ? discardReview : cancelRecording}
+          onStop={() => void finishRecording("review")}
+          onSend={() => (voice.phase === "review" ? sendVoice(voice.recording) : void finishRecording("send"))}
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => fileRef.current?.click()}
-          disabled={Boolean(editing)}
-          aria-label="Attach files"
-          title="Attach files (up to 25 MB each)"
-        >
-          <Paperclip aria-hidden="true" />
-        </Button>
-        <label htmlFor={`composer-${conversationId}`} className="sr-only">
-          Message {otherName}
-        </label>
-        <textarea
-          id={`composer-${conversationId}`}
-          ref={inputRef}
-          rows={1}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (e.target.value) sendTyping(conversationId);
-          }}
-          onKeyDown={onKeyDown}
-          onPaste={(e) => {
-            if (!editing && e.clipboardData.files.length) {
-              e.preventDefault();
-              addFiles(e.clipboardData.files);
-            }
-          }}
-          placeholder={editing ? "Edit your message" : "Write a message"}
-          className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/35 focus-visible:outline-none"
-        />
-        <Button
-          type="button"
-          size="icon"
-          onClick={() => void submit()}
-          disabled={busy || (!text.trim() && !files.length)}
-          aria-label={editing ? "Save edit" : "Send message"}
-        >
-          {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : editing ? <Check aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />}
-        </Button>
-      </div>
+      ) : (
+        <div className="flex items-end gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileRef.current?.click()}
+            disabled={Boolean(editing)}
+            aria-label="Attach files"
+            title="Attach files (up to 25 MB each)"
+          >
+            <Paperclip aria-hidden="true" />
+          </Button>
+          <label htmlFor={`composer-${conversationId}`} className="sr-only">
+            Message {otherName}
+          </label>
+          <textarea
+            id={`composer-${conversationId}`}
+            ref={inputRef}
+            rows={1}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (e.target.value) sendTyping(conversationId);
+            }}
+            onKeyDown={onKeyDown}
+            onPaste={(e) => {
+              if (!editing && e.clipboardData.files.length) {
+                e.preventDefault();
+                addFiles(e.clipboardData.files);
+              }
+            }}
+            placeholder={editing ? "Edit your message" : "Write a message"}
+            className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/35 focus-visible:outline-none"
+          />
+          {voiceSupported && !editing && !text.trim() && !files.length ? (
+            <Button
+              type="button"
+              size="icon"
+              onClick={() => void startRecording()}
+              aria-label="Record a voice message"
+              title="Record a voice message (up to 20 minutes)"
+            >
+              <Mic aria-hidden="true" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="icon"
+              onClick={() => void submit()}
+              disabled={busy || (!text.trim() && !files.length)}
+              aria-label={editing ? "Save edit" : "Send message"}
+            >
+              {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : editing ? <Check aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />}
+            </Button>
+          )}
+        </div>
+      )}
       <p className="mt-1.5 hidden text-[11px] text-muted-foreground sm:block">
-        Enter to send · Shift + Enter for a new line · End-to-end encrypted
+        {voice.phase === "recording" || voice.phase === "starting"
+          ? "Up to 20 minutes · Esc to cancel · End-to-end encrypted"
+          : voice.phase === "review"
+            ? "Play it back, then send or delete · End-to-end encrypted"
+            : "Enter to send · Shift + Enter for a new line · End-to-end encrypted"}
       </p>
+    </div>
+  );
+}
+
+const LIVE_BARS = 40;
+
+type VoiceState =
+  | { phase: "idle" }
+  | { phase: "starting" }
+  | { phase: "recording"; seconds: number; levels: number[] }
+  | { phase: "review"; recording: VoiceRecording };
+
+/** The composer row while recording a voice message, and while reviewing it before sending. */
+function VoiceComposer({
+  voice,
+  onCancel,
+  onStop,
+  onSend,
+}: {
+  voice: Exclude<VoiceState, { phase: "idle" }>;
+  onCancel: () => void;
+  onStop: () => void;
+  onSend: () => void;
+}) {
+  const recording = voice.phase === "recording" || voice.phase === "starting";
+  const sendRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    sendRef.current?.focus();
+  }, [voice.phase]);
+
+  return (
+    <div
+      className="flex items-center gap-2"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={onCancel}
+        aria-label={recording ? "Cancel recording" : "Delete recording"}
+        className="text-destructive-text hover:text-destructive-text"
+      >
+        <Trash2 aria-hidden="true" />
+      </Button>
+
+      <div className="flex min-h-9 min-w-0 flex-1 items-center gap-3 rounded-lg border border-input bg-background px-3 py-1.5">
+        {voice.phase === "review" ? (
+          <VoiceNote
+            compact
+            mine={false}
+            state="sent"
+            attachment={{
+              id: "voice-review",
+              name: voice.recording.file.name,
+              mime: voice.recording.file.type,
+              size: voice.recording.file.size,
+              file_key: "",
+              has_thumb: false,
+              voice: true,
+              duration: voice.recording.duration,
+              waveform: voice.recording.waveform,
+              localUrl: voice.recording.url,
+            }}
+          />
+        ) : (
+          <>
+            <span className="relative flex size-2.5 shrink-0" aria-hidden="true">
+              <span className="absolute inset-0 rounded-full bg-destructive-text motion-safe:animate-ping" />
+              <span className="relative size-2.5 rounded-full bg-destructive-text" />
+            </span>
+            <span className="shrink-0 text-sm font-medium text-foreground tabular-nums" role="timer" aria-live="off">
+              {voice.phase === "recording" ? formatDuration(voice.seconds) : "0:00"}
+              <span className="sr-only"> recorded</span>
+            </span>
+            <span className="flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden" aria-hidden="true">
+              {(voice.phase === "recording" ? voice.levels : []).map((level, index) => (
+                <span
+                  key={index}
+                  className="w-[3px] shrink-0 rounded-full bg-[#0d47a1] dark:bg-[#38bdf8]"
+                  style={{ height: `${Math.max(12, Math.round(level * 100))}%` }}
+                />
+              ))}
+            </span>
+            <span className="sr-only" role="status">
+              {voice.phase === "starting" ? "Starting the microphone" : "Recording a voice message"}
+            </span>
+          </>
+        )}
+      </div>
+
+      {recording ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={onStop}
+          disabled={voice.phase === "starting"}
+          aria-label="Stop and review"
+          title="Stop and review"
+        >
+          <Square className="size-3.5 fill-current" aria-hidden="true" />
+        </Button>
+      ) : null}
+      <Button
+        ref={sendRef}
+        type="button"
+        size="icon"
+        onClick={onSend}
+        disabled={voice.phase === "starting"}
+        aria-label="Send voice message"
+      >
+        <SendHorizontal aria-hidden="true" />
+      </Button>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useChat, type ChatConversation } from "@/components/chat/chat-provider";
@@ -60,7 +60,10 @@ export function ConversationList({
   activeId: string | null;
   onOpen: (conversationId: string) => void;
 }) {
-  const { conversations, openWith, invite, typing } = useChat();
+  const { conversations, openWith, invite, typing, conversationsHaveMore, loadingMoreConversations, loadMoreConversations } =
+    useChat();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<ChatPerson[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -117,6 +120,21 @@ export function ConversationList({
     }
   }
 
+  // Load older conversations when the end of the list scrolls into view.
+  const showingConversations = !searchingPeople && conversations.length > 0;
+  useEffect(() => {
+    const end = endRef.current;
+    if (!end || !showingConversations || !conversationsHaveMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMoreConversations();
+      },
+      { root: scrollRef.current, rootMargin: "200px 0px" },
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [showingConversations, conversationsHaveMore, loadMoreConversations, conversations.length]);
+
   const existing = new Map(
     conversations.filter((c) => c.kind === "direct" && c.other).map((c) => [c.other!.id, c.id] as const),
   );
@@ -148,7 +166,7 @@ export function ConversationList({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {searchingPeople ? (
           <PeopleResults
             people={people}
@@ -168,17 +186,32 @@ export function ConversationList({
             No conversations yet. Search for someone above to send your first message.
           </div>
         ) : (
-          <ul aria-label="Conversations">
-            {conversations.map((conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                active={conversation.id === activeId}
-                typing={Boolean(typing[conversation.id])}
-                onOpen={() => onOpen(conversation.id)}
-              />
-            ))}
-          </ul>
+          <>
+            <ul aria-label="Conversations">
+              {conversations.map((conversation) => (
+                <ConversationRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  active={conversation.id === activeId}
+                  typing={Boolean(typing[conversation.id])}
+                  onOpen={() => onOpen(conversation.id)}
+                />
+              ))}
+            </ul>
+            {conversationsHaveMore ? (
+              <div ref={endRef} className="flex justify-center p-3">
+                {loadingMoreConversations ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" /> Loading older conversations…
+                  </p>
+                ) : (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void loadMoreConversations()}>
+                    Load older conversations
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>

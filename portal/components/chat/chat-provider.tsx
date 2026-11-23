@@ -18,9 +18,10 @@ import {
 } from "react";
 
 import * as api from "@/lib/chat/api";
-import type { ChatAccount, Participant, RawConversation, RawKey, RawMessage } from "@/lib/chat/api";
+import type { ChatAccount, Participant, RawConversation, RawKey, RawMessage, RawReaction } from "@/lib/chat/api";
 import {
   associatedData,
+  reactionAssociatedData,
   backUpPrivateKey,
   derivePasswordSecret,
   lockWithPin,
@@ -48,6 +49,7 @@ import {
   rememberPasswordSecret,
 } from "@/lib/chat/keystore";
 import { releaseDecryptedFiles, uploadEncrypted, type UploadedAttachment } from "@/lib/chat/media";
+import { formatDuration } from "@/lib/chat/voice";
 import { ChatSocket, type ChatEvent } from "@/lib/chat/socket";
 
 export type ChatStatus = "loading" | "not_set_up" | "locked" | "ready" | "error";
@@ -72,7 +74,18 @@ export type ChatMessage = {
   state: "sent" | "sending" | "failed" | "unreadable";
   systemEvent: string | null;
   systemData: Record<string, unknown>;
+  /** One per person, already decrypted. */
+  reactions: MessageReaction[];
+  /** Who and what is quoted, kept in the reply itself so the quote shows even when the original is not loaded. */
+  replyPreview: { senderId: number | null; text: string } | null;
+  /** How many times this message has been forwarded to get here (0: not forwarded). */
+  forwarded: number;
 };
+
+export type MessageReaction = { userId: number; emoji: string };
+
+/** The newest reaction in a conversation, for the list preview. */
+type ReactionPreview = { userId: number; emoji: string; target: ChatMessage; at: string };
 
 export type ChatConversation = RawConversation & {
   other: Participant | null;
@@ -85,10 +98,25 @@ type Payload = {
   v: 1;
   text: string;
   reply_to: string | null;
+  reply_preview?: { sender_id: number | null; text: string } | null;
   attachments: UploadedAttachment[];
+  /** Forward count, set by the forwarding browser; absent on ordinary messages. */
+  forwarded?: number;
 };
 
-type SendInput = { text: string; files: File[]; replyTo: string | null };
+type ReactionPayload = { v: 1; emoji: string };
+
+/** `voice`: the single file is a recorded voice note. */
+type SendInput = {
+  text: string;
+  files: File[];
+  replyTo: string | null;
+  voice?: { duration: number; waveform: number[]; url?: string };
+  /** Files already in this chat's storage (forwarding), sent instead of uploading `files`. */
+  prepared?: UploadedAttachment[];
+  /** Forward count for a forwarded message. */
+  forwarded?: number;
+};
 
 type ChatContextValue = {
   userId: number;
@@ -114,6 +142,12 @@ type ChatContextValue = {
   startOver: (newPin: string, resetCode: string, password?: string) => Promise<string>;
   lock: () => Promise<void>;
   refreshConversations: () => Promise<void>;
+  /** True while older conversations remain to be loaded. */
+  conversationsHaveMore: boolean;
+  loadingMoreConversations: boolean;
+  loadMoreConversations: () => Promise<void>;
+  /** Make sure a conversation is in the list (e.g. opened from a link). False if it does not exist for this user. */
+  ensureConversation: (conversationId: string) => Promise<boolean>;
   openWith: (person: api.ChatPerson) => Promise<string>;
   /** Invite someone without chat (again: a reminder). Returns the waiting conversation's id. */
   invite: (personId: number) => Promise<string>;
@@ -124,6 +158,12 @@ type ChatContextValue = {
   deleteForEveryone: (message: ChatMessage) => Promise<void>;
   deleteForMe: (message: ChatMessage) => Promise<void>;
   markSeen: (conversationId: string, newestSeq: number) => void;
+  /** Set your reaction; the same emoji again (or null) removes it. */
+  react: (message: ChatMessage, emoji: string | null) => Promise<void>;
+  /** Forward a message to other chats (at most 5), each followed by `note` if given. */
+  forward: (message: ChatMessage, conversationIds: string[], note: string) => Promise<void>;
+  /** Load older pages until the message is in the thread. False if it is not there (deleted for you, or too far back). */
+  findMessage: (conversationId: string, messageId: string) => Promise<boolean>;
   setViewing: (conversationId: string, viewing: boolean) => void;
   sendTyping: (conversationId: string) => void;
 };
@@ -131,6 +171,11 @@ type ChatContextValue = {
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 const MAX_WRONG_PINS = 5;
+// After a long disconnection, at most this many pages of 100 are fetched per open chat.
+const CATCH_UP_PAGES = 10;
+const MAX_FORWARD_TARGETS = 5;
+// Jumping to a quoted message loads at most this many older pages (of 50) to find it.
+const JUMP_PAGES = 40;
 
 export function useChat() {
   const value = useContext(ChatContext);
@@ -176,6 +221,29 @@ export function systemText(message: ChatMessage, userId: number): string {
   }
 }
 
+/** One line describing a message: its text, or what it carries. */
+export function messageSummary(message: ChatMessage): string {
+  if (message.deleted) return "This message was deleted";
+  if (message.text) return message.text;
+  const first = message.attachments[0];
+  if (!first) return "Message";
+  if (first.voice) return `Voice message (${formatDuration(first.duration ?? 0)})`;
+  if (first.mime.startsWith("image/")) return "Photo";
+  if (first.mime.startsWith("video/")) return "Video";
+  return first.name;
+}
+
+function shorten(text: string, length = 40) {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > length ? `${line.slice(0, length - 1)}…` : line;
+}
+
+function reactionPreviewText(preview: ReactionPreview, conversation: RawConversation, userId: number) {
+  const person = conversation.participants.find((p) => p.id === preview.userId);
+  const who = preview.userId === userId ? "You" : (person?.name ?? "Someone").split(" ")[0];
+  return `${who} reacted ${preview.emoji} to "${shorten(messageSummary(preview.target))}"`;
+}
+
 function previewOf(message: ChatMessage | null, userId: number): string {
   if (!message) return "No messages yet";
   if (message.deleted) return "This message was deleted";
@@ -185,6 +253,7 @@ function previewOf(message: ChatMessage | null, userId: number): string {
   if (message.text) return message.text;
   if (message.attachments.length) {
     const first = message.attachments[0];
+    if (first.voice) return `Voice message (${formatDuration(first.duration ?? 0)})`;
     if (first.mime.startsWith("image/")) return "Photo";
     if (first.mime.startsWith("video/")) return "Video";
     return first.name;
@@ -198,9 +267,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
   const [connected, setConnected] = useState(false);
   const [rawConversations, setRawConversations] = useState<RawConversation[]>([]);
   const [previews, setPreviews] = useState<Record<string, ChatMessage | null>>({});
+  const [reactionPreviews, setReactionPreviews] = useState<Record<string, ReactionPreview>>({});
   const [threads, setThreads] = useState<Record<string, Thread>>({});
   const [typing, setTyping] = useState<Record<string, number>>({});
   const [serverUnread, setServerUnread] = useState(0);
+  // Unread messages in conversations not loaded into the list yet.
+  const [unreadElsewhere, setUnreadElsewhere] = useState(0);
+  const [listPaging, setListPaging] = useState({ hasMore: false, loadingMore: false });
+  const pagingRef = useRef<{ next: string | null; loading: boolean }>({ next: null, loading: false });
   const [drawer, setDrawer] = useState<{ open: boolean; conversationId: string | null }>({
     open: false,
     conversationId: null,
@@ -213,7 +287,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
   const socketRef = useRef<ChatSocket | null>(null);
   const viewingRef = useRef(new Map<string, number>());
   const pendingSends = useRef(
-    new Map<string, SendInput & { uploaded?: UploadedAttachment[]; localUrls: (string | undefined)[] }>(),
+    new Map<
+      string,
+      SendInput & {
+        uploaded?: UploadedAttachment[];
+        localUrls: (string | undefined)[];
+        replyPreview: ChatMessage["replyPreview"];
+      }
+    >(),
   );
   const threadsRef = useRef(threads);
   const conversationsRef = useRef(rawConversations);
@@ -320,6 +401,35 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
 
   // --- Decryption ---------------------------------------------------------
 
+  /** Open each person's encrypted emoji; ones that do not open are left out. */
+  const decryptReactions = useCallback(
+    async (conversationId: string, messageId: string, rows: RawReaction[]): Promise<MessageReaction[]> => {
+      if (!rows.length) return [];
+      let map = await conversationKeys(conversationId);
+      if (rows.some((row) => !map.has(row.key_version))) map = await conversationKeys(conversationId, true);
+      const out: MessageReaction[] = [];
+      for (const row of rows) {
+        const key = map.get(row.key_version);
+        if (!key) continue;
+        try {
+          const payload = await decryptJson<ReactionPayload>(
+            row.ciphertext,
+            row.nonce,
+            key,
+            reactionAssociatedData(conversationId, messageId, row.user_id, row.key_version),
+          );
+          if (typeof payload.emoji === "string" && payload.emoji.length <= 32) {
+            out.push({ userId: row.user_id, emoji: payload.emoji });
+          }
+        } catch {
+          // Tampered with or made with a key this browser no longer has.
+        }
+      }
+      return out;
+    },
+    [conversationKeys],
+  );
+
   const decrypt = useCallback(
     async (raw: RawMessage): Promise<ChatMessage> => {
       const base: ChatMessage = {
@@ -339,6 +449,9 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         state: "sent",
         systemEvent: raw.system_event,
         systemData: raw.system_data ?? {},
+        reactions: [],
+        replyPreview: null,
+        forwarded: 0,
       };
       if (raw.deleted || raw.kind === "system" || !raw.ciphertext || !raw.nonce || raw.key_version == null) {
         return base;
@@ -355,10 +468,15 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           associatedData(raw.conversation_id, raw.id, raw.sender_id ?? 0, raw.key_version, raw.revision),
         );
         const thumbs = new Map(raw.attachments.map((a) => [a.id, a.has_thumb]));
+        const preview = payload.reply_preview;
         return {
           ...base,
           text: payload.text ?? "",
           replyTo: payload.reply_to ?? null,
+          replyPreview:
+            preview && typeof preview.text === "string" ? { senderId: preview.sender_id ?? null, text: preview.text } : null,
+          reactions: await decryptReactions(raw.conversation_id, raw.id, raw.reactions ?? []),
+          forwarded: Number.isFinite(Number(payload.forwarded)) ? Math.min(Math.max(0, Number(payload.forwarded)), 1000) : 0,
           attachments: (payload.attachments ?? [])
             .filter((a) => thumbs.has(a.id))
             .map((a) => ({ ...a, has_thumb: Boolean(thumbs.get(a.id) && a.thumb_key) })),
@@ -367,24 +485,82 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         return { ...base, state: "unreadable" };
       }
     },
-    [conversationKeys],
+    [conversationKeys, decryptReactions],
   );
 
   const updatePreview = useCallback(
     async (conversation: RawConversation) => {
       const message = conversation.last_message ? await decrypt(conversation.last_message) : null;
       setPreviews((current) => ({ ...current, [conversation.id]: message }));
+      const last = conversation.last_reaction;
+      const [reaction] = last ? await decryptReactions(conversation.id, last.message.id, [last]) : [];
+      const target = last && reaction ? await decrypt(last.message) : null;
+      setReactionPreviews((current) => {
+        const next = { ...current };
+        if (last && reaction && target) next[conversation.id] = { ...reaction, target, at: last.updated_at };
+        else delete next[conversation.id];
+        return next;
+      });
     },
-    [decrypt],
+    [decrypt, decryptReactions],
   );
 
   // --- Loading ------------------------------------------------------------
 
+  /** Reload the list from the top, keeping as many conversations as are loaded now (up to 100). */
   const refreshConversations = useCallback(async () => {
-    const list = await api.listConversations();
-    setRawConversations(list);
-    await Promise.all(list.map(updatePreview));
+    const loaded = conversationsRef.current.length;
+    const page = await api.listConversations({ limit: Math.min(100, Math.max(api.CONVERSATION_PAGE_SIZE, loaded)) });
+    setRawConversations(page.results);
+    pagingRef.current.next = page.next;
+    setListPaging((p) => ({ ...p, hasMore: page.has_more }));
+    setUnreadElsewhere(Math.max(0, page.unread_total - unreadIn(page.results)));
+    await Promise.all(page.results.map(updatePreview));
   }, [updatePreview]);
+
+  /** Load the next page of older conversations. */
+  const loadMoreConversations = useCallback(async () => {
+    const cursor = pagingRef.current.next;
+    if (pagingRef.current.loading || !cursor) return;
+    pagingRef.current.loading = true;
+    setListPaging((p) => ({ ...p, loadingMore: true }));
+    try {
+      const page = await api.listConversations({ before: cursor });
+      const known = new Set(conversationsRef.current.map((c) => c.id));
+      const added = page.results.filter((c) => !known.has(c.id));
+      setRawConversations((list) => {
+        const ids = new Set(list.map((c) => c.id));
+        return [...list, ...page.results.filter((c) => !ids.has(c.id))];
+      });
+      pagingRef.current.next = page.next;
+      setListPaging({ hasMore: page.has_more, loadingMore: false });
+      setUnreadElsewhere((u) => Math.max(0, u - unreadIn(added)));
+      await Promise.all(added.map(updatePreview));
+    } catch {
+      setListPaging((p) => ({ ...p, loadingMore: false }));
+    } finally {
+      pagingRef.current.loading = false;
+    }
+  }, [updatePreview]);
+
+  const ensureConversation = useCallback(
+    async (conversationId: string) => {
+      if (conversationsRef.current.some((c) => c.id === conversationId)) return true;
+      try {
+        const conversation = await api.getConversation(conversationId);
+        setRawConversations((list) =>
+          list.some((c) => c.id === conversation.id) ? list : sortConversations([...list, conversation]),
+        );
+        // Its unread messages were counted "elsewhere"; they are in the list now.
+        setUnreadElsewhere((u) => Math.max(0, u - conversation.unread_count));
+        void updatePreview(conversation);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [updatePreview],
+  );
 
   const loadThread = useCallback(
     async (conversationId: string, older = false) => {
@@ -419,11 +595,32 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     await refreshConversations().catch(() => undefined);
     for (const [conversationId, thread] of Object.entries(threadsRef.current)) {
       if (!thread.loaded) continue;
-      const newest = Math.max(0, ...thread.messages.filter((m) => m.state === "sent" || m.state === "unreadable").map((m) => m.seq));
+      let after = Math.max(0, ...thread.messages.filter((m) => m.state === "sent" || m.state === "unreadable").map((m) => m.seq));
       try {
-        const page = await api.getMessages(conversationId, { after_seq: newest, limit: 100 });
-        const decrypted = await Promise.all(page.results.map(decrypt));
-        upsertMessages(setThreads, conversationId, decrypted);
+        // Page through everything that arrived while the connection was down.
+        let caughtUp = false;
+        for (let pages = 0; pages < CATCH_UP_PAGES; pages += 1) {
+          const page = await api.getMessages(conversationId, { after_seq: after, limit: 100 });
+          upsertMessages(setThreads, conversationId, await Promise.all(page.results.map(decrypt)));
+          if (!page.has_more || page.results.length === 0) {
+            caughtUp = true;
+            break;
+          }
+          after = page.results[page.results.length - 1].seq;
+        }
+        if (!caughtUp) {
+          // Too far behind to fill the gap: start this thread again from the newest
+          // messages (older ones load on scroll), keeping anything still sending.
+          const latest = await api.getMessages(conversationId, { limit: 50 });
+          const decrypted = await Promise.all(latest.results.map(decrypt));
+          setThreads((t) => {
+            const unsent = (t[conversationId]?.messages ?? []).filter((m) => m.state === "sending" || m.state === "failed");
+            return {
+              ...t,
+              [conversationId]: { messages: [...decrypted, ...unsent].sort(bySeq), hasMore: latest.has_more, loading: false, loaded: true },
+            };
+          });
+        }
       } catch {
         // Next reconnect will try again.
       }
@@ -448,6 +645,9 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
 
   const clearMemory = useCallback(() => {
     recoveredKey.current = null;
+    pagingRef.current = { next: null, loading: false };
+    setListPaging({ hasMore: false, loadingMore: false });
+    setUnreadElsewhere(0);
     socketRef.current?.stop();
     socketRef.current = null;
     privateKeyRef.current = null;
@@ -737,7 +937,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
             deleted_at: null,
             attachments: existing.attachments.map((a) => ({ id: a.id, size: a.size, has_thumb: a.has_thumb })),
           });
-          upsertMessages(setThreads, conversationId, [message]);
+          // An edit changes the text only; reactions stay.
+          upsertMessages(setThreads, conversationId, [{ ...message, reactions: existing.reactions }]);
           setPreviews((p) => (p[conversationId]?.id === message.id ? { ...p, [conversationId]: message } : p));
           return;
         }
@@ -747,6 +948,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
             deleted: true,
             text: "",
             attachments: [],
+            reactions: [],
           })));
           setPreviews((p) =>
             p[conversationId]?.id === data.message_id
@@ -812,6 +1014,32 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           );
           return;
         }
+        case "reaction.updated": {
+          const messageId = String(data.message_id ?? "");
+          const row = data.reaction as RawReaction | undefined;
+          const removedUserId = data.removed_user_id != null ? Number(data.removed_user_id) : null;
+          const [decoded] = row ? await decryptReactions(conversationId, messageId, [row]) : [];
+          const who = removedUserId ?? row?.user_id;
+          setThreads((t) =>
+            mapMessage(t, conversationId, messageId, (m) => ({
+              ...m,
+              reactions: [...m.reactions.filter((r) => r.userId !== who), ...(decoded ? [decoded] : [])],
+            })),
+          );
+          if (decoded && row && data.message) {
+            const target = await decrypt(data.message as RawMessage);
+            setReactionPreviews((p) => ({ ...p, [conversationId]: { ...decoded, target, at: row.updated_at } }));
+          } else if (removedUserId != null) {
+            setReactionPreviews((p) => {
+              const current = p[conversationId];
+              if (!current || current.userId !== removedUserId || current.target.id !== messageId) return p;
+              const next = { ...p };
+              delete next[conversationId];
+              return next;
+            });
+          }
+          return;
+        }
         case "typing": {
           if (Number(data.user_id) === userId) return;
           setTyping((t) => ({ ...t, [conversationId]: Date.now() + 4000 }));
@@ -821,7 +1049,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           return;
       }
     },
-    [decrypt, refreshConversations, userId],
+    [decrypt, decryptReactions, refreshConversations, userId],
   );
 
   const handleEventRef = useRef(handleEvent);
@@ -947,11 +1175,23 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         if (!pending.uploaded) {
           pending.uploaded = [];
           for (const file of pending.files) {
-            pending.uploaded.push(await uploadEncrypted(conversationId, file));
+            const extra = pending.voice
+              ? { voice: true, duration: pending.voice.duration, waveform: pending.voice.waveform }
+              : undefined;
+            pending.uploaded.push(await uploadEncrypted(conversationId, file, extra));
           }
         }
-        const payload: Payload = { v: 1, text: pending.text, reply_to: pending.replyTo, attachments: pending.uploaded };
-        const kind = pending.uploaded.length ? "attachment" : "text";
+        const payload: Payload = {
+          v: 1,
+          text: pending.text,
+          reply_to: pending.replyTo,
+          reply_preview: pending.replyPreview
+            ? { sender_id: pending.replyPreview.senderId, text: pending.replyPreview.text }
+            : null,
+          attachments: pending.uploaded,
+          ...(pending.forwarded ? { forwarded: pending.forwarded } : {}),
+        };
+        const kind = pending.voice ? "voice" : pending.uploaded.length ? "attachment" : "text";
         const attempt = async (version: number, key: Uint8Array) => {
           const encrypted = await encryptJson(payload, key, associatedData(conversationId, messageId, userId, version, 0));
           return api.postMessage(conversationId, {
@@ -976,6 +1216,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           ...(await decrypt(raw)),
           text: payload.text,
           replyTo: payload.reply_to,
+          replyPreview: pending.replyPreview,
           attachments: payload.attachments.map((a, index) => ({
             ...a,
             has_thumb: Boolean(a.thumb_key && raw.attachments.find((x) => x.id === a.id)?.has_thumb),
@@ -1005,16 +1246,25 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
   const send = useCallback(
     async (conversationId: string, input: SendInput) => {
       const id = newId();
-      const localUrls = input.files.map((f) =>
-        f.type.startsWith("image/") || f.type.startsWith("video/") ? URL.createObjectURL(f) : undefined,
-      );
-      pendingSends.current.set(id, { ...input, localUrls });
+      // Instant previews of your own new photos, videos and recordings (a forward has none: nothing new was picked).
+      const localUrls = input.prepared
+        ? []
+        : input.voice
+        ? [input.voice.url ?? URL.createObjectURL(input.files[0])]
+        : input.files.map((f) =>
+            f.type.startsWith("image/") || f.type.startsWith("video/") ? URL.createObjectURL(f) : undefined,
+          );
+      const quoted = input.replyTo
+        ? threadsRef.current[conversationId]?.messages.find((m) => m.id === input.replyTo)
+        : undefined;
+      const replyPreview = quoted ? { senderId: quoted.senderId, text: shorten(messageSummary(quoted), 200) } : null;
+      pendingSends.current.set(id, { ...input, localUrls, replyPreview, uploaded: input.prepared });
       const optimistic: ChatMessage = {
         id,
         conversationId,
         senderId: userId,
         seq: Number.MAX_SAFE_INTEGER,
-        kind: input.files.length ? "attachment" : "text",
+        kind: input.voice ? "voice" : input.files.length || input.prepared?.length ? "attachment" : "text",
         keyVersion: null,
         revision: 0,
         createdAt: new Date().toISOString(),
@@ -1022,7 +1272,9 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         deleted: false,
         text: input.text,
         replyTo: input.replyTo,
-        attachments: input.files.map((f, index) => ({
+        attachments: input.prepared
+          ? input.prepared.map((a) => ({ ...a, has_thumb: Boolean(a.thumb_key) }))
+          : input.files.map((f, index) => ({
           id: `local-${index}-${f.name}-${f.size}`,
           name: f.name,
           mime: f.type || "application/octet-stream",
@@ -1030,10 +1282,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           file_key: "",
           has_thumb: false,
           localUrl: localUrls[index],
+          ...(input.voice ? { voice: true, duration: input.voice.duration, waveform: input.voice.waveform } : {}),
         })),
         state: "sending",
         systemEvent: null,
         systemData: {},
+        reactions: [],
+        replyPreview,
+        forwarded: input.forwarded ?? 0,
       };
       upsertMessages(setThreads, conversationId, [optimistic]);
       await deliver(conversationId, id);
@@ -1054,6 +1310,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         v: 1,
         text,
         reply_to: message.replyTo,
+        reply_preview: message.replyPreview ? { sender_id: message.replyPreview.senderId, text: message.replyPreview.text } : null,
+        ...(message.forwarded ? { forwarded: message.forwarded } : {}),
         attachments: message.attachments.map((a) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { has_thumb, localUrl, ...rest } = a;
@@ -1092,6 +1350,107 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       };
     });
   }, []);
+
+  const forward = useCallback(
+    async (message: ChatMessage, conversationIds: string[], note: string) => {
+      const targets = [...new Set(conversationIds)].slice(0, MAX_FORWARD_TARGETS);
+      const failures: string[] = [];
+      for (const conversationId of targets) {
+        try {
+          // Files are copied in storage (still encrypted); their keys go in the new message.
+          const prepared: UploadedAttachment[] = [];
+          for (const attachment of message.attachments) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { has_thumb, localUrl, ...details } = attachment;
+            prepared.push({ ...details, id: await api.forwardAttachment(conversationId, attachment.id) });
+          }
+          const voice = message.kind === "voice" && prepared[0]
+            ? { duration: prepared[0].duration ?? 0, waveform: prepared[0].waveform ?? [] }
+            : undefined;
+          await send(conversationId, {
+            text: message.text,
+            files: [],
+            replyTo: null,
+            prepared,
+            voice,
+            forwarded: message.forwarded + 1,
+          });
+          if (note.trim()) await send(conversationId, { text: note.trim(), files: [], replyTo: null });
+        } catch {
+          failures.push(conversationId);
+        }
+      }
+      if (failures.length) {
+        throw new Error(
+          failures.length === targets.length
+            ? "The message could not be forwarded."
+            : `The message was forwarded, but not to ${failures.length} of the chats.`,
+        );
+      }
+    },
+    [send],
+  );
+
+  const react = useCallback(
+    async (message: ChatMessage, emoji: string | null) => {
+      const conversationId = message.conversationId;
+      const current = threadsRef.current[conversationId]?.messages.find((m) => m.id === message.id) ?? message;
+      const mine = current.reactions.find((r) => r.userId === userId);
+      const next = emoji && mine?.emoji !== emoji ? emoji : null; // the same emoji again removes it
+      const before = current.reactions;
+      const apply = (reactions: MessageReaction[]) =>
+        setThreads((t) => mapMessage(t, conversationId, message.id, (m) => ({ ...m, reactions })));
+      apply([...before.filter((r) => r.userId !== userId), ...(next ? [{ userId, emoji: next }] : [])]);
+      try {
+        if (!next) {
+          if (mine) await api.removeReaction(message.id);
+          return;
+        }
+        const attempt = async (version: number, key: Uint8Array) => {
+          const encrypted = await encryptJson(
+            { v: 1, emoji: next } satisfies ReactionPayload,
+            key,
+            reactionAssociatedData(conversationId, message.id, userId, version),
+          );
+          return api.setReaction(message.id, { key_version: version, ...encrypted });
+        };
+        let { version, key } = await currentKey(conversationId);
+        try {
+          await attempt(version, key);
+        } catch (error) {
+          if (errorType(error) !== "key_outdated") throw error;
+          ({ version, key } = await rotateKey(conversationId));
+          await attempt(version, key);
+        }
+      } catch (error) {
+        apply(before);
+        throw error;
+      }
+    },
+    [currentKey, rotateKey, userId],
+  );
+
+  const findMessage = useCallback(
+    async (conversationId: string, messageId: string) => {
+      const has = () => Boolean(threadsRef.current[conversationId]?.messages.some((m) => m.id === messageId));
+      // Wait for a page that is loading to reach the thread state.
+      const settle = async () => {
+        for (let i = 0; i < 100 && threadsRef.current[conversationId]?.loading; i += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 20));
+        }
+      };
+      for (let page = 0; page < JUMP_PAGES; page += 1) {
+        await settle();
+        if (has()) return true;
+        if (!threadsRef.current[conversationId]?.hasMore) return false;
+        await loadThread(conversationId, true);
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+      await settle();
+      return has();
+    },
+    [loadThread],
+  );
 
   // The highest position this browser has reported as read, per conversation.
   const reportedRead = useRef(new Map<string, number>());
@@ -1135,13 +1494,21 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       rawConversations.map((c) => ({
         ...c,
         other: c.participants.find((p) => p.id !== userId) ?? null,
-        preview: previewOf(previews[c.id] ?? null, userId),
+        preview: (() => {
+          // A reaction newer than the last message is what the list shows.
+          const reaction = reactionPreviews[c.id];
+          const lastAt = c.last_message?.created_at ?? c.last_message_at;
+          if (reaction && (!lastAt || new Date(reaction.at).getTime() > new Date(lastAt).getTime())) {
+            return reactionPreviewText(reaction, c, userId);
+          }
+          return previewOf(previews[c.id] ?? null, userId);
+        })(),
       })),
-    [previews, rawConversations, userId],
+    [previews, rawConversations, reactionPreviews, userId],
   );
 
   const unreadTotal =
-    status === "ready" ? rawConversations.reduce((sum, c) => sum + c.unread_count, 0) : serverUnread;
+    status === "ready" ? rawConversations.reduce((sum, c) => sum + c.unread_count, 0) + unreadElsewhere : serverUnread;
 
   const value: ChatContextValue = {
     userId,
@@ -1164,6 +1531,10 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     startOver,
     lock,
     refreshConversations,
+    conversationsHaveMore: listPaging.hasMore,
+    loadingMoreConversations: listPaging.loadingMore,
+    loadMoreConversations,
+    ensureConversation,
     openWith,
     invite,
     loadThread,
@@ -1173,6 +1544,9 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     deleteForEveryone,
     deleteForMe,
     markSeen,
+    react,
+    forward,
+    findMessage,
     setViewing,
     sendTyping,
   };
@@ -1187,9 +1561,16 @@ function bySeq(a: ChatMessage, b: ChatMessage) {
   return a.createdAt.localeCompare(b.createdAt);
 }
 
+function unreadIn(list: RawConversation[]) {
+  return list.reduce((sum, c) => sum + c.unread_count, 0);
+}
+
+/** Most recent activity first; ties broken by id, the same order as the server's pages. */
 function sortConversations(list: RawConversation[]) {
-  return [...list].sort((a, b) =>
-    (b.last_message_at ?? b.created_at).localeCompare(a.last_message_at ?? a.created_at),
+  return [...list].sort(
+    (a, b) =>
+      new Date(b.last_message_at ?? b.created_at).getTime() - new Date(a.last_message_at ?? a.created_at).getTime() ||
+      b.id.localeCompare(a.id),
   );
 }
 

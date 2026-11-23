@@ -11,7 +11,15 @@ from django.utils import timezone
 from accounts.models import StaffProfile
 from audit.actions import AuditAction
 from applications.models import AuditLog
-from chat.models import ChatAccount, Conversation, ConversationKey, HiddenMessage, Message, MessageAttachment
+from chat.models import (
+    ChatAccount,
+    Conversation,
+    ConversationKey,
+    HiddenMessage,
+    Message,
+    MessageAttachment,
+    MessageReaction,
+)
 from common.test_utils import BaseAPITestCase
 from notifications.models import Notification
 
@@ -379,6 +387,99 @@ class ConversationTests(ChatTestCase):
         self.assertEqual(self.client.post(f'/api/v1/chat/people/{self.other.pk}/invite').status_code, 409)
 
 
+class ConversationListPagingTests(ChatTestCase):
+    def test_pages_follow_recent_activity_without_overlap_and_count_all_unread(self):
+        self.set_up_chat(self.staff_user)
+        people = []
+        for index in range(5):
+            person = User.objects.create_user(
+                username=f'p{index}@example.com', email=f'p{index}@example.com', password='x', first_name=f'P{index}'
+            )
+            StaffProfile.objects.create(user=person, role=self.role_staff, department=self.dep_hr)
+            self.set_up_chat(person)
+            people.append(person)
+        ids = []
+        for person in people:
+            conversation = self.start(self.staff_user, person)
+            ids.append(conversation['id'])
+            self.assertEqual(self.send(person, conversation['id']).status_code, 201)
+        # The newest activity is the last chat started: expected order is reversed.
+        expected = list(reversed(ids))
+
+        self.as_user(self.staff_user)
+        url = '/api/v1/chat/conversations'
+        first = self.client.get(url, {'limit': 2}).json()
+        self.assertEqual([c['id'] for c in first['results']], expected[:2])
+        self.assertTrue(first['has_more'])
+        self.assertEqual(first['unread_total'], 5)  # all five chats, not just this page
+
+        second = self.client.get(url, {'limit': 2, 'before': first['next']}).json()
+        self.assertEqual([c['id'] for c in second['results']], expected[2:4])
+        third = self.client.get(url, {'limit': 2, 'before': second['next']}).json()
+        self.assertEqual([c['id'] for c in third['results']], expected[4:])
+        self.assertFalse(third['has_more'])
+        self.assertIsNone(third['next'])
+
+        # A new message moves an old chat back to the top of page one.
+        self.send(people[0], ids[0])
+        self.assertEqual(self.client.get(url, {'limit': 2}).json()['results'][0]['id'], ids[0])
+
+        self.assertEqual(self.client.get(url, {'before': 'nonsense'}).status_code, 400)
+
+
+class ReactionTests(ChatTestCase):
+    def setUp(self):
+        super().setUp()
+        self.set_up_chat(self.staff_user)
+        self.set_up_chat(self.other)
+        self.conversation = self.start(self.staff_user, self.other)
+        self.message = self.send(self.staff_user, self.conversation['id']).json()
+        self.url = f'/api/v1/chat/messages/{self.message["id"]}/reaction'
+
+    def react(self, user, **overrides):
+        self.as_user(user)
+        return self.client.put(self.url, {'key_version': 1, 'nonce': b64(24), 'ciphertext': b64(40), **overrides}, format='json')
+
+    def reactions(self, user):
+        self.as_user(user)
+        rows = self.client.get(f'/api/v1/chat/conversations/{self.conversation["id"]}/messages').json()['results']
+        return next(m for m in rows if m['id'] == self.message['id'])['reactions']
+
+    def test_one_encrypted_reaction_per_person_that_can_be_changed_and_removed(self):
+        self.assertEqual(self.react(self.other).status_code, 200)
+        changed = self.react(self.other, ciphertext=b64(41))
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(self.react(self.staff_user).status_code, 200)
+        listed = self.reactions(self.staff_user)
+        self.assertEqual(sorted(r['user_id'] for r in listed), sorted([self.staff_user.pk, self.other.pk]))
+        self.assertEqual(MessageReaction.objects.filter(user=self.other).count(), 1)
+        # Only an encrypted value is stored: no emoji field exists to read.
+        self.assertEqual(next(r for r in listed if r['user_id'] == self.other.pk)['ciphertext'], changed.json()['ciphertext'])
+
+        # The list preview carries the newest reaction and its message.
+        self.as_user(self.staff_user)
+        listed_conversation = self.client.get('/api/v1/chat/conversations').json()['results'][0]
+        self.assertEqual(listed_conversation['last_reaction']['user_id'], self.staff_user.pk)
+        self.assertEqual(listed_conversation['last_reaction']['message']['id'], self.message['id'])
+
+        self.as_user(self.other)
+        self.assertEqual(self.client.delete(self.url).status_code, 204)
+        self.assertEqual([r['user_id'] for r in self.reactions(self.other)], [self.staff_user.pk])
+
+    def test_rules(self):
+        self.assertEqual(self.react(self.other, key_version=2).status_code, 409)  # not the newest key
+        self.set_up_chat(self.outsider)
+        self.assertEqual(self.react(self.outsider).status_code, 404)  # not in the chat
+        self.assertEqual(self.react(self.other, ciphertext=b64(400)).status_code, 400)
+
+        # Deleting a message for everyone removes its reactions, and it can no longer get any.
+        self.react(self.other)
+        self.as_user(self.staff_user)
+        self.client.delete(f'/api/v1/chat/messages/{self.message["id"]}?scope=everyone')
+        self.assertFalse(MessageReaction.objects.exists())
+        self.assertEqual(self.react(self.other).status_code, 409)
+
+
 class EditDeleteTests(ChatTestCase):
     def setUp(self):
         super().setUp()
@@ -481,6 +582,56 @@ class AttachmentTests(ChatTestCase):
             self.set_up_chat(self.outsider)
             self.as_user(self.outsider)
             self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_voice_message_is_exactly_one_recording(self):
+        first = self.reserve(size=4000).json()['id']
+        second = self.reserve(size=4000).json()['id']
+        conversation = self.conversation['id']
+        self.assertEqual(self.send(self.staff_user, conversation, kind='voice').status_code, 400)
+        self.assertEqual(
+            self.send(self.staff_user, conversation, kind='voice', attachment_ids=[first, second]).status_code, 400
+        )
+        response = self.send(self.staff_user, conversation, kind='voice', attachment_ids=[first])
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()['kind'], 'voice')
+
+    @override_settings(CHAT_STORAGE_COPY=True, AWS_S3_BUCKET_NAME='bucket')
+    def test_forwarding_copies_the_encrypted_file_into_another_chat(self):
+        attachment_id = self.reserve(size=1000, thumb_size=100).json()['id']
+        self.send(self.staff_user, self.conversation['id'], kind='attachment', attachment_ids=[attachment_id])
+        self.set_up_chat(self.outsider)
+        second = self.start(self.staff_user, self.outsider)
+        url = f'/api/v1/chat/conversations/{second["id"]}/attachments/forward'
+
+        self.as_user(self.staff_user)
+        with patch('chat.storage.s3_client') as client:
+            response = self.client.post(url, {'attachment_id': attachment_id}, format='json')
+        self.assertEqual(response.status_code, 201, response.content)
+        source = MessageAttachment.objects.get(pk=attachment_id)
+        copy = MessageAttachment.objects.get(pk=response.json()['id'])
+        self.assertEqual(str(copy.conversation_id), second['id'])
+        self.assertIsNone(copy.message_id)  # reserved, sent with the forwarded message
+        self.assertEqual((copy.encrypted_size, copy.thumb_size), (1000, 100))
+        copies = [call.kwargs for call in client.return_value.copy_object.call_args_list]
+        self.assertEqual(
+            [(c['CopySource']['Key'], c['Key']) for c in copies],
+            [(source.file_key, copy.file_key), (source.thumb_key, copy.thumb_key)],
+        )
+        sent = self.send(self.staff_user, second['id'], kind='attachment', attachment_ids=[copy.pk])
+        self.assertEqual(sent.status_code, 201, sent.content)
+
+        # Only from chats you are in, into chats you are in, and not from deleted messages.
+        self.as_user(self.outsider)
+        with patch('chat.storage.s3_client'):
+            self.assertEqual(self.client.post(url, {'attachment_id': attachment_id}, format='json').status_code, 404)
+        self.as_user(self.other)
+        with patch('chat.storage.s3_client'):
+            self.assertEqual(self.client.post(url, {'attachment_id': attachment_id}, format='json').status_code, 404)
+        message_id = str(source.message_id)
+        self.as_user(self.staff_user)
+        self.client.delete(f'/api/v1/chat/messages/{message_id}?scope=everyone')
+        with patch('chat.storage.s3_client'):
+            self.assertEqual(self.client.post(url, {'attachment_id': attachment_id}, format='json').status_code, 404)
 
     def test_only_uploader_can_send_a_reserved_file(self):
         attachment_id = self.reserve(size=1000).json()['id']

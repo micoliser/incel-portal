@@ -12,13 +12,14 @@ import hmac
 import secrets
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import F, Max, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
@@ -31,9 +32,10 @@ from chat.models import (
     HiddenMessage,
     Message,
     MessageAttachment,
+    MessageReaction,
     Participant,
 )
-from chat.serializers import account_of, message_payload, person_payload
+from chat.serializers import account_of, message_payload, person_payload, reaction_payload
 from common.exceptions import Conflict, ServiceUnavailable
 from common.storage import StorageUnavailable, UploadRejected, verify_upload
 from common.users import display_name
@@ -445,13 +447,47 @@ def _visible_messages(user, conversation_id):
     return Message.objects.filter(conversation_id=conversation_id).exclude(hidden_for__user=user)
 
 
-def list_conversations(user):
-    participations = list(
+CONVERSATION_PAGE_SIZE = 30
+
+
+def conversation_cursor(activity, conversation_id) -> str:
+    """Where the next page starts: the last row's activity time and id."""
+    return f'{activity.isoformat()}|{conversation_id}'
+
+
+def _parse_conversation_cursor(cursor: str):
+    try:
+        stamp, _, conversation_id = cursor.partition('|')
+        # A "+" in the time zone can arrive as a space if the URL was not encoded.
+        activity = datetime.fromisoformat(stamp.replace(' ', '+'))
+        return activity, uuid.UUID(conversation_id)
+    except (TypeError, ValueError):
+        raise ValidationError({'before': ['Not a valid position in the list.']})
+
+
+def list_conversations(user, *, before: str | None = None, limit: int = CONVERSATION_PAGE_SIZE):
+    """The user's conversations, most recent activity first, one page at a
+    time. Returns (payloads, next_cursor); next_cursor is None on the last page.
+
+    Activity is the last message's time, or the creation time for a chat with
+    no messages yet. Ties are broken by id, so pages never overlap or skip."""
+    queryset = (
         Participant.objects.filter(user=user, left_at__isnull=True)
         .select_related('conversation')
-        .order_by('-conversation__last_message_at', '-conversation__created_at')
+        .annotate(activity=Coalesce('conversation__last_message_at', 'conversation__created_at'))
+        .order_by('-activity', '-conversation_id')
     )
-    return [conversation_payload(user, p) for p in participations]
+    if before:
+        activity, conversation_id = _parse_conversation_cursor(before)
+        queryset = queryset.filter(
+            Q(activity__lt=activity) | Q(activity=activity, conversation_id__lt=conversation_id)
+        )
+    rows = list(queryset[: limit + 1])
+    page = rows[:limit]
+    next_cursor = (
+        conversation_cursor(page[-1].activity, page[-1].conversation_id) if len(rows) > limit and page else None
+    )
+    return [conversation_payload(user, p) for p in page], next_cursor
 
 
 def conversation_payload(user, participant: Participant) -> dict:
@@ -480,6 +516,7 @@ def conversation_payload(user, participant: Participant) -> dict:
         'latest_key_version': latest_version,
         'unread_count': unread,
         'last_message': message_payload(last) if last else None,
+        'last_reaction': _last_reaction(user, conversation.id),
         'muted_until': participant.muted_until,
         'archived': participant.archived,
         'last_read_seq': participant.last_read_seq,
@@ -492,6 +529,24 @@ def conversation_payload(user, participant: Participant) -> dict:
             for m in members
         ],
     }
+
+
+def _last_reaction(user, conversation_id):
+    """The newest reaction in the conversation with the message it is on, for
+    the list preview ("Ada reacted ❤ to …"). The browser shows it only when it
+    is newer than the last message."""
+    reaction = (
+        MessageReaction.objects.filter(
+            message__conversation_id=conversation_id, message__deleted_at__isnull=True
+        )
+        .exclude(message__hidden_for__user=user)
+        .select_related('message')
+        .order_by('-updated_at')
+        .first()
+    )
+    if reaction is None:
+        return None
+    return {**reaction_payload(reaction), 'message': message_payload(reaction.message)}
 
 
 def total_unread(user) -> int:
@@ -548,7 +603,7 @@ def _append_message(conversation, *, sender, kind, **fields) -> Message:
 
 def list_messages(user, conversation_id, *, before_seq=None, after_seq=None, limit=50):
     participant = get_membership(user, conversation_id)
-    queryset = _visible_messages(user, participant.conversation_id).prefetch_related('attachments')
+    queryset = _visible_messages(user, participant.conversation_id).prefetch_related('attachments', 'reactions')
     if after_seq is not None:
         rows = list(queryset.filter(seq__gt=after_seq).order_by('seq')[:limit])
         return rows, len(rows) == limit
@@ -733,6 +788,7 @@ def delete_for_everyone(user, message_id) -> Message:
     for item in MessageAttachment.objects.filter(message=message):
         keys.extend([k for k in (item.file_key, item.thumb_key) if k])
     MessageAttachment.objects.filter(message=message).delete()
+    MessageReaction.objects.filter(message=message).delete()
     message.ciphertext = None
     message.nonce = None
     message.deleted_at = timezone.now()
@@ -805,6 +861,46 @@ def reserve_attachment(user, conversation_id, *, size: int, thumb_size: int | No
     }
 
 
+def forward_attachment(user, conversation_id, *, source_id) -> dict:
+    """Copy a file the user can see into another of their chats, for
+    forwarding. The encrypted bytes are duplicated in storage; the file's key
+    travels inside the forwarded (encrypted) message, never to the server.
+    The copy is reserved like a fresh upload and is independent of the
+    original (deleting one leaves the other)."""
+    require_account(user)
+    target = get_membership(user, conversation_id)
+    source = (
+        MessageAttachment.objects.filter(
+            pk=source_id,
+            message__isnull=False,
+            message__deleted_at__isnull=True,
+            conversation__participants__user=user,
+            conversation__participants__left_at__isnull=True,
+        )
+        .exclude(message__hidden_for__user=user)
+        .first()
+    )
+    if source is None:
+        raise NotFound('File not found.')
+    copy = MessageAttachment(
+        conversation_id=target.conversation_id,
+        uploaded_by=user,
+        encrypted_size=source.encrypted_size,
+        thumb_size=source.thumb_size if source.thumb_key else None,
+    )
+    copy.file_key = chat_storage.file_key(target.conversation_id, copy.id)
+    if source.thumb_key:
+        copy.thumb_key = chat_storage.thumb_key(target.conversation_id, copy.id)
+    try:
+        chat_storage.copy_object(source.file_key, copy.file_key)
+        if source.thumb_key:
+            chat_storage.copy_object(source.thumb_key, copy.thumb_key)
+    except chat_storage.ChatStorageError as exc:
+        raise ServiceUnavailable(str(exc))
+    copy.save()
+    return {'id': str(copy.id)}
+
+
 def attachment_download(user, attachment_id, *, part: str) -> str:
     attachment = (
         MessageAttachment.objects.select_related('message')
@@ -826,3 +922,59 @@ def attachment_download(user, attachment_id, *, part: str) -> str:
         return chat_storage.download_url(key)
     except chat_storage.ChatStorageError as exc:
         raise ServiceUnavailable(str(exc))
+
+
+# --- Reactions -------------------------------------------------------------
+
+def _reactable_message(user, message_id) -> Message:
+    message = (
+        Message.objects.select_related('conversation')
+        .filter(pk=message_id, conversation__participants__user=user, conversation__participants__left_at__isnull=True)
+        .first()
+    )
+    if message is None:
+        raise NotFound('Message not found.')
+    if message.kind == Message.Kind.SYSTEM:
+        raise ValidationError({'message': ['You cannot react to this.']})
+    if message.deleted_at is not None:
+        raise Conflict('This message was deleted.')
+    return message
+
+
+def set_reaction(user, message_id, *, data: dict) -> MessageReaction:
+    """Add or replace the user's reaction (one per person per message)."""
+    require_account(user)
+    message = _reactable_message(user, message_id)
+    if data['key_version'] != _latest_version(message.conversation):
+        raise KeyOutdated()
+    reaction, _ = MessageReaction.objects.update_or_create(
+        message=message,
+        user=user,
+        defaults={'key_version': data['key_version'], 'nonce': data['nonce'], 'ciphertext': data['ciphertext']},
+    )
+    realtime.broadcast(
+        _member_ids(message.conversation),
+        'reaction.updated',
+        {
+            'conversation_id': str(message.conversation_id),
+            'message_id': str(message.id),
+            'reaction': reaction_payload(reaction),
+            'message': message_payload(message),
+        },
+    )
+    return reaction
+
+
+def remove_reaction(user, message_id) -> None:
+    message = _reactable_message(user, message_id)
+    deleted, _ = MessageReaction.objects.filter(message=message, user=user).delete()
+    if deleted:
+        realtime.broadcast(
+            _member_ids(message.conversation),
+            'reaction.updated',
+            {
+                'conversation_id': str(message.conversation_id),
+                'message_id': str(message.id),
+                'removed_user_id': user.pk,
+            },
+        )

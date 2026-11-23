@@ -163,6 +163,12 @@
       "post"
     ]
   },
+  "api/v1/chat/conversations/{}/attachments/forward": {
+    "name": "chat-conversation-attachments-forward",
+    "methods": [
+      "post"
+    ]
+  },
   "api/v1/chat/conversations/{}/keys": {
     "name": "chat-conversation-keys",
     "methods": [
@@ -188,6 +194,13 @@
     "methods": [
       "delete",
       "patch"
+    ]
+  },
+  "api/v1/chat/messages/{}/reaction": {
+    "name": "chat-message-reaction",
+    "methods": [
+      "delete",
+      "put"
     ]
   },
   "api/v1/chat/people": {

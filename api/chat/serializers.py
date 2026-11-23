@@ -99,6 +99,18 @@ class AccountResetSerializer(AccountSetupSerializer):
     code = serializers.CharField(max_length=20)
 
 
+class ForwardAttachmentSerializer(serializers.Serializer):
+    attachment_id = serializers.UUIDField()
+
+
+class ReactionSerializer(serializers.Serializer):
+    """An encrypted emoji: a few bytes once decrypted."""
+
+    key_version = serializers.IntegerField(min_value=1)
+    nonce = Base64Field(size=NONCE_BYTES)
+    ciphertext = Base64Field(max_size=256)
+
+
 class PasswordCheckSerializer(serializers.Serializer):
     password = serializers.CharField(trim_whitespace=False, max_length=512)
 
@@ -166,6 +178,8 @@ class SendMessageSerializer(serializers.Serializer):
             raise serializers.ValidationError({'attachment_ids': ['A text message carries no files.']})
         if attrs['kind'] != Message.Kind.TEXT and not ids:
             raise serializers.ValidationError({'attachment_ids': ['Attach at least one file.']})
+        if attrs['kind'] == Message.Kind.VOICE and len(ids) != 1:
+            raise serializers.ValidationError({'attachment_ids': ['A voice message is one recording.']})
         return attrs
 
 
@@ -235,10 +249,21 @@ def account_of(user):
         return None
 
 
+def reaction_payload(reaction) -> dict:
+    return {
+        'user_id': reaction.user_id,
+        'key_version': reaction.key_version,
+        'nonce': reaction.nonce,
+        'ciphertext': reaction.ciphertext,
+        'updated_at': reaction.updated_at,
+    }
+
+
 def message_payload(message, attachments=None) -> dict:
     deleted = message.deleted_at is not None
     if attachments is None:
         attachments = [] if deleted else list(message.attachments.all())
+    reactions = [] if deleted or message.kind == Message.Kind.SYSTEM else list(message.reactions.all())
     return {
         'id': str(message.id),
         'conversation_id': str(message.conversation_id),
@@ -263,6 +288,7 @@ def message_payload(message, attachments=None) -> dict:
             }
             for item in attachments
         ],
+        'reactions': [reaction_payload(r) for r in reactions],
     }
 
 

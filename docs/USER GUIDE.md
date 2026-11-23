@@ -451,7 +451,13 @@ Send private messages, photos, videos and files (up to 25 MB each) to anyone in 
 
 3. **Starting a conversation:** type a name in **Search people to message** and choose **Message**. If someone has not set up chat yet, choose **Invite**: they get a portal notification and an email, and the conversation appears in your list with "Invitation sent". You can open it, but you can send messages only once they set up chat. Use **Send a reminder** (once a day) if they have not. When they set up chat, both of you see that the invitation was accepted, and you can start talking.
 
-4. **Sending:** type and press **Enter** (Shift + Enter for a new line). Use the paperclip, drag files in, or paste an image to attach files (up to 25 MB each). Photos and videos show as a picture in the chat: choose the download button in the middle to see a photo in full (click it to enlarge and save) or to play a video. Other files show with their name and size and a download button.
+4. **Sending:** type and press **Enter** (Shift + Enter for a new line). Use the paperclip, drag files in, or paste an image to attach files (up to 25 MB each). Photos and videos show as a picture in the chat: choose the download button in the middle to see a photo in full (click it to enlarge and save) or to play a video. Other files show with their name and size and a download button. To send a **voice message**, leave the message box empty and choose the microphone. Speak, then choose the square to stop and listen back before sending, or the send button to send it straight away; the bin (or Esc) throws it away. Voice messages can be up to 20 minutes. The first time, your browser asks to use the microphone. Play a voice message with its play button, tap the waveform to jump, and use **1×** to switch to 1.5× or 2× speed.
+
+**Reacting:** hover over a message and choose the smile, choose **React** in the message menu, or press and hold the message on a phone. Pick 👍 ❤️ 😂 😮 😢 🙏, or **+** for every emoji. You have one reaction per message: pick another to change it, or the same one (or your chip under the message) to remove it. Reactions are private like messages.
+
+**Replies:** choose the quote at the top of a reply to jump to the message it answers.
+
+**Forwarding:** choose **Forward** in a message's menu, pick up to 5 chats (search for anyone else), add a note if you like, and choose **Forward**. Forwarded messages are marked **Forwarded** (or **Forwarded many times**), and do not show who wrote them originally.
 
 5. **Seen, typing and online:** one tick means sent; two ticks mean the other person has seen it. You also see when they are typing, and whether they are online or when they were last seen.
 

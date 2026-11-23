@@ -16,10 +16,12 @@ from chat.serializers import (
     AccountSetupSerializer,
     ConversationSettingsSerializer,
     EditMessageSerializer,
+    ForwardAttachmentSerializer,
     KeyVersionSerializer,
     PasswordCheckSerializer,
-    ResetCodeSerializer,
+    ReactionSerializer,
     ReadSerializer,
+    ResetCodeSerializer,
     ReserveAttachmentSerializer,
     SendMessageSerializer,
     StartConversationSerializer,
@@ -27,6 +29,7 @@ from chat.serializers import (
     account_payload,
     key_payload,
     message_payload,
+    reaction_payload,
 )
 
 
@@ -205,7 +208,20 @@ class UnreadCountView(ChatView):
 
 class ConversationsView(ChatView):
     def get(self, request):
-        return Response({'results': services.list_conversations(request.user)})
+        results, next_cursor = services.list_conversations(
+            request.user,
+            before=request.query_params.get('before') or None,
+            limit=_int_param(request, 'limit', minimum=1, maximum=100) or services.CONVERSATION_PAGE_SIZE,
+        )
+        return Response(
+            {
+                'results': results,
+                'has_more': next_cursor is not None,
+                'next': next_cursor,
+                # The sidebar badge counts every conversation, loaded or not.
+                'unread_total': services.total_unread(request.user),
+            }
+        )
 
     def post(self, request):
         serializer = StartConversationSerializer(data=request.data)
@@ -290,6 +306,22 @@ class MessageView(ChatView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class MessageReactionView(ThrottledChatView):
+    """Your reaction to a message: PUT to add or change it, DELETE to remove it."""
+
+    throttle_scope = 'chat_messages'
+
+    def put(self, request, message_id):
+        serializer = ReactionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reaction = services.set_reaction(request.user, message_id, data=serializer.validated_data)
+        return Response(reaction_payload(reaction))
+
+    def delete(self, request, message_id):
+        services.remove_reaction(request.user, message_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class ReadView(ChatView):
     def post(self, request, conversation_id):
         serializer = ReadSerializer(data=request.data)
@@ -311,6 +343,20 @@ class AttachmentsView(ThrottledChatView):
             thumb_size=serializer.validated_data.get('thumb_size'),
         )
         return Response(reserved, status=status.HTTP_201_CREATED)
+
+
+class ForwardAttachmentView(ThrottledChatView):
+    """Copy a file from one of your chats into this one, to forward it."""
+
+    throttle_scope = 'chat_uploads'
+
+    def post(self, request, conversation_id):
+        serializer = ForwardAttachmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = services.forward_attachment(
+            request.user, conversation_id, source_id=serializer.validated_data['attachment_id']
+        )
+        return Response(result, status=status.HTTP_201_CREATED)
 
 
 class AttachmentDownloadView(ChatView):

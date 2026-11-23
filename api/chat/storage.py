@@ -52,3 +52,26 @@ def download_url(key: str) -> str:
         )
     except (BotoCoreError, ClientError) as exc:
         raise ChatStorageError('Could not prepare the download.') from exc
+
+
+def copy_object(source_key: str, destination_key: str) -> None:
+    """Duplicate an encrypted object inside the bucket (forwarding a file to
+    another chat). Nothing is decrypted: the bytes are copied as they are.
+
+    Off (CHAT_STORAGE_COPY false) where there is no real storage, such as the
+    end-to-end test stack."""
+    if not settings.CHAT_STORAGE_COPY:
+        return
+    bucket = bucket_name()
+    if not bucket:
+        raise ChatStorageError('File storage is not configured.')
+    try:
+        s3_client().copy_object(
+            Bucket=bucket,
+            Key=destination_key,
+            CopySource={'Bucket': bucket, 'Key': source_key},
+            ContentType=CONTENT_TYPE,
+            MetadataDirective='REPLACE',
+        )
+    except (BotoCoreError, ClientError) as exc:
+        raise ChatStorageError('Could not copy the file.') from exc

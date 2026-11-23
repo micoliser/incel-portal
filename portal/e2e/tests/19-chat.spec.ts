@@ -203,9 +203,9 @@ test("files are encrypted, uploaded and opened by the other person", async () =>
     mimeType: "text/plain",
     buffer: Buffer.from("Quarterly budget notes"),
   });
-  await expect(femi.getByRole("list", { name: "Files to send" }).getByText("budget-notes.txt")).toBeVisible();
+  await expect(femi.getByRole("list", { name: "Files to send" }).getByText("budget-notes.txt").first()).toBeVisible();
   await femi.getByRole("button", { name: "Send message" }).click();
-  await expect(thread(chidi).getByText("budget-notes.txt")).toBeVisible();
+  await expect(thread(chidi).getByText("budget-notes.txt").first()).toBeVisible();
 
   // What storage holds is not the file.
   const stored = [...bucket.values()].map((b) => b.toString("latin1")).join("");
@@ -257,12 +257,129 @@ test("photos show as a picture with a download button, then full size", async ()
   await expect(thread(chidi).getByRole("button", { name: /^Download site-photo\.png/ })).toHaveCount(0);
 });
 
+test("voice messages are recorded, reviewed, sent and played", async () => {
+  const composer = femi.getByRole("textbox", { name: `Message ${USERS.clerk.name}` });
+  await expect(composer).toHaveValue("");
+  await femi.getByRole("button", { name: "Record a voice message" }).click();
+  await expect(femi.getByRole("timer")).toHaveText(/0:0[1-9]/, { timeout: 10_000 });
+
+  // Stop to review it first: it can be played back before sending.
+  await femi.getByRole("button", { name: "Stop and review" }).click();
+  await expect(femi.getByRole("button", { name: /^Play voice message, 0:0\d/ })).toBeVisible();
+  await femi.getByRole("button", { name: "Send voice message" }).click();
+
+  // The other person gets a player, and the list says what it is.
+  const play = thread(chidi).getByRole("button", { name: /^Play voice message, 0:0\d/ });
+  await expect(play).toBeVisible();
+  await expect(main(chidi).getByRole("button", { name: new RegExp(USERS.finance.name) })).toContainText(/Voice message \(0:0\d\)/);
+  await play.click();
+  await expect(thread(chidi).getByRole("button", { name: "Pause voice message" })).toBeVisible();
+  await thread(chidi).getByRole("button", { name: "Pause voice message" }).click();
+  await expect(thread(chidi).getByRole("button", { name: "Playback speed 1 times. Change speed" })).toBeVisible();
+
+  // Cancelling a recording sends nothing.
+  await femi.getByRole("button", { name: "Record a voice message" }).click();
+  await expect(femi.getByRole("timer")).toBeVisible();
+  await femi.getByRole("button", { name: "Cancel recording" }).click();
+  await expect(composer).toBeVisible();
+  await expect(thread(femi).getByRole("button", { name: /^Play voice message/ })).toHaveCount(1);
+});
+
+test("reactions are encrypted, live, one per person, and show in the list", async () => {
+  // The first row with this text is the original photo message (replies quote it later).
+  const photo = (page: Page) => thread(page).locator("[data-message-id]").filter({ hasText: "Site photo" }).first();
+  const before = sentBodies.length;
+
+  // Chidi reacts from the message menu (the hover button does the same).
+  await photo(chidi).getByRole("button", { name: "Message options" }).click();
+  await chidi.getByRole("menuitem", { name: "React" }).click();
+  await chidi.getByRole("button", { name: "React with ❤️" }).click();
+  await expect(photo(chidi).getByRole("button", { name: /^❤️ 1, You\. Remove your reaction/ })).toBeVisible();
+
+  // Femi sees it live, and the list says who reacted to what.
+  await expect(photo(femi).getByRole("button", { name: new RegExp(`^❤️ 1, ${USERS.clerk.name}\\.`) })).toBeVisible();
+  await expect(
+    main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(USERS.clerk.name) }),
+  ).toContainText('Chidi reacted ❤️ to "Site photo"');
+
+  // Femi adds the same emoji by choosing the chip: one chip, two people.
+  await photo(femi).getByRole("button", { name: /^❤️ 1/ }).click();
+  await expect(photo(chidi).getByRole("button", { name: /^❤️ 2, You and / })).toBeVisible();
+  // The emoji never reached the server readable.
+  expect(sentBodies.slice(before).join("\n")).not.toContain("❤");
+
+  // Picking another emoji replaces your reaction; the full picker has every emoji.
+  await photo(chidi).getByRole("button", { name: "Message options" }).click();
+  await chidi.getByRole("menuitem", { name: "React" }).click();
+  await chidi.getByRole("button", { name: "React with 😂" }).click();
+  await expect(photo(femi).getByRole("button", { name: /^😂 1/ })).toBeVisible();
+  await expect(photo(femi).getByRole("button", { name: /^❤️ 1, You\./ })).toBeVisible();
+  await photo(chidi).getByRole("button", { name: "Message options" }).click();
+  await chidi.getByRole("menuitem", { name: "React" }).click();
+  await chidi.getByRole("button", { name: "More emoji" }).click();
+  await expect(chidi.getByPlaceholder("Search emoji")).toBeVisible();
+  await chidi.keyboard.press("Escape");
+
+  // Choosing your own chip again removes it.
+  await photo(chidi).getByRole("button", { name: /^😂 1, You\. Remove/ }).click();
+  await expect(photo(femi).getByRole("button", { name: /^😂/ })).toHaveCount(0);
+});
+
+test("choosing a quoted message scrolls to the original", async () => {
+  const photo = thread(chidi).locator("[data-message-id]").filter({ hasText: "Site photo" }).first();
+  await photo.getByRole("button", { name: "Message options" }).click();
+  await chidi.getByRole("menuitem", { name: "Reply" }).click();
+  const reply = chidi.getByRole("textbox", { name: `Message ${USERS.finance.name}` });
+  await reply.fill("Nice photo");
+  await reply.press("Enter");
+
+  // The quote shows on Femi's side, and choosing it brings the photo into view.
+  const quote = thread(femi).getByRole("button", { name: /^Replying to You: Site photo\. Go to the original message/ });
+  await expect(quote).toBeVisible();
+  await thread(femi).evaluate((log) => log.parentElement?.scrollTo({ top: 0 }));
+  await quote.click();
+  const original = thread(femi).locator("[data-message-id]").filter({ hasText: "Site photo" }).first();
+  await expect(original).toBeInViewport();
+  await expect(original).toHaveClass(/bg-\[#0d47a1\]\/10/);
+});
+
+test("messages and files are forwarded with a Forwarded label and an optional note", async () => {
+  // Chidi forwards a text, with a note, into a chat (here the same one, which is allowed).
+  const text = thread(chidi).locator("[data-message-id]").filter({ hasText: "Nice photo" }).last();
+  await text.getByRole("button", { name: "Message options" }).click();
+  await chidi.getByRole("menuitem", { name: "Forward" }).click();
+  const dialog = chidi.getByRole("dialog", { name: "Forward message" });
+  await expect(dialog.getByRole("button", { name: "Forward", exact: true })).toBeDisabled();
+  await dialog.getByRole("checkbox", { name: new RegExp(USERS.finance.name) }).click();
+  await expect(dialog.getByText("1 of 5 selected")).toBeVisible();
+  await dialog.getByPlaceholder("Add a message (optional)").fill("Look at this");
+  await dialog.getByRole("button", { name: "Forward", exact: true }).click();
+  await expect(chidi.getByText(`Forwarded to ${USERS.finance.name}.`)).toBeVisible();
+
+  const forwarded = thread(femi).locator("[data-message-id]").filter({ hasText: "Forwarded" }).filter({ hasText: "Nice photo" });
+  await expect(forwarded).toHaveCount(1);
+  await expect(thread(femi).getByText("Look at this")).toBeVisible();
+
+  // Femi forwards a file: it arrives as a file, marked Forwarded, and nothing readable reached the server.
+  const before = sentBodies.length;
+  const file = thread(femi).locator("[data-message-id]").filter({ hasText: "budget-notes.txt" }).first();
+  await file.getByRole("button", { name: "Message options" }).click();
+  await femi.getByRole("menuitem", { name: "Forward" }).click();
+  const femiDialog = femi.getByRole("dialog", { name: "Forward message" });
+  await femiDialog.getByRole("checkbox", { name: new RegExp(USERS.clerk.name) }).click();
+  await femiDialog.getByRole("button", { name: "Forward", exact: true }).click();
+  await expect(
+    thread(chidi).locator("[data-message-id]").filter({ hasText: "Forwarded" }).filter({ hasText: "budget-notes.txt" }),
+  ).toHaveCount(1);
+  expect(sentBodies.slice(before).join("\n")).not.toContain("budget");
+});
+
 test("the drawer opens chat from any page", async () => {
   await chidi.goto("/dashboard");
   await chidi.getByRole("button", { name: /^Open chat/ }).click();
   const drawer = chidi.getByRole("dialog", { name: "Chat" });
   await drawer.getByRole("button", { name: new RegExp(USERS.finance.name) }).click();
-  await expect(drawer.getByRole("log", { name: "Messages" }).getByText("budget-notes.txt")).toBeVisible();
+  await expect(drawer.getByRole("log", { name: "Messages" }).getByText("budget-notes.txt").first()).toBeVisible();
   await chidi.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
   await expect(chidi.getByRole("button", { name: /^Open chat/ })).toBeFocused();
@@ -297,11 +414,11 @@ test("signing out forgets the key; after signing back in only the PIN is asked",
   await main(femi).getByRole("button", { name: "Back to PIN" }).click();
   await typePin(femi, /^Chat PIN/, FEMI_PIN);
   await main(femi).getByRole("button", { name: new RegExp(USERS.clerk.name) }).click();
-  await expect(thread(femi).getByText("budget-notes.txt")).toBeVisible();
+  await expect(thread(femi).getByText("budget-notes.txt").first()).toBeVisible();
 
   // Reloading keeps it unlocked for this sign-in.
   await femi.reload();
-  await expect(thread(femi).getByText("budget-notes.txt")).toBeVisible();
+  await expect(thread(femi).getByText("budget-notes.txt").first()).toBeVisible();
 });
 
 test("resetting chat needs the code emailed to the user", async () => {

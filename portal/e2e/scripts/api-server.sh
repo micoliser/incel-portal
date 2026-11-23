@@ -40,6 +40,8 @@ export AWS_ACCESS_KEY_ID=e2e
 export AWS_SECRET_ACCESS_KEY=e2e
 # There is no storage to ask about an upload, so uploads are not verified.
 export VERIFY_UPLOADS=False
+# Nor to copy a forwarded file in.
+export CHAT_STORAGE_COPY=False
 export SEND_PUSH_CELERY=False
 
 "$PYTHON" manage.py migrate --noinput

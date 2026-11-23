@@ -405,6 +405,8 @@ CHAT_ATTACHMENTS_PER_MESSAGE = 10
 CHAT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('CHAT_UPLOAD_URL_EXPIRES_IN', '900'))
 CHAT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('CHAT_DOWNLOAD_URL_EXPIRES_IN', '300'))
 CHAT_EDIT_WINDOW_MINUTES = 30
+# Forwarding copies the encrypted file inside the bucket; off where there is no real storage.
+CHAT_STORAGE_COPY = os.getenv('CHAT_STORAGE_COPY', 'true').lower() in ('1', 'true', 'yes')
 # Encrypted message payload (text plus attachment details), base64.
 CHAT_MESSAGE_MAX_CIPHERTEXT = 96 * 1024
 

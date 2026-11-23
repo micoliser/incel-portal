@@ -18,7 +18,17 @@ Status: first release built (one-to-one chat). Code: `api/chat/`, `portal/lib/ch
 | Shared computers | The chat key is removed from the browser on sign-out (manual or inactivity). |
 | Unlocking | A 6-digit chat PIN, entered on six circles (X Chat style), combined with the portal password. Chosen over a 4-digit PIN, which anyone with database access could crack in about an hour; X avoids that only with outside key servers (Juicebox). |
 
-First release: one-to-one chat with text, images, videos and files, unread counts, read receipts, push notifications. The data model supports group chats, voice notes and reactions later without migration of existing data.
+First release: one-to-one chat with text, images, videos, files and voice messages, unread counts, read receipts, push notifications.
+
+**Voice messages** (`lib/chat/voice.ts`, `VoiceNote` in `attachment-view.tsx`): recorded in the browser with `MediaRecorder` (Opus in WebM on Chrome, Edge and Firefox; AAC in MP4 on Safari) at 32 kbps, about 5 MB for the 20-minute maximum. Recording stops by itself at 20 minutes and goes to review. A voice message is a message of kind `voice` with exactly one attachment, uploaded and encrypted like any file. Its length and a 48-bar waveform travel inside the encrypted message (`voice`, `duration`, `waveform` on the attachment), so the server sees only the encrypted size. In the composer the microphone replaces the send button while the box is empty: record (with a live level meter and timer; Esc or the bin cancels), stop to review and play it back, or send straight away. The player downloads and decrypts the audio on the first play (the sender's copy is local), has a seekable waveform and 1×, 1.5× and 2× speed, and only one voice message plays at a time. Voice messages can be replied to and deleted, not edited. Previews read "Voice message (0:42)".
+
+**Reactions** (`MessageReaction`, `components/chat/reactions.tsx`): one per person per message. The emoji is encrypted with the conversation key (`{v: 1, emoji}`, associated data `chat-reaction-v1|conversation|message|user|keyVersion`), so the server stores only that a person reacted to a message, not with what. `PUT messages/{id}/reaction` sets or replaces it, using the newest key version (409 `key_outdated` otherwise, and the browser makes a new version and retries); `DELETE` removes it. Choosing the same emoji again removes it. Not allowed on system notes or deleted messages; deleting a message for everyone removes its reactions. Reactions come with every message (`reactions`) and live as `reaction.updated`. The bar offers 👍 ❤️ 😂 😮 😢 🙏 and "+" for the full picker (`emoji-picker-react`, device emoji, loaded only when opened); it opens from the smile button on hover, the message menu (React) or a long press on phones. Reactions show as chips under the message ("❤️ 2"), naming who reacted. The conversation list shows 'Ada reacted ❤️ to "…"' when the newest reaction (`last_reaction` on each conversation) is newer than the last message. Reactions send no push and do not count as unread.
+
+**Replies:** a reply carries a short encrypted preview of what it quotes (`reply_preview`: sender and up to 200 characters), so the quote shows even when the original is not loaded. Choosing the quote scrolls to the original and highlights it, loading older pages first if needed (up to 40 pages of 50); if it is gone (deleted for you, or further back), a notice says so.
+
+**Forwarding** (`ForwardDialog`, `forward()` in the provider): Forward in the message menu opens a dialog with your chats and a people search (people without chat cannot be chosen); pick up to 5 and optionally add a note, sent as a separate message after each forward. The browser re-encrypts the message for each destination chat's key, with `forwarded` (a count, +1 per forward) inside the encrypted payload, so the server does not know a message was forwarded. Files, photos, videos and voice messages are copied in storage still encrypted (`POST conversations/{id}/attachments/forward {attachment_id}`: S3 CopyObject into the destination chat's prefix, reserved like a fresh upload; you must be in both chats and the source must be sent and not deleted); their keys travel in the new encrypted message. The copy is independent of the original. The reply quote and reactions are not carried over. The bubble shows "Forwarded", or "Forwarded many times" from 5 forwards on. The original sender is not shown. The forwarded mark is set by the sender's browser and cannot be enforced by the server. `CHAT_STORAGE_COPY` (default true) turns the storage copy off where there is no real storage (the end-to-end stack).
+
+The data model supports group chats later without migration of existing data.
 
 ## 2. What end-to-end encryption means here
 
@@ -173,7 +183,7 @@ Server-side rules: only participants can read or post; only the sender can edit 
 | GET | `people?search=` | Active users, with `chat_ready`, public key and online flag |
 | POST | `people/{user_id}/invite` | Invite someone who has not set up chat (opens the waiting conversation); again = a reminder |
 | GET | `unread-count` | Total unread, for the sidebar badge |
-| GET | `conversations` | List with unread count, last message, participants and their read positions |
+| GET | `conversations?limit=&before=` | One page (default 30, at most 100) of conversations, most recent activity first (last message time, or creation time for an empty chat; ties by id), each with unread count, last message, participants and their read positions. Returns `has_more`, `next` (the cursor for `before`) and `unread_total` across all conversations. The list loads older pages as it is scrolled; a chat opened by link that is not loaded yet is fetched on its own. After a disconnection the browser pages through missed messages (up to 10 pages of 100 per open chat, otherwise it reloads that chat from the newest messages). |
 | POST | `conversations` | Start (or return existing) direct chat, with wrapped keys |
 | GET, PATCH | `conversations/{id}` | One conversation; mute or archive it |
 | GET | `conversations/{id}/keys` | Own wrapped keys, all versions |
@@ -184,6 +194,8 @@ Server-side rules: only participants can read or post; only the sender can edit 
 | POST | `conversations/{id}/attachments` | Reserve an upload; returns presigned PUT URLs for file and thumbnail |
 | PATCH | `messages/{id}` | Edit (new ciphertext, revision + 1) |
 | DELETE | `messages/{id}?scope=everyone\|me` | Delete for everyone / for me |
+| PUT, DELETE | `messages/{id}/reaction` | Set or replace your encrypted reaction / remove it |
+| POST | `conversations/{id}/attachments/forward` | Copy a file from another of your chats into this one (forwarding); returns a reserved attachment id |
 | GET | `attachments/{id}/download?part=file\|thumb` | Short-lived presigned GET for the encrypted bytes |
 
 Uploads reuse `common/storage.py`: new prefix `CHAT_ATTACHMENT_S3_PREFIX` (default `chat-attachments`), content type always `application/octet-stream`, `verify_upload` checks size only (≤ 25 MB plus encryption overhead). Attachments not linked to a message within 24 hours are deleted by a Celery job. Delete for everyone removes the S3 objects through Celery.
@@ -221,6 +233,7 @@ message.hidden     {conversation_id, message_id}   to the user's own other tabs
 key.changed        {conversation_id, user_id | version}   a participant reset, or a new key version
 typing             {conversation_id, user_id}
 presence           {user_id, online, last_seen_at}
+reaction.updated   {conversation_id, message_id, reaction, message} or {conversation_id, message_id, removed_user_id}
 ```
 
 Online status and last seen come with the conversation and people lists, are updated live by `presence` events, and the browser refreshes the list once a minute while visible (covering a socket that died without a disconnect, which only drops offline when its presence key expires).
@@ -299,7 +312,7 @@ app/(portal)/chat/[conversationId]/page.tsx
 6. Drawer, sidebar badge, push.
 7. Docs (README, technical documentation, user guide, deployment), end-to-end tests, security review.
 
-Later phases: live online status; safety codes; unit tests for the crypto module; group chats; voice notes (browser recording as an encrypted attachment of kind `voice`); reactions; audio and video calls (WebRTC with a TURN server, a separate project).
+Later phases: safety codes; unit tests for the crypto module; group chats; audio and video calls (WebRTC with a TURN server, a separate project).
 
 ## 8. Settled follow-ups
 

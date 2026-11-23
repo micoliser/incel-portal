@@ -227,6 +227,11 @@ export function associatedData(conversationId: string, messageId: string, sender
   return `chat-v1|${conversationId}|${messageId}|${senderId}|${keyVersion}|${revision}`;
 }
 
+/** Binds an encrypted reaction to its conversation, message, the person reacting and the key. */
+export function reactionAssociatedData(conversationId: string, messageId: string, userId: number, keyVersion: number) {
+  return `chat-reaction-v1|${conversationId}|${messageId}|${userId}|${keyVersion}`;
+}
+
 export async function encryptJson(value: unknown, key: Uint8Array, ad: string) {
   const s = await getSodium();
   const nonce = s.randombytes_buf(s.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);

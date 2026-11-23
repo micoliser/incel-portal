@@ -32,7 +32,17 @@ urlpatterns = [
         views.AttachmentsView.as_view(),
         name='chat-conversation-attachments',
     ),
+    path(
+        'chat/conversations/<uuid:conversation_id>/attachments/forward',
+        views.ForwardAttachmentView.as_view(),
+        name='chat-conversation-attachments-forward',
+    ),
     path('chat/messages/<uuid:message_id>', views.MessageView.as_view(), name='chat-message'),
+    path(
+        'chat/messages/<uuid:message_id>/reaction',
+        views.MessageReactionView.as_view(),
+        name='chat-message-reaction',
+    ),
     path(
         'chat/attachments/<uuid:attachment_id>/download',
         views.AttachmentDownloadView.as_view(),

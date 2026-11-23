@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertCircle, Download, FileText, Loader2, Play, Video } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertCircle, Download, FileText, Loader2, Pause, Play, Video } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ChatAttachment } from "@/components/chat/chat-provider";
 import { Button } from "@/components/ui/button";
@@ -14,10 +14,12 @@ import {
   markDownloaded,
   wasDownloaded,
 } from "@/lib/chat/media";
+import { formatDuration } from "@/lib/chat/voice";
 import { cn } from "@/lib/utils";
 
 /** Photos and playable videos show as media tiles; everything else as a file card. */
 export function isMedia(attachment: ChatAttachment) {
+  if (attachment.voice) return false;
   return INLINE_IMAGE_TYPES.has(attachment.mime) || INLINE_VIDEO_TYPES.has(attachment.mime);
 }
 
@@ -315,6 +317,193 @@ export function FileCard({ attachment, mine, state }: { attachment: ChatAttachme
       ) : state === "sending" ? (
         <Loader2 className={cn("size-4 animate-spin", mine ? "text-blue-100" : "text-muted-foreground")} aria-label="Uploading" />
       ) : null}
+    </div>
+  );
+}
+
+/** A recorded voice note (as opposed to an audio file someone attached). */
+export function isVoice(attachment: ChatAttachment) {
+  return Boolean(attachment.voice);
+}
+
+const SPEEDS = [1, 1.5, 2] as const;
+const VOICE_PLAY_EVENT = "portal-chat-voice-play";
+
+/**
+ * Play, pause, seek and speed for a voice note. The audio is downloaded and
+ * decrypted on the first play (the sender's own copy is already here). Only
+ * one voice note plays at a time.
+ */
+export function VoiceNote({
+  attachment,
+  mine,
+  state,
+  compact = false,
+}: {
+  attachment: ChatAttachment;
+  mine: boolean;
+  state: UploadState;
+  /** The composer's preview before sending. */
+  compact?: boolean;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [url, setUrl] = useState<string | null>(attachment.localUrl ?? null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
+  const pending = attachment.id.startsWith("local-");
+  const duration = attachment.duration && Number.isFinite(attachment.duration) ? attachment.duration : 0;
+  const bars = attachment.waveform?.length ? attachment.waveform : Array.from({ length: 48 }, () => 30);
+  const progress = duration ? Math.min(1, position / duration) : 0;
+
+  // Pause when another voice note starts.
+  useEffect(() => {
+    const onOtherPlay = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== attachment.id) audioRef.current?.pause();
+    };
+    window.addEventListener(VOICE_PLAY_EVENT, onOtherPlay);
+    return () => window.removeEventListener(VOICE_PLAY_EVENT, onOtherPlay);
+  }, [attachment.id]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  }, [speed, url]);
+
+  async function source() {
+    if (url) return url;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const decrypted = await decryptedUrl(attachment.id, "file", attachment.file_key, attachment.mime);
+      setUrl(decrypted);
+      return decrypted;
+    } catch {
+      setFailed(true);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggle() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) {
+      audio.pause();
+      return;
+    }
+    const src = await source();
+    if (!src) return;
+    if (audio.src !== src) audio.src = src;
+    audio.playbackRate = speed;
+    window.dispatchEvent(new CustomEvent(VOICE_PLAY_EVENT, { detail: attachment.id }));
+    try {
+      await audio.play();
+    } catch {
+      setFailed(true);
+    }
+  }
+
+  async function seek(seconds: number) {
+    const audio = audioRef.current;
+    setPosition(seconds);
+    if (!audio) return;
+    if (!audio.src) {
+      const src = await source();
+      if (!src) return;
+      audio.src = src;
+    }
+    audio.currentTime = seconds;
+  }
+
+  const played = mine ? "bg-white" : "bg-[#0d47a1] dark:bg-[#38bdf8]";
+  const unplayed = mine ? "bg-white/40" : "bg-foreground/25";
+  const label = state === "failed" ? "Not sent" : pending || state === "sending" ? "Sending" : null;
+
+  return (
+    <div className={cn("flex items-center gap-2.5", compact ? "w-full max-w-md" : "w-64 max-w-full py-0.5")}>
+      {/* The element has no src until the first play, so nothing downloads early. */}
+      <audio
+        ref={audioRef}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setPosition(0);
+        }}
+        onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
+        onError={() => {
+          if (url) setFailed(true);
+        }}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        disabled={loading}
+        aria-label={playing ? "Pause voice message" : `Play voice message, ${formatDuration(duration)}`}
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2",
+          mine
+            ? "bg-white text-[#0d47a1] hover:bg-blue-50 focus-visible:outline-white"
+            : "bg-[#0d47a1] text-white hover:bg-[#0a3880] focus-visible:outline-[#0d47a1] dark:bg-[#38bdf8] dark:text-[#0b1120]",
+        )}
+      >
+        {loading ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        ) : playing ? (
+          <Pause className="size-4 fill-current" aria-hidden="true" />
+        ) : (
+          <Play className="ml-0.5 size-4 fill-current" aria-hidden="true" />
+        )}
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <div className="relative h-7">
+          <div className="flex h-full items-center justify-between gap-px" aria-hidden="true">
+            {bars.map((value, index) => (
+              <span
+                key={index}
+                className={cn("w-[3px] shrink-0 rounded-full", index / bars.length < progress ? played : unplayed)}
+                style={{ height: `${Math.max(12, value)}%` }}
+              />
+            ))}
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={duration || 1}
+            step={0.1}
+            value={Math.min(position, duration || 1)}
+            onChange={(event) => void seek(Number(event.target.value))}
+            disabled={!duration || pending}
+            aria-label="Position in voice message"
+            aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`}
+            className="absolute inset-0 size-full cursor-pointer opacity-0 disabled:cursor-default"
+          />
+        </div>
+        <div className={cn("mt-0.5 flex items-center justify-between text-[11px]", mine ? "text-blue-100" : "text-muted-foreground")}>
+          <span className="tabular-nums">
+            {failed ? "Could not play" : label ?? (playing || position ? formatDuration(position) : formatDuration(duration))}
+          </span>
+          {!compact ? (
+            <button
+              type="button"
+              onClick={() => setSpeed((s) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length])}
+              aria-label={`Playback speed ${speed} times. Change speed`}
+              className={cn(
+                "rounded-full px-1.5 py-px font-semibold tabular-nums transition-colors",
+                mine ? "bg-white/15 hover:bg-white/25" : "bg-foreground/10 hover:bg-foreground/15",
+              )}
+            >
+              {speed}×
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

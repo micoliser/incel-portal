@@ -571,13 +571,15 @@ open. Full design: `docs/CHAT_SPEC.md`.
 | GET | `/chat/people?search=` | active users with `chat_ready`, public key, online |
 | POST | `/chat/people/{user_id}/invite` | invite someone without chat: opens the waiting conversation (returned) with an "invitation sent" note, notifies and emails them; again = a reminder, once per pair per 24 h |
 | GET | `/chat/unread-count` | sidebar badge |
-| GET, POST | `/chat/conversations` | list; start a direct chat with wrapped keys (200 if it exists) |
+| GET, POST | `/chat/conversations` | list one page (`limit`, default 30; `before` cursor; returns `has_more`, `next`, `unread_total`); start a direct chat with wrapped keys (200 if it exists) |
 | GET, PATCH | `/chat/conversations/{id}` | one conversation; `muted_until`, `archived` |
 | GET, POST | `/chat/conversations/{id}/keys` | own wrapped keys; add the next key version (409 if not next) |
 | GET, POST | `/chat/conversations/{id}/messages` | `before_seq`, `after_seq`, `limit` (≤100); send (idempotent on the client's message id) |
 | POST | `/chat/conversations/{id}/read` | `{seq}`, only moves forward |
 | POST | `/chat/conversations/{id}/attachments` | reserve an encrypted upload, returns presigned PUT URLs |
 | PATCH, DELETE | `/chat/messages/{id}` | edit (sender, 30 min, `revision` = current + 1); `?scope=everyone` (sender, 30 min) or `?scope=me` |
+| POST | `/chat/conversations/{id}/attachments/forward` | copy an encrypted file from another of your chats into this one, for forwarding |
+| PUT, DELETE | `/chat/messages/{id}/reaction` | set or replace your reaction (encrypted emoji, newest key version) / remove it |
 | GET | `/chat/attachments/{id}/download?part=file\|thumb` | presigned GET for the encrypted bytes |
 
 Errors with their own type: `key_outdated` (409: refresh keys, make a new
@@ -920,6 +922,7 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `SUMMARY_SHARE_LINK_DAYS` | `30` |
 | `SUPPORT_AUTO_CLOSE_DAYS` | `7` |
 | `CHAT_ATTACHMENT_S3_PREFIX` | `chat-attachments` |
+| `CHAT_STORAGE_COPY` | `true` (forwarding copies encrypted files with S3 CopyObject; the AWS key needs read and write on the chat prefix) |
 | `CHAT_ATTACHMENT_MAX_SIZE` | 25 MB (original file) |
 | `CHAT_UPLOAD_URL_EXPIRES_IN`, `CHAT_DOWNLOAD_URL_EXPIRES_IN` | `900`, `300` seconds |
 

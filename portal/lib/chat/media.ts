@@ -16,6 +16,10 @@ export type FileDetails = {
   width?: number;
   height?: number;
   duration?: number;
+  /** A recorded voice note (shown as a player, not a file). */
+  voice?: boolean;
+  /** Voice notes only: loudness bars from 0 to 100. */
+  waveform?: number[];
 };
 
 export type UploadedAttachment = FileDetails & {
@@ -94,12 +98,18 @@ async function put(url: string, bytes: Uint8Array) {
 }
 
 /** Encrypt and upload one file (and its preview). The keys stay in the message. */
-export async function uploadEncrypted(conversationId: string, file: File): Promise<UploadedAttachment> {
+export async function uploadEncrypted(
+  conversationId: string,
+  file: File,
+  extra?: Pick<FileDetails, "voice" | "duration" | "waveform">,
+): Promise<UploadedAttachment> {
   const mime = file.type || "application/octet-stream";
-  const details: FileDetails = { name: file.name || "file", mime, size: file.size };
+  const details: FileDetails = { name: file.name || "file", mime, size: file.size, ...extra };
   let thumb: Blob | null = null;
   try {
-    if (INLINE_IMAGE_TYPES.has(mime)) {
+    if (extra?.voice) {
+      // A voice note has no preview image.
+    } else if (INLINE_IMAGE_TYPES.has(mime)) {
       const preview = await imagePreview(file);
       Object.assign(details, { width: preview.width, height: preview.height });
       thumb = preview.thumb;

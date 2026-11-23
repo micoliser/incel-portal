@@ -44,6 +44,16 @@ export type RawMessage = {
   deleted: boolean;
   deleted_at: string | null;
   attachments: RawAttachment[];
+  /** Encrypted emoji, one per person. */
+  reactions?: RawReaction[];
+};
+
+export type RawReaction = {
+  user_id: number;
+  key_version: number;
+  nonce: string;
+  ciphertext: string;
+  updated_at: string;
 };
 
 export type RawConversation = {
@@ -58,6 +68,8 @@ export type RawConversation = {
   archived: boolean;
   last_read_seq: number;
   participants: Participant[];
+  /** The newest reaction and its message, for the list preview. */
+  last_reaction?: (RawReaction & { message: RawMessage }) | null;
 };
 
 export type RawKey = {
@@ -136,9 +148,22 @@ export async function getUnreadCount() {
   return data.unread_count;
 }
 
-export async function listConversations() {
-  const { data } = await apiClient.get<{ results: RawConversation[] }>("/chat/conversations");
-  return data.results;
+/** One page of conversations, most recent activity first. `next` is where the following page starts. */
+export type ConversationPage = {
+  results: RawConversation[];
+  has_more: boolean;
+  next: string | null;
+  /** Unread messages across every conversation, including ones not on this page. */
+  unread_total: number;
+};
+
+export const CONVERSATION_PAGE_SIZE = 30;
+
+export async function listConversations(params: { before?: string | null; limit?: number } = {}) {
+  const { data } = await apiClient.get<ConversationPage>("/chat/conversations", {
+    params: { limit: params.limit ?? CONVERSATION_PAGE_SIZE, ...(params.before ? { before: params.before } : {}) },
+  });
+  return data;
 }
 
 export async function getConversation(id: string) {
@@ -198,6 +223,23 @@ export async function patchMessage(messageId: string, input: { revision: number;
 
 export async function deleteMessage(messageId: string, scope: "everyone" | "me") {
   await apiClient.delete(`/chat/messages/${messageId}`, { params: { scope } });
+}
+
+/** Copy a file you can see into another of your chats (for forwarding). Returns the new, reserved attachment id. */
+export async function forwardAttachment(conversationId: string, attachmentId: string) {
+  const { data } = await apiClient.post<{ id: string }>(`/chat/conversations/${conversationId}/attachments/forward`, {
+    attachment_id: attachmentId,
+  });
+  return data.id;
+}
+
+export async function setReaction(messageId: string, body: { key_version: number; nonce: string; ciphertext: string }) {
+  const { data } = await apiClient.put<RawReaction>(`/chat/messages/${messageId}/reaction`, body);
+  return data;
+}
+
+export async function removeReaction(messageId: string) {
+  await apiClient.delete(`/chat/messages/${messageId}/reaction`);
 }
 
 export async function markRead(conversationId: string, seq: number) {
