@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   Calendar,
   CheckSquare2,
+  Camera,
   ListTodo,
   Eye,
   EyeOff,
@@ -45,6 +46,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NotificationCenter } from "@/components/notification-center";
 import { ChatDrawer } from "@/components/chat/chat-drawer";
+import { ProfilePhotoDialog } from "@/components/profile-photo-dialog";
 import { ChatProvider, useOptionalChat } from "@/components/chat/chat-provider";
 import { forgetKey } from "@/lib/chat/keystore";
 import { movePasswordLayer } from "@/lib/chat/password";
@@ -87,6 +89,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     department_id?: number | string | null;
     department_code?: string | null;
     can_manage_inventory?: boolean;
+    avatar_url?: string | null;
     has_global_access?: boolean;
     is_manager?: boolean;
     manager_scope?: {
@@ -96,6 +99,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       description: string;
     } | null;
   } | null>(null);
+  const [isProfilePhotoOpen, setIsProfilePhotoOpen] = useState(false);
   const [changePasswordForm, setChangePasswordForm] = useState({
     old_password: "",
     new_password: "",
@@ -1045,9 +1049,26 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <div className="hidden h-7 w-px bg-border sm:block" />
 
             <div className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1.5">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-[#0d47a1] text-xs font-bold text-white shadow-xs">
-                {initials}
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsProfilePhotoOpen(true)}
+                aria-label={userInfo?.avatar_url ? "Change your profile picture" : "Add a profile picture"}
+                title={userInfo?.avatar_url ? "Change your profile picture" : "Add a profile picture"}
+                className="group/photo relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d47a1] text-xs font-bold text-white shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d47a1]"
+              >
+                {userInfo?.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={userInfo.avatar_url} alt="" className="size-full object-cover" />
+                ) : (
+                  initials
+                )}
+                <span
+                  className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover/photo:opacity-100 group-focus-visible/photo:opacity-100"
+                  aria-hidden="true"
+                >
+                  <Camera className="size-3.5" />
+                </span>
+              </button>
               <div className="leading-tight hidden sm:block">
                 <p className="text-sm font-semibold text-foreground">
                   {fullName}
@@ -1239,8 +1260,13 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
           {userInfo ? (
             <div className="my-1 flex items-center gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#0d47a1] text-xs font-semibold text-white shadow-xs">
-                {initials}
+              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d47a1] text-xs font-semibold text-white shadow-xs">
+                {userInfo.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={userInfo.avatar_url} alt="" className="size-full object-cover" />
+                ) : (
+                  initials
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground">
@@ -1298,6 +1324,13 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
       {chatUserId !== null ? <ChatDrawer /> : null}
+      <ProfilePhotoDialog<NonNullable<typeof userInfo>>
+        open={isProfilePhotoOpen}
+        onOpenChange={setIsProfilePhotoOpen}
+        name={fullName}
+        avatarUrl={userInfo?.avatar_url}
+        onSaved={(user) => setUserInfo(user)}
+      />
     </div>
   );
 

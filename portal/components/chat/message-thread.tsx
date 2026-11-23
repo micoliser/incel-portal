@@ -6,6 +6,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Copy,
   Forward,
   Loader2,
   Mic,
@@ -31,7 +32,7 @@ import {
   type ChatMessage,
 } from "@/components/chat/chat-provider";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
-import { ReactionChips, ReactionPicker } from "@/components/chat/reactions";
+import { ReactionChips, ReactionPicker, type MessageAction } from "@/components/chat/reactions";
 import { Avatar } from "@/components/chat/conversation-list";
 import { Button } from "@/components/ui/button";
 import {
@@ -187,6 +188,10 @@ export function MessageThread({
   }
 
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  const senderOf = (senderId: number | null) => {
+    const person = conversation.participants.find((p) => p.id === senderId);
+    return { name: person?.name || (senderId === userId ? "You" : (other?.name ?? "")), avatarUrl: person?.avatar_url };
+  };
   const isTyping = Boolean(typing[conversation.id]);
   const name = other?.name ?? "Conversation";
 
@@ -205,7 +210,7 @@ export function MessageThread({
             <ArrowLeft aria-hidden="true" />
           </Button>
         ) : null}
-        <Avatar name={name} online={other?.online} size="sm" />
+        <Avatar name={name} src={other?.avatar_url} online={other?.online} size="sm" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-foreground">{name}</h2>
           <p className={cn("truncate text-xs", isTyping ? "text-success-text" : "text-muted-foreground")} aria-live="polite">
@@ -265,6 +270,7 @@ export function MessageThread({
                   </div>
                 ) : null}
                 <MessageBubble
+                  sender={senderOf(message.senderId)}
                   message={message}
                   highlighted={highlighted === message.id}
                   onJump={(id) => void jumpTo(id)}
@@ -324,7 +330,10 @@ function MessageBubble({
   canAct,
   onReply,
   onEdit,
+  sender,
 }: {
+  /** Who sent it: shown as a small picture (or initials) beside the bubble. */
+  sender: { name: string; avatarUrl: string | null | undefined };
   message: ChatMessage;
   highlighted: boolean;
   onJump: (messageId: string) => void;
@@ -339,7 +348,9 @@ function MessageBubble({
 }) {
   const { deleteForEveryone, deleteForMe, retry, react, userId } = useChat();
   const [busy, setBusy] = useState(false);
-  const [picking, setPicking] = useState(false);
+  // The panel above the message: just reactions (smile button), or reactions
+  // with the message actions (right-click, or press and hold on a phone).
+  const [panel, setPanel] = useState<"react" | "menu" | null>(null);
   const [forwarding, setForwarding] = useState(false);
   const pressTimer = useRef<number | null>(null);
   // "React" in the menu opens the reactions once the menu has fully closed,
@@ -379,8 +390,8 @@ function MessageBubble({
 
   // A long press on a phone opens the reactions, like other chat apps.
   function pressStart(event: React.PointerEvent) {
-    if (event.pointerType !== "touch" || !canReact) return;
-    pressTimer.current = window.setTimeout(() => setPicking(true), 450);
+    if (event.pointerType !== "touch" || message.state !== "sent") return;
+    pressTimer.current = window.setTimeout(() => setPanel("menu"), 450);
   }
   function pressEnd() {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
@@ -407,6 +418,34 @@ function MessageBubble({
     }
   }
 
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(message.text);
+      toast.success("Copied.");
+    } catch {
+      toast.error("Could not copy. Select the text and copy it instead.");
+    }
+  }
+
+  // The same actions as the ⋯ menu, for the right-click / press-and-hold panel.
+  const actions: MessageAction[] = [
+    ...(canAct && !message.deleted ? [{ label: "Reply", icon: Reply, onSelect: onReply }] : []),
+    ...(message.text && !message.deleted ? [{ label: "Copy text", icon: Copy, onSelect: () => void copyText() }] : []),
+    ...(canForward ? [{ label: "Forward", icon: Forward, onSelect: () => setForwarding(true) }] : []),
+    ...(canEdit && canAct ? [{ label: "Edit", icon: Pencil, onSelect: onEdit }] : []),
+    { label: "Delete for me", icon: Trash2, onSelect: () => void run(() => deleteForMe(message), "Could not delete the message.") },
+    ...(canChange
+      ? [
+          {
+            label: "Delete for everyone",
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => void run(() => deleteForEveryone(message), "Could not delete the message."),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div
       data-message-id={message.id}
@@ -417,16 +456,31 @@ function MessageBubble({
         highlighted && "bg-[#0d47a1]/10 duration-150 dark:bg-[#38bdf8]/12",
       )}
     >
-      <div className={cn("flex max-w-[85%] items-end gap-1 sm:max-w-[70%]", mine && "flex-row-reverse")}>
-        <div className={cn("flex min-w-0 flex-col", mine ? "items-end" : "items-start", message.reactions.length && "pb-1")}>
-          <ReactionPicker open={picking} onOpenChange={setPicking} mine={myReaction} onPick={toggleReaction} align={mine ? "end" : "start"}>
-            <div
+      <div className={cn("flex max-w-[85%] min-w-0 flex-col sm:max-w-[70%]", mine ? "items-end" : "items-start")}>
+        {/* Picture, bubble and its buttons share one row, so the buttons stay level with the bubble's bottom. */}
+        <div className={cn("flex max-w-full min-w-0 items-end gap-1.5", mine && "flex-row-reverse")}>
+          <span className="mb-0.5 shrink-0" title={mine ? "You" : sender.name}>
+            <Avatar name={sender.name} src={sender.avatarUrl} size="xs" />
+          </span>
+          <ReactionPicker
+            open={panel !== null}
+            onOpenChange={(open) => setPanel(open ? (panel ?? "react") : null)}
+            mine={myReaction}
+            onPick={canReact ? toggleReaction : undefined}
+            actions={panel === "menu" ? actions : undefined}
+            align={mine ? "end" : "start"}
+          >
+<div
               onPointerDown={pressStart}
               onPointerUp={pressEnd}
               onPointerLeave={pressEnd}
               onPointerCancel={pressEnd}
               onContextMenu={(event) => {
-                if (pressTimer.current !== null || picking) event.preventDefault();
+                // Keep the browser menu when text is selected, so it can be copied.
+                if (message.state !== "sent" || window.getSelection()?.toString()) return;
+                event.preventDefault();
+                pressEnd();
+                setPanel("menu");
               }}
               className={cn(
                 "min-w-0 rounded-2xl text-sm select-text",
@@ -523,15 +577,6 @@ function MessageBubble({
               </p>
             </div>
           </ReactionPicker>
-          <ReactionChips
-            reactions={message.reactions}
-            userId={userId}
-            mine={mine}
-            nameOf={() => otherName}
-            onToggle={(emoji) => toggleReaction(emoji)}
-            disabled={!canReact}
-          />
-        </div>
 
         {failed ? (
           <div className="flex flex-col items-end gap-1">
@@ -555,8 +600,8 @@ function MessageBubble({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => setPicking(true)}
-                className="hidden opacity-0 group-hover:opacity-100 focus-visible:opacity-100 sm:inline-flex"
+                onClick={() => setPanel("react")}
+                className="text-muted-foreground"
                 aria-label="React"
               >
                 <SmilePlus aria-hidden="true" />
@@ -581,7 +626,7 @@ function MessageBubble({
                   if (!reactAfterMenu.current) return;
                   reactAfterMenu.current = false;
                   event.preventDefault();
-                  setPicking(true);
+                  setPanel("react");
                 }}
               >
                 {canAct && !message.deleted ? (
@@ -602,6 +647,11 @@ function MessageBubble({
                     }}
                   >
                     <SmilePlus aria-hidden="true" /> React
+                  </DropdownMenuItem>
+                ) : null}
+                {message.text && !message.deleted ? (
+                  <DropdownMenuItem onSelect={() => void copyText()}>
+                    <Copy aria-hidden="true" /> Copy text
                   </DropdownMenuItem>
                 ) : null}
                 {canEdit && canAct ? (
@@ -625,6 +675,16 @@ function MessageBubble({
             </DropdownMenu>
           </div>
         ) : null}
+        </div>
+        <ReactionChips
+          className={mine ? "mr-[30px]" : "ml-[30px]"}
+          reactions={message.reactions}
+          userId={userId}
+          mine={mine}
+          nameOf={() => otherName}
+          onToggle={(emoji) => toggleReaction(emoji)}
+          disabled={!canReact}
+        />
       </div>
       {forwarding ? <ForwardDialog message={message} open={forwarding} onOpenChange={setForwarding} /> : null}
     </div>

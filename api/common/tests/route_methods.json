@@ -358,6 +358,19 @@
       "get"
     ]
   },
+  "api/v1/me/profile-photo": {
+    "name": "me-profile-photo",
+    "methods": [
+      "delete",
+      "put"
+    ]
+  },
+  "api/v1/me/profile-photo/upload-url": {
+    "name": "me-profile-photo-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
   "api/v1/me/recent-applications": {
     "name": "me-recent-applications",
     "methods": [

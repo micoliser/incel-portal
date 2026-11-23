@@ -50,6 +50,7 @@ import {
 } from "@/lib/chat/keystore";
 import { releaseDecryptedFiles, uploadEncrypted, type UploadedAttachment } from "@/lib/chat/media";
 import { formatDuration } from "@/lib/chat/voice";
+import { PROFILE_CHANGED_EVENT } from "@/lib/profile-photo";
 import { ChatSocket, type ChatEvent } from "@/lib/chat/socket";
 
 export type ChatStatus = "loading" | "not_set_up" | "locked" | "ready" | "error";
@@ -1087,6 +1088,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       if (document.visibilityState === "visible") void refreshConversations().catch(() => undefined);
     }, 60_000);
     return () => window.clearInterval(timer);
+  }, [status, refreshConversations]);
+
+  // A new profile picture shows in chat straight away (yours, in every chat you are in).
+  useEffect(() => {
+    if (status !== "ready") return;
+    const onProfileChange = () => void refreshConversations().catch(() => undefined);
+    window.addEventListener(PROFILE_CHANGED_EVENT, onProfileChange);
+    return () => window.removeEventListener(PROFILE_CHANGED_EVENT, onProfileChange);
   }, [status, refreshConversations]);
 
   // Typing indicators expire on their own.

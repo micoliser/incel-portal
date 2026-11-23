@@ -41,6 +41,8 @@ class StaffProfile(TimeStampedModel):
     )
     is_active = models.BooleanField(default=True)
     last_activity_at = models.DateTimeField(null=True, blank=True)
+    # Public URL of the profile picture in S3 (accounts/s3.py); empty shows initials.
+    avatar_url = models.URLField(max_length=600, blank=True, default='')
 
     @property
     def direct_manager(self):

@@ -21,6 +21,8 @@ export type ChatPerson = {
   public_key: string | null;
   last_seen_at: string | null;
   online?: boolean;
+  /** Profile picture, or null to show initials. */
+  avatar_url?: string | null;
 };
 
 export type Participant = ChatPerson & { last_read_seq: number; left: boolean };

@@ -235,6 +235,7 @@ def person_payload(user, *, online: bool | None = None) -> dict:
         'key_id': str(account.key_id) if account else None,
         'public_key': account.public_key if account else None,
         'last_seen_at': account.last_seen_at if account else None,
+        'avatar_url': (profile.avatar_url if profile else '') or None,
     }
     if online is not None:
         data['online'] = online

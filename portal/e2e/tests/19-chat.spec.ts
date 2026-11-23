@@ -374,6 +374,58 @@ test("messages and files are forwarded with a Forwarded label and an optional no
   expect(sentBodies.slice(before).join("\n")).not.toContain("budget");
 });
 
+test("a profile picture from the header shows on messages; right-click opens reactions and actions", async () => {
+  // A small square PNG, made in the browser.
+  const png = await femi.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 40;
+    canvas.height = 40;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#16a34a";
+    context.fillRect(0, 0, 40, 40);
+    const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  });
+  await femi.getByRole("button", { name: "Add a profile picture" }).click();
+  const dialog = femi.getByRole("dialog", { name: "Profile picture" });
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "me.png", mimeType: "image/png", buffer: Buffer.from(png) });
+  // Choosing only previews it; nothing is uploaded until Upload.
+  await expect(dialog.getByText("Preview. Choose Upload to use this picture.")).toBeVisible();
+  await expect(femi.getByRole("button", { name: "Add a profile picture" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Upload" }).click();
+  await expect(femi.getByText("Profile picture updated.")).toBeVisible();
+  await expect(femi.getByRole("button", { name: "Change your profile picture" }).locator("img")).toBeVisible();
+
+  // Only images can be chosen.
+  // The "updated" notice sits over the header button for a few seconds.
+  await femi.getByRole("button", { name: "Change your profile picture" }).dispatchEvent("click");
+  await femi
+    .getByRole("dialog", { name: "Profile picture" })
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
+  await expect(femi.getByText("Choose an image file, such as a JPEG or PNG photo.")).toBeVisible();
+  await femi.keyboard.press("Escape");
+
+  // Chidi sees Femi's picture beside her messages (after the chat list refreshes).
+  await chidi.reload();
+  const fromFemi = thread(chidi).locator("[data-message-id]").filter({ hasText: "budget-notes.txt" }).first();
+  await expect(fromFemi.locator('img[src*="profile-photos"]')).toBeVisible();
+  // People without a picture keep their initials.
+  const fromChidi = thread(chidi).locator("[data-message-id]").filter({ hasText: "Nice photo" }).first();
+  await expect(fromChidi.locator('img[src*="profile-photos"]')).toHaveCount(0);
+  await expect(fromChidi.getByText("CC", { exact: true })).toBeVisible();
+
+  // Right-click: reactions with the message actions underneath, like WhatsApp.
+  await fromChidi.getByText("Nice photo", { exact: true }).last().click({ button: "right" });
+  await expect(chidi.getByRole("group", { name: "React to this message" })).toBeVisible();
+  const menu = chidi.getByRole("group", { name: "Message actions" });
+  await expect(menu.getByRole("button", { name: "Reply" })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Forward" })).toBeVisible();
+  await menu.getByRole("button", { name: "Reply" }).click();
+  await expect(chidi.getByText(/Replying to/)).toBeVisible();
+  await chidi.getByRole("button", { name: "Cancel reply" }).click();
+});
+
 test("the drawer opens chat from any page", async () => {
   await chidi.goto("/dashboard");
   await chidi.getByRole("button", { name: /^Open chat/ }).click();

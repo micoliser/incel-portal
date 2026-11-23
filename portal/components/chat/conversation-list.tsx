@@ -22,20 +22,59 @@ export function initialsOf(name: string) {
   );
 }
 
-export function Avatar({ name, online, size = "md" }: { name: string; online?: boolean; size?: "sm" | "md" }) {
+const AVATAR_SIZES = {
+  xs: "size-6 text-[10px]",
+  sm: "size-8 text-xs",
+  md: "size-10 text-sm",
+  lg: "size-24 text-2xl",
+} as const;
+
+/** A person's profile picture, or their initials when they have none (or it fails to load). */
+export function Avatar({
+  name,
+  src,
+  online,
+  size = "md",
+}: {
+  name: string;
+  src?: string | null;
+  online?: boolean;
+  size?: keyof typeof AVATAR_SIZES;
+}) {
+  const [broken, setBroken] = useState<string | null>(null);
+  const showPhoto = Boolean(src) && broken !== src;
   return (
     <span className="relative inline-flex shrink-0">
-      <span
-        className={cn(
-          "flex items-center justify-center rounded-full bg-[#0d47a1]/10 font-semibold text-[#0d47a1] dark:bg-[#38bdf8]/15 dark:text-[#38bdf8]",
-          size === "sm" ? "size-8 text-xs" : "size-10 text-sm",
-        )}
-        aria-hidden="true"
-      >
-        {initialsOf(name)}
-      </span>
+      {showPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src!}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          onError={() => setBroken(src ?? null)}
+          className={cn("rounded-full bg-muted object-cover", AVATAR_SIZES[size])}
+        />
+      ) : (
+        <span
+          className={cn(
+            "flex items-center justify-center rounded-full bg-[#0d47a1]/10 font-semibold text-[#0d47a1] dark:bg-[#38bdf8]/15 dark:text-[#38bdf8]",
+            AVATAR_SIZES[size],
+          )}
+          aria-hidden="true"
+        >
+          {initialsOf(name)}
+        </span>
+      )}
       {online ? (
-        <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-card" aria-hidden="true" />
+        <span
+          className={cn(
+            "absolute right-0 bottom-0 rounded-full bg-success ring-2 ring-card",
+            size === "xs" ? "size-2" : "size-2.5",
+          )}
+          aria-hidden="true"
+        />
       ) : null}
     </span>
   );
@@ -242,7 +281,7 @@ function ConversationRow({
           active && "bg-[#0d47a1]/8 dark:bg-[#38bdf8]/10",
         )}
       >
-        <Avatar name={name} online={conversation.other?.online} />
+        <Avatar name={name} src={conversation.other?.avatar_url} online={conversation.other?.online} />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className={cn("truncate text-sm text-foreground", unread ? "font-semibold" : "font-medium")}>{name}</span>
@@ -300,7 +339,7 @@ function PeopleResults({
     <ul aria-label="People">
       {people.map((person) => (
         <li key={person.id} className="flex items-center gap-3 border-b border-border/60 px-3 py-2.5">
-          <Avatar name={person.name} online={person.online} size="sm" />
+          <Avatar name={person.name} src={person.avatar_url} online={person.online} size="sm" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-foreground">{person.name}</span>
             <span className="block truncate text-xs text-muted-foreground">

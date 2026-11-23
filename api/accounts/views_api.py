@@ -27,6 +27,8 @@ from accounts.serializers import (
     PasswordResetValidateSerializer,
     RefreshTokenBodySerializer,
     UpdateAdminUserSerializer,
+    ProfilePhotoSerializer,
+    ProfilePhotoUploadUrlSerializer,
     UserWithProfileSerializer,
     with_profile,
 )
@@ -49,7 +51,7 @@ from common.authentication import (
     PublicEndpointAuthentication,
     ServiceApiKeyAuthentication,
 )
-from common.exceptions import AccountLocked, Conflict
+from common.exceptions import AccountLocked, Conflict, ServiceUnavailable
 from common.network import client_ip
 from common.pagination import paginate
 from common.params import bool_param, uuid_param
@@ -489,6 +491,72 @@ class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        return Response(UserWithProfileSerializer(request.user).data)
+
+
+class MeProfilePhotoUploadUrlView(APIView):
+    """A signed link to upload a new profile picture straight to storage."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'uploads'
+
+    def post(self, request):
+        from accounts.s3 import ProfilePhotoError, generate_profile_photo_upload_url
+
+        serializer = ProfilePhotoUploadUrlSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if _profile_or_none(request.user) is None:
+            raise ValidationError('This account has no staff profile to add a picture to.')
+        try:
+            payload = generate_profile_photo_upload_url(
+                user_id=request.user.id, content_type=serializer.validated_data['content_type']
+            )
+        except ProfilePhotoError as exc:
+            raise ServiceUnavailable(str(exc))
+        return Response(payload)
+
+
+class MeProfilePhotoView(APIView):
+    """PUT: use an uploaded picture (checked in storage first). DELETE: back to initials."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'uploads'
+
+    def put(self, request):
+        from accounts.s3 import PROFILE_PHOTO_MAX_SIZE, PROFILE_PHOTO_TYPES, delete_profile_photo, own_photo_key
+        from common.uploads import checked_upload
+
+        serializer = ProfilePhotoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        url = serializer.validated_data['avatar_url']
+        profile = _profile_or_none(request.user)
+        if profile is None:
+            raise ValidationError('This account has no staff profile to add a picture to.')
+        key = own_photo_key(url, request.user.id)
+        if key is None:
+            raise ValidationError({'avatar_url': ['Upload the picture through the portal.']})
+        checked_upload(key, field='avatar_url', max_size=PROFILE_PHOTO_MAX_SIZE, allowed_types=PROFILE_PHOTO_TYPES)
+
+        previous = profile.avatar_url
+        profile.avatar_url = url
+        profile.save(update_fields=['avatar_url', 'updated_at'])
+        if previous and previous != url:
+            delete_profile_photo(previous, request.user.id)
+        log_audit(action=AuditAction.PROFILE_PHOTO_UPDATED, request=request, target_type='User', target_id=request.user.id)
+        return Response(UserWithProfileSerializer(request.user).data)
+
+    def delete(self, request):
+        from accounts.s3 import delete_profile_photo
+
+        profile = _profile_or_none(request.user)
+        if profile is not None and profile.avatar_url:
+            previous = profile.avatar_url
+            profile.avatar_url = ''
+            profile.save(update_fields=['avatar_url', 'updated_at'])
+            delete_profile_photo(previous, request.user.id)
+            log_audit(action=AuditAction.PROFILE_PHOTO_REMOVED, request=request, target_type='User', target_id=request.user.id)
         return Response(UserWithProfileSerializer(request.user).data)
 
 

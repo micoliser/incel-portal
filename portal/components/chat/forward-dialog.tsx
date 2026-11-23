@@ -22,7 +22,15 @@ import { cn } from "@/lib/utils";
 const MAX_TARGETS = 5;
 
 /** A chat to forward to: an existing conversation, or a person to start one with. */
-type Target = { key: string; name: string; detail: string; online?: boolean; conversationId?: string; person?: ChatPerson };
+type Target = {
+  key: string;
+  name: string;
+  detail: string;
+  avatar?: string | null;
+  online?: boolean;
+  conversationId?: string;
+  person?: ChatPerson;
+};
 
 export function ForwardDialog({
   message,
@@ -67,6 +75,7 @@ export function ForwardDialog({
         key: `c:${c.id}`,
         name: c.other?.name ?? "Conversation",
         detail: c.other?.department ?? "",
+        avatar: c.other?.avatar_url,
         online: c.other?.online,
         conversationId: c.id,
       }));
@@ -78,6 +87,7 @@ export function ForwardDialog({
         key: `p:${p.id}`,
         name: p.name,
         detail: p.chat_ready ? (p.department ?? p.email) : "Has not set up chat yet",
+        avatar: p.avatar_url,
         online: p.online,
         person: p,
       }));
@@ -166,7 +176,7 @@ export function ForwardDialog({
                       isSelected && "bg-[#0d47a1]/6 dark:bg-[#38bdf8]/10",
                     )}
                   >
-                    <Avatar name={target.name} online={target.online} size="sm" />
+                    <Avatar name={target.name} src={target.avatar} online={target.online} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-foreground">{target.name}</span>
                       {target.detail ? <span className="block truncate text-xs text-muted-foreground">{target.detail}</span> : null}

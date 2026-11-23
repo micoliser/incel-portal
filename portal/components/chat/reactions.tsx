@@ -2,7 +2,7 @@
 
 import { Plus } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 
 import type { MessageReaction } from "@/components/chat/chat-provider";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -16,31 +16,47 @@ const EmojiPicker = dynamic(() => import("@/components/chat/emoji-picker"), {
   loading: () => <p className="flex h-[360px] w-[320px] items-center justify-center text-sm text-muted-foreground">Loading emoji…</p>,
 });
 
+export type MessageAction = {
+  label: string;
+  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
+  onSelect: () => void;
+  destructive?: boolean;
+};
+
 /**
- * The reaction bar: six quick reactions and "+" for every emoji. Controlled,
- * so it can open from the hover button, the message menu or a long press.
- * `children` is the element it is anchored to.
+ * The panel above a message: six quick reactions and "+" for every emoji,
+ * and, when `actions` are given (right-click or press and hold), the message
+ * actions below them, like WhatsApp. Controlled; `children` is the element it
+ * is anchored to. Without `onPick` (reacting not allowed) only the actions show.
  */
 export function ReactionPicker({
   open,
   onOpenChange,
   mine,
   onPick,
+  actions,
   align,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mine: string | null;
-  onPick: (emoji: string) => void;
+  onPick?: (emoji: string) => void;
+  actions?: MessageAction[];
   align: "start" | "end";
   children: ReactNode;
 }) {
   const [full, setFull] = useState(false);
 
   function pick(emoji: string) {
-    onPick(emoji);
+    onPick?.(emoji);
     onOpenChange(false);
+  }
+
+  function act(action: MessageAction) {
+    onOpenChange(false);
+    // After the panel has closed, so dialogs it opens get focus.
+    window.setTimeout(action.onSelect, 0);
   }
 
   return (
@@ -65,30 +81,56 @@ export function ReactionPicker({
         {full ? (
           <EmojiPicker onPick={pick} />
         ) : (
-          <div className="flex items-center gap-0.5" role="group" aria-label="React to this message">
-            {QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => pick(emoji)}
-                aria-pressed={mine === emoji}
-                aria-label={mine === emoji ? `Remove your ${emoji} reaction` : `React with ${emoji}`}
-                className={cn(
-                  "flex size-9 items-center justify-center rounded-full text-xl transition-transform duration-100 hover:scale-110 hover:bg-muted focus-visible:outline-2 focus-visible:outline-[#0d47a1] motion-reduce:hover:scale-100",
-                  mine === emoji && "bg-[#0d47a1]/12 dark:bg-[#38bdf8]/20",
-                )}
+          <div className="flex flex-col">
+            {onPick ? (
+              <div className="flex items-center gap-0.5" role="group" aria-label="React to this message">
+                {QUICK_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => pick(emoji)}
+                    aria-pressed={mine === emoji}
+                    aria-label={mine === emoji ? `Remove your ${emoji} reaction` : `React with ${emoji}`}
+                    className={cn(
+                      "flex size-9 items-center justify-center rounded-full text-xl transition-transform duration-100 hover:scale-110 hover:bg-muted focus-visible:outline-2 focus-visible:outline-[#0d47a1] motion-reduce:hover:scale-100",
+                      mine === emoji && "bg-[#0d47a1]/12 dark:bg-[#38bdf8]/20",
+                    )}
+                  >
+                    <span aria-hidden="true">{emoji}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setFull(true)}
+                  aria-label="More emoji"
+                  className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#0d47a1]"
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+            {actions?.length ? (
+              <div
+                role="group"
+                aria-label="Message actions"
+                className={cn("flex flex-col", onPick && "mt-1.5 border-t border-border pt-1.5")}
               >
-                <span aria-hidden="true">{emoji}</span>
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setFull(true)}
-              aria-label="More emoji"
-              className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-[#0d47a1]"
-            >
-              <Plus className="size-4" aria-hidden="true" />
-            </button>
+                {actions.map((action) => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    onClick={() => act(action)}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none",
+                      action.destructive ? "text-destructive-text" : "text-foreground",
+                    )}
+                  >
+                    <action.icon className="size-4 shrink-0 opacity-80" aria-hidden="true" />
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
       </PopoverContent>
@@ -111,7 +153,9 @@ export function ReactionChips({
   nameOf,
   onToggle,
   disabled,
+  className,
 }: {
+  className?: string;
   reactions: MessageReaction[];
   userId: number;
   /** The message is the viewer's own (its bubble is on the right). */
@@ -125,7 +169,10 @@ export function ReactionChips({
   for (const reaction of reactions) groups.set(reaction.emoji, [...(groups.get(reaction.emoji) ?? []), reaction.userId]);
 
   return (
-    <ul className={cn("relative z-10 -mt-1.5 flex flex-wrap gap-1 px-1.5", mine ? "justify-end" : "justify-start")} aria-label="Reactions">
+    <ul
+      className={cn("relative z-10 -mt-1.5 flex flex-wrap gap-1 px-1.5", mine ? "justify-end" : "justify-start", className)}
+      aria-label="Reactions"
+    >
       {[...groups.entries()].map(([emoji, userIds]) => {
         const reactedByMe = userIds.includes(userId);
         const who = namesOf(userIds, userId, nameOf);
