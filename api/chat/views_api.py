@@ -1,5 +1,7 @@
 """Chat endpoints. Rules live in chat/services.py; see docs/CHAT_SPEC.md."""
 
+import logging
+
 from rest_framework import permissions, status
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
@@ -18,6 +20,7 @@ from chat.serializers import (
     CreateGroupSerializer,
     GroupInfoUpdateSerializer,
     GroupPhotoSerializer,
+    LinkPreviewSerializer,
     MemberRoleSerializer,
     TransferOwnerSerializer,
     ConversationSettingsSerializer,
@@ -37,6 +40,9 @@ from chat.serializers import (
     message_payload,
     reaction_payload,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _int_param(request, name, *, minimum=0, maximum=None):
@@ -327,6 +333,30 @@ class GroupMemberView(ThrottledChatView):
     def delete(self, request, conversation_id, user_id):
         services.remove_group_member(request.user, conversation_id, user_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class LinkPreviewView(ThrottledChatView):
+    """The title, description and a small picture for a link about to be sent.
+    The server fetches the page (browsers cannot) and keeps nothing; the
+    sender's browser encrypts the preview into the message."""
+
+    throttle_scope = 'chat_link_preview'
+
+    def post(self, request):
+        from chat.link_preview import PreviewUnavailable, fetch_preview
+
+        services.require_account(request.user)
+        serializer = LinkPreviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            preview = fetch_preview(serializer.validated_data['url'])
+        except PreviewUnavailable:
+            preview = None
+        except Exception:
+            # Never log the link itself: it can be private.
+            logger.warning('Link preview failed unexpectedly', exc_info=True)
+            preview = None
+        return Response({'preview': preview})
 
 
 class GroupOwnerView(ThrottledChatView):

@@ -292,6 +292,7 @@ REST_FRAMEWORK = {
         'chat_uploads': '30/minute',
         'chat_tickets': '30/minute',
         'chat_keys': '20/minute',
+        'chat_link_preview': '30/minute',
     },
 }
 

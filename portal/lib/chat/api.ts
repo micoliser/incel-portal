@@ -80,6 +80,8 @@ export type RawConversation = {
   unread_count: number;
   last_message: RawMessage | null;
   muted_until: string | null;
+  /** Hidden from your list until a newer message arrives (it can still be opened). */
+  hidden?: boolean;
   archived: boolean;
   last_read_seq: number;
   participants: Participant[];
@@ -197,7 +199,11 @@ export async function startConversation(userId: number, keys: WrappedKeyInput[])
   return data;
 }
 
-export async function updateConversation(id: string, input: { muted_until?: string | null; archived?: boolean }) {
+/** Your own settings for a chat: mute until a time (null to unmute), archive, or hide until a new message. */
+export async function updateConversation(
+  id: string,
+  input: { muted_until?: string | null; archived?: boolean; hidden?: boolean },
+) {
   const { data } = await apiClient.patch<RawConversation>(`/chat/conversations/${id}`, input);
   return data;
 }
@@ -341,4 +347,10 @@ export async function setGroupAdmin(conversationId: string, userId: number, admi
 /** The owner hands the group over (and becomes an admin). */
 export async function transferGroupOwner(conversationId: string, userId: number) {
   await apiClient.post(`/chat/conversations/${conversationId}/owner`, { user_id: userId });
+}
+
+/** A preview for a link about to be sent (the server fetches the page and keeps nothing), or null. */
+export async function fetchLinkPreview(url: string) {
+  const { data } = await apiClient.post<{ preview: unknown }>("/chat/link-preview", { url });
+  return data.preview;
 }

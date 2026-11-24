@@ -227,6 +227,12 @@
       "post"
     ]
   },
+  "api/v1/chat/link-preview": {
+    "name": "chat-link-preview",
+    "methods": [
+      "post"
+    ]
+  },
   "api/v1/chat/messages/{}": {
     "name": "chat-message",
     "methods": [

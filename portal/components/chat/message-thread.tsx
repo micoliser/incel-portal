@@ -32,7 +32,9 @@ import {
   type ChatConversation,
   type ChatMessage,
 } from "@/components/chat/chat-provider";
+import { ChatOptionsMenu } from "@/components/chat/chat-options-menu";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
+import { cleanPreview, firstLink, Linkified, LinkPreviewCard, type LinkPreview } from "@/components/chat/link-preview";
 import { ReactionChips, ReactionPicker, type MessageAction } from "@/components/chat/reactions";
 import { Avatar, typingLabel } from "@/components/chat/conversation-list";
 import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
@@ -45,6 +47,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { fetchLinkPreview } from "@/lib/chat/api";
 import { fileTooLarge, formatBytes } from "@/lib/chat/media";
 import {
   canRecordVoice,
@@ -119,6 +122,7 @@ export function MessageThread({
 }) {
   const { threads, loadThread, typing, typingPeople, markSeen, setViewing, userId, findMessage } = useChat();
   const [infoOpen, setInfoOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const isGroup = conversation.isGroup;
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const thread = threads[conversation.id];
@@ -271,8 +275,17 @@ export function MessageThread({
             </div>
           </>
         )}
+        <ChatOptionsMenu
+          conversation={conversation}
+          onGroupInfo={isGroup ? () => setInfoOpen(true) : undefined}
+          onHidden={onBack}
+          onLeave={isGroup ? () => setLeaving(true) : undefined}
+        />
       </header>
       {isGroup ? <GroupInfoDialog conversation={conversation} open={infoOpen} onOpenChange={setInfoOpen} /> : null}
+      {isGroup && leaving ? (
+        <GroupInfoDialog conversation={conversation} open onOpenChange={setLeaving} startAt="leave" />
+      ) : null}
 
       <div
         ref={listRef}
@@ -614,8 +627,15 @@ function MessageBubble({
                       ))}
                     </div>
                   ) : null}
+                  {message.linkPreview ? (
+                    <div className={cn("mb-1.5 max-w-80", hasMedia && "mx-1 mt-1")}>
+                      <LinkPreviewCard preview={message.linkPreview} mine={mine} />
+                    </div>
+                  ) : null}
                   {message.text ? (
-                    <p className={cn("break-words whitespace-pre-wrap", hasMedia && "px-2 pt-1.5")}>{message.text}</p>
+                    <p className={cn("break-words whitespace-pre-wrap", hasMedia && "px-2 pt-1.5")}>
+                      <Linkified text={message.text} mine={mine} />
+                    </p>
                   ) : null}
                 </>
               )}
@@ -824,6 +844,31 @@ function Composer({
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // The preview for the first link being written (fetched by the server, then encrypted with the message).
+  const [linkPreview, setLinkPreview] = useState<{ url: string; preview: LinkPreview | null } | null>(null);
+  const [noPreviewFor, setNoPreviewFor] = useState<Set<string>>(() => new Set());
+  const linkInText = editing ? null : firstLink(text);
+
+  useEffect(() => {
+    if (!linkInText || noPreviewFor.has(linkInText) || linkPreview?.url === linkInText) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const preview = cleanPreview(await fetchLinkPreview(linkInText));
+        if (!cancelled) setLinkPreview({ url: linkInText, preview });
+      } catch {
+        if (!cancelled) setLinkPreview({ url: linkInText, preview: null });
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [linkInText, linkPreview?.url, noPreviewFor]);
+
+  // Shown only while its link is still in the text and not turned off.
+  const shownPreview =
+    linkPreview?.preview && linkPreview.url === linkInText && !noPreviewFor.has(linkPreview.url) ? linkPreview.preview : null;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [voice, setVoice] = useState<VoiceState>({ phase: "idle" });
@@ -972,7 +1017,9 @@ function Composer({
       return;
     }
     if (!body && !files.length) return;
-    const outgoing = { text: body, files, replyTo: replyTo?.id ?? null };
+    const outgoing = { text: body, files, replyTo: replyTo?.id ?? null, linkPreview: shownPreview };
+    setLinkPreview(null);
+    setNoPreviewFor(new Set());
     setText("");
     setFiles([]);
     onClearReply();
@@ -1040,6 +1087,15 @@ function Composer({
         </div>
       ) : null}
 
+      {shownPreview ? (
+        <div className="mb-2 max-w-md">
+          <LinkPreviewCard
+            preview={shownPreview}
+            mine={false}
+            onRemove={() => setNoPreviewFor((current) => new Set(current).add(shownPreview.url))}
+          />
+        </div>
+      ) : null}
       {files.length ? (
         <ul className="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
           {files.map((file, index) => (

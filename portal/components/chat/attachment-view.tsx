@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Download, FileText, Loader2, Pause, Play, Video } from "lucide-react";
+import { AlertCircle, Download, ExternalLink, FileText, Loader2, Pause, Play, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { ChatAttachment } from "@/components/chat/chat-provider";
@@ -49,14 +49,78 @@ function useDecrypted(attachment: ChatAttachment, part: "file" | "thumb", enable
   return { url, failed };
 }
 
-async function saveFile(attachment: ChatAttachment) {
-  const url = attachment.localUrl ?? (await decryptedUrl(attachment.id, "file", attachment.file_key, attachment.mime));
+/** The decrypted file as a page-local address (fetched and decrypted once per session). */
+function fileUrl(attachment: ChatAttachment) {
+  return attachment.localUrl
+    ? Promise.resolve(attachment.localUrl)
+    : decryptedUrl(attachment.id, "file", attachment.file_key, attachment.mime);
+}
+
+function downloadLink(url: string, name: string) {
   const link = document.createElement("a");
   link.href = url;
-  link.download = attachment.name;
+  link.download = name;
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+type SavePicker = (options: { suggestedName?: string }) => Promise<{
+  createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }>;
+}>;
+
+/**
+ * Save to the computer. Chrome and Edge ask where (a "Save as" window);
+ * other browsers save to Downloads, unless set to ask.
+ */
+async function saveFile(attachment: ChatAttachment) {
+  const url = await fileUrl(attachment);
+  const picker = (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+  if (picker && window.self === window.top) {
+    let handle;
+    try {
+      handle = await picker({ suggestedName: attachment.name });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return; // cancelled
+      downloadLink(url, attachment.name);
+      return;
+    }
+    const writable = await handle.createWritable();
+    await writable.write(await (await fetch(url)).blob());
+    await writable.close();
+    return;
+  }
+  downloadLink(url, attachment.name);
+}
+
+// Types a browser shows by itself; anything else is handed to the computer to open.
+function opensInBrowser(mime: string) {
+  return (
+    mime === "application/pdf" ||
+    mime === "application/json" ||
+    mime.startsWith("image/") ||
+    mime.startsWith("video/") ||
+    mime.startsWith("audio/") ||
+    (mime.startsWith("text/") && mime !== "text/html")
+  );
+}
+
+/** Open the file: in a new tab when the browser can show it, otherwise as a download the browser offers to open. */
+async function openFile(attachment: ChatAttachment) {
+  if (!opensInBrowser(attachment.mime)) {
+    downloadLink(await fileUrl(attachment), attachment.name);
+    return;
+  }
+  // Open the tab straight away (from the click), then point it at the file once it is ready.
+  const tab = window.open("", "_blank");
+  try {
+    const url = await fileUrl(attachment);
+    if (tab) tab.location.href = url;
+    else window.location.assign(url);
+  } catch (error) {
+    tab?.close();
+    throw error;
+  }
 }
 
 function duration(seconds?: number) {
@@ -276,46 +340,101 @@ export function MediaTile({ attachment, mine, state }: { attachment: ChatAttachm
 }
 
 export function FileCard({ attachment, mine, state }: { attachment: ChatAttachment; mine: boolean; state: UploadState }) {
-  const [saving, setSaving] = useState(false);
   const pending = attachment.id.startsWith("local-");
+  // Like photos: downloaded into the chat first (decrypted here), then opened or saved.
+  // Your own files, and ones downloaded before in this browser, count as downloaded.
+  const [downloaded, setDownloaded] = useState(() => mine || Boolean(attachment.localUrl) || wasDownloaded(attachment.id));
+  const [busy, setBusy] = useState<"download" | "open" | "save" | null>(null);
+  const [failed, setFailed] = useState(false);
 
-  async function download() {
-    setSaving(true);
+  async function run(action: "download" | "open" | "save") {
+    setBusy(action);
+    setFailed(false);
     try {
-      await saveFile(attachment);
+      if (action === "download") {
+        await fileUrl(attachment);
+        markDownloaded(attachment.id);
+        setDownloaded(true);
+      } else if (action === "open") {
+        await openFile(attachment);
+      } else {
+        await saveFile(attachment);
+      }
+    } catch {
+      setFailed(true);
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   }
 
+  const muted = mine ? "text-blue-100" : "text-muted-foreground";
+  const actionClass = cn(
+    "h-7 px-2 text-xs font-semibold",
+    mine ? "text-white hover:bg-white/15 hover:text-white" : "text-[#0d47a1] hover:bg-[#0d47a1]/8 dark:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10",
+  );
+
   return (
-    <div
-      className={cn(
-        "flex w-64 max-w-full items-center gap-3 rounded-lg border p-2.5",
-        mine ? "border-white/25 bg-white/10" : "border-border bg-card",
-      )}
-    >
-      <FileText className={cn("size-6 shrink-0", mine ? "text-blue-100" : "text-muted-foreground")} aria-hidden="true" />
-      <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-sm font-medium", mine ? "text-white" : "text-foreground")}>{attachment.name}</span>
-        <span className={cn("block text-xs", mine ? "text-blue-100" : "text-muted-foreground")}>
-          {state === "failed" ? "Not sent" : pending ? "Encrypting and uploading…" : formatBytes(attachment.size)}
+    <div className={cn("w-64 max-w-full rounded-lg border", mine ? "border-white/25 bg-white/10" : "border-border bg-card")}>
+      <div className="flex items-center gap-3 p-2.5">
+        <FileText className={cn("size-6 shrink-0", muted)} aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className={cn("block truncate text-sm font-medium", mine ? "text-white" : "text-foreground")} title={attachment.name}>
+            {attachment.name}
+          </span>
+          <span className={cn("block text-xs", failed ? "text-destructive-text" : muted)}>
+            {state === "failed"
+              ? "Not sent"
+              : pending
+                ? "Encrypting and uploading…"
+                : failed
+                  ? "Could not get the file. Try again."
+                  : busy === "download"
+                    ? `Downloading… ${formatBytes(attachment.size)}`
+                    : formatBytes(attachment.size)}
+          </span>
         </span>
-      </span>
-      {!pending ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={download}
-          disabled={saving}
-          aria-label={`Download ${attachment.name}`}
-          className={mine ? "text-blue-100 hover:bg-white/15 hover:text-white" : undefined}
-        >
-          {saving ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
-        </Button>
-      ) : state === "sending" ? (
-        <Loader2 className={cn("size-4 animate-spin", mine ? "text-blue-100" : "text-muted-foreground")} aria-label="Uploading" />
+        {!pending && !downloaded ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void run("download")}
+            disabled={busy !== null}
+            aria-label={`Download ${attachment.name}, ${formatBytes(attachment.size)}`}
+            className={mine ? "text-blue-100 hover:bg-white/15 hover:text-white" : undefined}
+          >
+            {busy === "download" ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+          </Button>
+        ) : pending && state === "sending" ? (
+          <Loader2 className={cn("size-4 animate-spin", muted)} aria-label="Uploading" />
+        ) : null}
+      </div>
+      {!pending && downloaded ? (
+        <div className={cn("flex border-t", mine ? "border-white/20" : "border-border")}>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => void run("open")}
+            disabled={busy !== null}
+            aria-label={`Open ${attachment.name}`}
+            className={cn(actionClass, "flex-1 rounded-none rounded-bl-lg")}
+          >
+            {busy === "open" ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <ExternalLink className="size-3.5" aria-hidden="true" />}
+            Open
+          </Button>
+          <span className={cn("w-px", mine ? "bg-white/20" : "bg-border")} aria-hidden="true" />
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => void run("save")}
+            disabled={busy !== null}
+            aria-label={`Save ${attachment.name}`}
+            className={cn(actionClass, "flex-1 rounded-none rounded-br-lg")}
+          >
+            {busy === "save" ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}
+            Save
+          </Button>
+        </div>
       ) : null}
     </div>
   );

@@ -1,11 +1,13 @@
 "use client";
 
-import { Loader2, Search, Users, X } from "lucide-react";
+import { Archive, ArrowLeft, BellOff, Loader2, Search, Users, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useChat, type ChatConversation } from "@/components/chat/chat-provider";
+import { ChatOptionsMenu } from "@/components/chat/chat-options-menu";
 import { CreateGroupDialog } from "@/components/chat/create-group-dialog";
+import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { searchPeople, type ChatPerson } from "@/lib/chat/api";
@@ -93,13 +95,7 @@ function timeLabel(iso: string | null) {
   return date.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-export function ConversationList({
-  activeId,
-  onOpen,
-}: {
-  activeId: string | null;
-  onOpen: (conversationId: string) => void;
-}) {
+export function ConversationList({ activeId, onOpen }: { activeId: string | null; onOpen: (conversationId: string) => void }) {
   const {
     conversations,
     openWith,
@@ -111,6 +107,7 @@ export function ConversationList({
     loadMoreConversations,
   } = useChat();
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -184,18 +181,25 @@ export function ConversationList({
     return () => observer.disconnect();
   }, [showingConversations, conversationsHaveMore, loadMoreConversations, conversations.length]);
 
+  // Hidden chats stay out of the list until a new message; archived ones have their own section.
+  const listed = conversations.filter((c) => !c.hidden);
+  const archived = listed.filter((c) => c.archived);
+  const shown = listed.filter((c) => (showArchived ? c.archived : !c.archived));
+  const archivedUnread = archived.reduce((sum, c) => sum + (c.isMuted ? 0 : c.unread_count), 0);
+
   const term = query.trim().toLowerCase();
   const matchingGroups = term ? conversations.filter((c) => c.isGroup && c.title.toLowerCase().includes(term)) : [];
 
-  const existing = new Map(
-    conversations.filter((c) => c.kind === "direct" && c.other).map((c) => [c.other!.id, c.id] as const),
-  );
+  const existing = new Map(conversations.filter((c) => c.kind === "direct" && c.other).map((c) => [c.other!.id, c.id] as const));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-2 border-b border-border p-3">
         <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -232,45 +236,74 @@ export function ConversationList({
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {searchingPeople ? (
           <>
-          {matchingGroups.length ? (
-            <ul aria-label="Groups">
-              {matchingGroups.map((conversation) => (
-                <ConversationRow
-                  key={conversation.id}
-                  conversation={conversation}
-                  active={conversation.id === activeId}
-                  typingLabel={null}
-                  onOpen={() => {
-                    setQuery("");
-                    setPeople(null);
-                    onOpen(conversation.id);
-                  }}
-                />
-              ))}
-            </ul>
-          ) : null}
-          <PeopleResults
-            people={people}
-            searching={searching}
-            opening={opening}
-            existing={existing}
-            onStart={start}
-            onInvite={sendInvite}
-            onOpenExisting={(id) => {
-              setQuery("");
-              setPeople(null);
-              onOpen(id);
-            }}
-          />
+            {matchingGroups.length ? (
+              <ul aria-label="Groups">
+                {matchingGroups.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    active={conversation.id === activeId}
+                    typingLabel={null}
+                    onOpen={() => {
+                      setQuery("");
+                      setPeople(null);
+                      onOpen(conversation.id);
+                    }}
+                  />
+                ))}
+              </ul>
+            ) : null}
+            <PeopleResults
+              people={people}
+              searching={searching}
+              opening={opening}
+              existing={existing}
+              onStart={start}
+              onInvite={sendInvite}
+              onOpenExisting={(id) => {
+                setQuery("");
+                setPeople(null);
+                onOpen(id);
+              }}
+            />
           </>
-        ) : conversations.length === 0 ? (
+        ) : listed.length === 0 && !showArchived ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
             No conversations yet. Search for someone above to send your first message.
           </div>
         ) : (
           <>
-            <ul aria-label="Conversations">
-              {conversations.map((conversation) => (
+            {showArchived ? (
+              <button
+                type="button"
+                onClick={() => setShowArchived(false)}
+                className="flex w-full items-center gap-2 border-b border-border/60 px-3 py-2.5 text-left text-sm font-semibold text-foreground hover:bg-muted"
+              >
+                <ArrowLeft className="size-4" aria-hidden="true" /> Archived chats
+              </button>
+            ) : archived.length ? (
+              <button
+                type="button"
+                onClick={() => setShowArchived(true)}
+                className="flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 text-left hover:bg-muted"
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center text-muted-foreground" aria-hidden="true">
+                  <Archive className="size-5" />
+                </span>
+                <span className="flex-1 text-sm font-medium text-foreground">Archived</span>
+                <span className="text-xs text-muted-foreground">
+                  {archivedUnread ? (
+                    <span className="font-semibold text-[#0d47a1] dark:text-[#38bdf8]">{archivedUnread} unread · </span>
+                  ) : null}
+                  {archived.length}
+                </span>
+              </button>
+            ) : null}
+            {showArchived && !shown.length ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">No archived chats.</p>
+            ) : null}
+            <ul aria-label={showArchived ? "Archived chats" : "Conversations"}>
+              {shown.map((conversation) => (
                 <ConversationRow
                   key={conversation.id}
                   conversation={conversation}
@@ -327,41 +360,110 @@ function ConversationRow({
 }) {
   const name = conversation.title;
   const unread = conversation.unread_count;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const pressed = useRef(false);
+
+  // Press and hold on a phone opens the chat options (and does not open the chat).
+  function pressStart(event: React.PointerEvent) {
+    if (event.pointerType !== "touch") return;
+    pressed.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      pressed.current = true;
+      setMenuOpen(true);
+    }, 450);
+  }
+  function pressEnd() {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  }
+
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-current={active ? "true" : undefined}
-        className={cn(
-          "flex w-full items-center gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none",
-          active && "bg-[#0d47a1]/8 dark:bg-[#38bdf8]/10",
-        )}
+    <>
+      <li
+        className="group/row relative"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          pressEnd();
+          setMenuOpen(true);
+        }}
       >
-        <Avatar name={name} src={conversation.photoUrl} online={conversation.other?.online} />
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline justify-between gap-2">
-            <span className={cn("truncate text-sm text-foreground", unread ? "font-semibold" : "font-medium")}>{name}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{timeLabel(conversation.last_message_at)}</span>
-          </span>
-          <span className="flex items-center justify-between gap-2">
-            <span className={cn("truncate text-xs", typing ? "text-success-text" : unread ? "text-foreground" : "text-muted-foreground")}>
-              {typing
-                ? typing
-                : conversation.other && !conversation.other.is_active
-                  ? "No longer has access"
-                  : conversation.preview}
-            </span>
-            {unread ? (
-              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#0d47a1] px-1.5 text-[11px] font-semibold text-white">
-                <span className="sr-only">{unread} unread</span>
-                <span aria-hidden="true">{unread > 99 ? "99+" : unread}</span>
+        <button
+          type="button"
+          onClick={() => {
+            if (pressed.current) {
+              pressed.current = false;
+              return;
+            }
+            onOpen();
+          }}
+          onPointerDown={pressStart}
+          onPointerUp={pressEnd}
+          onPointerLeave={pressEnd}
+          onPointerCancel={pressEnd}
+          aria-current={active ? "true" : undefined}
+          className={cn(
+            "flex w-full items-center gap-3 border-b border-border/60 py-3 pr-11 pl-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none",
+            active && "bg-[#0d47a1]/8 dark:bg-[#38bdf8]/10",
+          )}
+        >
+          <Avatar name={name} src={conversation.photoUrl} online={conversation.other?.online} />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-2">
+              <span className={cn("truncate text-sm text-foreground", unread ? "font-semibold" : "font-medium")}>{name}</span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                {conversation.isMuted ? <BellOff className="size-3.5" aria-label="Muted" /> : null}
+                {timeLabel(conversation.last_message_at)}
               </span>
-            ) : null}
+            </span>
+            <span className="flex items-center justify-between gap-2">
+              <span
+                className={cn(
+                  "truncate text-xs",
+                  typing ? "text-success-text" : unread ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {typing
+                  ? typing
+                  : conversation.other && !conversation.other.is_active
+                    ? "No longer has access"
+                    : conversation.preview}
+              </span>
+              {unread ? (
+                <span
+                  className={cn(
+                    "flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold",
+                    // Muted: the count still shows, quietly.
+                    conversation.isMuted ? "bg-muted-foreground/25 text-foreground" : "bg-[#0d47a1] text-white",
+                  )}
+                >
+                  <span className="sr-only">{unread} unread</span>
+                  <span aria-hidden="true">{unread > 99 ? "99+" : unread}</span>
+                </span>
+              ) : null}
+            </span>
           </span>
+        </button>
+        <span className="absolute top-1/2 right-1.5 -translate-y-1/2">
+          <ChatOptionsMenu
+            conversation={conversation}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            label={`Options for ${name}`}
+            onLeave={conversation.isGroup ? () => setLeaving(true) : undefined}
+            triggerClassName={cn(
+              "text-muted-foreground opacity-60 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+              "[@media(hover:none)]:opacity-100",
+            )}
+          />
         </span>
-      </button>
-    </li>
+      </li>
+      {/* Outside the row, so clicks in the dialog don't reach the row's handlers. */}
+      {conversation.isGroup && leaving ? (
+        <GroupInfoDialog conversation={conversation} open onOpenChange={setLeaving} startAt="leave" />
+      ) : null}
+    </>
   );
 }
 
@@ -400,7 +502,7 @@ function PeopleResults({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-foreground">{person.name}</span>
             <span className="block truncate text-xs text-muted-foreground">
-              {person.chat_ready || existing.has(person.id) ? person.department ?? person.email : "Has not set up chat yet"}
+              {person.chat_ready || existing.has(person.id) ? (person.department ?? person.email) : "Has not set up chat yet"}
             </span>
           </span>
           {existing.has(person.id) ? (

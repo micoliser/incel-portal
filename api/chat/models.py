@@ -93,6 +93,8 @@ class Participant(models.Model):
     pending = models.BooleanField(default=False)
     muted_until = models.DateTimeField(null=True, blank=True)
     archived = models.BooleanField(default=False)
+    # "Hide chat": out of this person's list until a message after this seq arrives.
+    hidden_at_seq = models.PositiveBigIntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [

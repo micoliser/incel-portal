@@ -388,6 +388,41 @@ class ConversationTests(ChatTestCase):
         self.assertEqual(self.client.post(f'/api/v1/chat/people/{self.other.pk}/invite').status_code, 409)
 
 
+class ConversationSettingsTests(ChatTestCase):
+    def test_mute_archive_and_hide_are_personal(self):
+        self.set_up_chat(self.staff_user)
+        self.set_up_chat(self.other)
+        conversation = self.start(self.staff_user, self.other)
+        self.send(self.other, conversation['id'])
+        url = f'/api/v1/chat/conversations/{conversation["id"]}'
+        listed = lambda: [c['id'] for c in self.client.get('/api/v1/chat/conversations').json()['results']]  # noqa: E731
+
+        self.as_user(self.staff_user)
+        muted = self.client.patch(url, {'muted_until': '9999-12-31T00:00:00Z', 'archived': True}, format='json').json()
+        self.assertTrue(muted['muted_until'].startswith('9999'))
+        self.assertTrue(muted['archived'])
+        # A muted chat does not count towards the sidebar badge.
+        self.assertEqual(self.client.get('/api/v1/chat/unread-count').json()['unread_count'], 0)
+        # Only for this person.
+        self.as_user(self.other)
+        theirs = self.client.get(url).json()
+        self.assertIsNone(theirs['muted_until'])
+        self.assertFalse(theirs['archived'])
+
+        # Hidden: gone from the list until a new message arrives.
+        self.as_user(self.staff_user)
+        self.assertEqual(self.client.patch(url, {'hidden': True}, format='json').status_code, 200)
+        self.assertNotIn(conversation['id'], listed())
+        self.send(self.other, conversation['id'])
+        self.as_user(self.staff_user)
+        self.assertIn(conversation['id'], listed())
+        # It can still be opened directly while hidden.
+        self.client.patch(url, {'hidden': True}, format='json')
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.client.patch(url, {'hidden': False}, format='json')
+        self.assertIn(conversation['id'], listed())
+
+
 class ConversationListPagingTests(ChatTestCase):
     def test_pages_follow_recent_activity_without_overlap_and_count_all_unread(self):
         self.set_up_chat(self.staff_user)

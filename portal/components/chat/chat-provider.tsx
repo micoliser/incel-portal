@@ -55,6 +55,7 @@ import {
 import { releaseDecryptedFiles, uploadEncrypted, type UploadedAttachment } from "@/lib/chat/media";
 import { formatDuration } from "@/lib/chat/voice";
 import { PROFILE_CHANGED_EVENT } from "@/lib/profile-photo";
+import { cleanPreview, firstLink, type LinkPreview } from "@/components/chat/link-preview";
 import { getApiBaseUrl } from "@/lib/auth";
 import { ChatSocket, type ChatEvent } from "@/lib/chat/socket";
 
@@ -86,6 +87,8 @@ export type ChatMessage = {
   replyPreview: { senderId: number | null; text: string } | null;
   /** How many times this message has been forwarded to get here (0: not forwarded). */
   forwarded: number;
+  /** The preview of its first link, made when it was sent. */
+  linkPreview: LinkPreview | null;
 };
 
 export type MessageReaction = { userId: number; emoji: string };
@@ -110,6 +113,8 @@ export type ChatConversation = RawConversation & {
   isAdmin: boolean;
   /** Whether you own this group. */
   isOwner: boolean;
+  /** No notifications from this chat right now. */
+  isMuted: boolean;
 };
 
 /** A group's name, description and photo key, as decrypted in the browser. */
@@ -125,6 +130,7 @@ type Payload = {
   attachments: UploadedAttachment[];
   /** Forward count, set by the forwarding browser; absent on ordinary messages. */
   forwarded?: number;
+  link_preview?: LinkPreview | null;
 };
 
 type ReactionPayload = { v: 1; emoji: string };
@@ -139,6 +145,8 @@ type SendInput = {
   prepared?: UploadedAttachment[];
   /** Forward count for a forwarded message. */
   forwarded?: number;
+  /** The preview for the first link in `text`, if any. */
+  linkPreview?: LinkPreview | null;
 };
 
 type ChatContextValue = {
@@ -193,6 +201,11 @@ type ChatContextValue = {
   setGroupAdmin: (conversationId: string, userId: number, admin: boolean) => Promise<void>;
   /** The owner hands the group to another member. */
   transferOwnership: (conversationId: string, userId: number) => Promise<void>;
+  /** Your own settings for a chat. `until`: when muting ends (null to unmute). */
+  muteConversation: (conversationId: string, until: Date | null) => Promise<void>;
+  archiveConversation: (conversationId: string, archived: boolean) => Promise<void>;
+  /** Out of your list until a new message arrives. */
+  hideConversation: (conversationId: string, hidden: boolean) => Promise<void>;
   /** People typing in each conversation (user ids). */
   typingPeople: Record<string, number[]>;
   /** Forward a message to other chats (at most 5), each followed by `note` if given. */
@@ -552,6 +565,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         reactions: [],
         replyPreview: null,
         forwarded: 0,
+        linkPreview: null,
       };
       if (raw.deleted || raw.kind === "system" || !raw.ciphertext || !raw.nonce || raw.key_version == null) {
         return base;
@@ -576,6 +590,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           replyPreview:
             preview && typeof preview.text === "string" ? { senderId: preview.sender_id ?? null, text: preview.text } : null,
           reactions: await decryptReactions(raw.conversation_id, raw.id, raw.reactions ?? []),
+          linkPreview: cleanPreview(payload.link_preview),
           forwarded: Number.isFinite(Number(payload.forwarded)) ? Math.min(Math.max(0, Number(payload.forwarded)), 1000) : 0,
           attachments: (payload.attachments ?? [])
             .filter((a) => thumbs.has(a.id))
@@ -1093,6 +1108,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
                       c
                     : {
                         ...c,
+                        // A hidden chat comes back with its next message.
+                        hidden: false,
                         last_message: raw,
                         last_message_at: raw.created_at,
                         unread_count:
@@ -1518,6 +1535,27 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     [replaceConversation],
   );
 
+  const changeSettings = useCallback(
+    async (conversationId: string, input: Parameters<typeof api.updateConversation>[1]) => {
+      const fresh = await api.updateConversation(conversationId, input);
+      setRawConversations((list) => list.map((c) => (c.id === fresh.id ? fresh : c)));
+    },
+    [],
+  );
+  const muteConversation = useCallback(
+    (conversationId: string, until: Date | null) =>
+      changeSettings(conversationId, { muted_until: until ? until.toISOString() : null }),
+    [changeSettings],
+  );
+  const archiveConversation = useCallback(
+    (conversationId: string, archived: boolean) => changeSettings(conversationId, { archived }),
+    [changeSettings],
+  );
+  const hideConversation = useCallback(
+    (conversationId: string, hidden: boolean) => changeSettings(conversationId, { hidden }),
+    [changeSettings],
+  );
+
   const openWith = useCallback(
     async (person: api.ChatPerson) => {
       const existing = conversationsRef.current.find(
@@ -1592,6 +1630,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
             : null,
           attachments: pending.uploaded,
           ...(pending.forwarded ? { forwarded: pending.forwarded } : {}),
+          ...(pending.linkPreview ? { link_preview: pending.linkPreview } : {}),
         };
         const kind = pending.voice ? "voice" : pending.uploaded.length ? "attachment" : "text";
         const attempt = async (version: number, key: Uint8Array) => {
@@ -1619,6 +1658,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
           text: payload.text,
           replyTo: payload.reply_to,
           replyPreview: pending.replyPreview,
+          linkPreview: pending.linkPreview ?? null,
           attachments: payload.attachments.map((a, index) => ({
             ...a,
             has_thumb: Boolean(a.thumb_key && raw.attachments.find((x) => x.id === a.id)?.has_thumb),
@@ -1653,9 +1693,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         ? []
         : input.voice
         ? [input.voice.url ?? URL.createObjectURL(input.files[0])]
-        : input.files.map((f) =>
-            f.type.startsWith("image/") || f.type.startsWith("video/") ? URL.createObjectURL(f) : undefined,
-          );
+        : // Your own files open and save straight away, without downloading them back.
+          input.files.map((f) => URL.createObjectURL(f));
       const quoted = input.replyTo
         ? threadsRef.current[conversationId]?.messages.find((m) => m.id === input.replyTo)
         : undefined;
@@ -1692,6 +1731,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         reactions: [],
         replyPreview,
         forwarded: input.forwarded ?? 0,
+        linkPreview: input.linkPreview ?? null,
       };
       upsertMessages(setThreads, conversationId, [optimistic]);
       await deliver(conversationId, id);
@@ -1714,6 +1754,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         reply_to: message.replyTo,
         reply_preview: message.replyPreview ? { sender_id: message.replyPreview.senderId, text: message.replyPreview.text } : null,
         ...(message.forwarded ? { forwarded: message.forwarded } : {}),
+        // The preview stays while its link is still in the text.
+        ...(message.linkPreview && firstLink(text) === message.linkPreview.url ? { link_preview: message.linkPreview } : {}),
         attachments: message.attachments.map((a) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { has_thumb, localUrl, ...rest } = a;
@@ -1726,7 +1768,13 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         associatedData(message.conversationId, message.id, userId, message.keyVersion, revision),
       );
       const raw = await api.patchMessage(message.id, { revision, ...encrypted });
-      const updated: ChatMessage = { ...message, text, revision, editedAt: raw.edited_at };
+      const updated: ChatMessage = {
+        ...message,
+        text,
+        revision,
+        editedAt: raw.edited_at,
+        linkPreview: message.linkPreview && firstLink(text) === message.linkPreview.url ? message.linkPreview : null,
+      };
       upsertMessages(setThreads, message.conversationId, [updated]);
     },
     [conversationKeys, userId],
@@ -1776,6 +1824,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
             prepared,
             voice,
             forwarded: message.forwarded + 1,
+            linkPreview: message.linkPreview,
           });
           if (note.trim()) await send(conversationId, { text: note.trim(), files: [], replyTo: null });
         } catch {
@@ -1909,6 +1958,7 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         members: c.participants.filter((p) => !p.left),
         isAdmin: c.role === "admin" || c.role === "owner",
         isOwner: c.role === "owner",
+        isMuted: Boolean(c.muted_until && new Date(c.muted_until).getTime() > Date.now()),
         preview: (() => {
           // A reaction newer than the last message is what the list shows.
           const reaction = reactionPreviews[c.id];
@@ -1923,8 +1973,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     [groupInfos, groupPhotos, previews, rawConversations, reactionPreviews, userId],
   );
 
+  // Muted chats do not count towards the sidebar badge (their own row still shows it).
   const unreadTotal =
-    status === "ready" ? rawConversations.reduce((sum, c) => sum + c.unread_count, 0) + unreadElsewhere : serverUnread;
+    status === "ready"
+      ? rawConversations.reduce(
+          (sum, c) => (c.muted_until && new Date(c.muted_until).getTime() > Date.now() ? sum : sum + c.unread_count),
+          0,
+        ) + unreadElsewhere
+      : serverUnread;
 
   const value: ChatContextValue = {
     userId,
@@ -1969,6 +2025,9 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     leaveGroup,
     setGroupAdmin,
     transferOwnership,
+    muteConversation,
+    archiveConversation,
+    hideConversation,
     typingPeople: Object.fromEntries(Object.entries(typingPeople).map(([c, people]) => [c, Object.keys(people).map(Number)])),
     findMessage,
     setViewing,

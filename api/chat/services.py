@@ -508,6 +508,8 @@ def list_conversations(user, *, before: str | None = None, limit: int = CONVERSA
     queryset = (
         Participant.objects.filter(user=user, left_at__isnull=True)
         .select_related('conversation')
+        # A hidden chat comes back once a message newer than the hiding arrives.
+        .filter(Q(hidden_at_seq__isnull=True) | Q(conversation__next_seq__gt=F('hidden_at_seq') + 1))
         .annotate(activity=Coalesce('conversation__last_message_at', 'conversation__created_at'))
         .order_by('-activity', '-conversation_id')
     )
@@ -553,6 +555,8 @@ def conversation_payload(user, participant: Participant) -> dict:
         'last_reaction': _last_reaction(user, conversation.id),
         'muted_until': participant.muted_until,
         'archived': participant.archived,
+        # Hidden from your list until a newer message arrives (still openable directly).
+        'hidden': participant.hidden_at_seq is not None and conversation.next_seq - 1 <= participant.hidden_at_seq,
         'last_read_seq': participant.last_read_seq,
         'role': participant.role,
         # Groups: encrypted name, description and photo key (null for direct chats).
@@ -600,16 +604,19 @@ def _last_reaction(user, conversation_id):
 
 
 def total_unread(user) -> int:
-    """Unread messages across all of the user's conversations (the sidebar badge)."""
+    """Unread messages across the user's conversations (the sidebar badge).
+    Muted chats do not count: muting means "do not nag me about this one"."""
     last_read = Participant.objects.filter(
         conversation=OuterRef('conversation_id'), user=user, left_at__isnull=True
     ).values('last_read_seq')[:1]
+    muted = Participant.objects.filter(user=user, muted_until__gt=timezone.now()).values('conversation_id')
     return (
         Message.objects.filter(
             conversation__participants__user=user,
             conversation__participants__left_at__isnull=True,
             deleted_at__isnull=True,
         )
+        .exclude(conversation_id__in=muted)
         .exclude(sender=user)
         .exclude(kind=Message.Kind.SYSTEM)
         .exclude(hidden_for__user=user)
@@ -620,14 +627,20 @@ def total_unread(user) -> int:
 
 
 def update_settings(user, conversation_id, *, data: dict) -> Participant:
+    """Mute, archive or hide a chat, for this person only."""
     participant = get_membership(user, conversation_id)
     fields = []
     for name in ('muted_until', 'archived'):
         if name in data:
             setattr(participant, name, data[name])
             fields.append(name)
+    if 'hidden' in data:
+        participant.hidden_at_seq = (participant.conversation.next_seq - 1) if data['hidden'] else None
+        fields.append('hidden_at_seq')
     if fields:
         participant.save(update_fields=fields)
+        # Your other open tabs follow.
+        realtime.broadcast([user.pk], 'conversation.updated', {'conversation_id': str(participant.conversation_id)})
     return participant
 
 

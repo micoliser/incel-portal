@@ -10,6 +10,7 @@ import base64
 import binascii
 
 from django.conf import settings
+from django.core.validators import URLValidator
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
@@ -188,6 +189,10 @@ class AddMembersSerializer(serializers.Serializer):
     info = GroupInfoSerializer(required=False, allow_null=True)
 
 
+class LinkPreviewSerializer(serializers.Serializer):
+    url = serializers.URLField(max_length=2000, validators=[URLValidator(schemes=['http', 'https'])])
+
+
 class TransferOwnerSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
 
@@ -262,8 +267,13 @@ class ReserveAttachmentSerializer(serializers.Serializer):
 
 
 class ConversationSettingsSerializer(serializers.Serializer):
+    """Your own settings for a chat; nobody else sees or is affected by them."""
+
+    # No pushes until then (far in the future for "always"); null to unmute.
     muted_until = serializers.DateTimeField(required=False, allow_null=True)
     archived = serializers.BooleanField(required=False)
+    # Hide the chat until a new message arrives (true), or show it again (false).
+    hidden = serializers.BooleanField(required=False)
 
 
 # --- Response shapes -------------------------------------------------------

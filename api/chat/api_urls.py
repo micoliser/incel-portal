@@ -16,6 +16,7 @@ urlpatterns = [
     path('chat/unread-count', views.UnreadCountView.as_view(), name='chat-unread-count'),
     path('chat/conversations', views.ConversationsView.as_view(), name='chat-conversations'),
     path('chat/groups', views.GroupsView.as_view(), name='chat-groups'),
+    path('chat/link-preview', views.LinkPreviewView.as_view(), name='chat-link-preview'),
     path('chat/conversations/<uuid:conversation_id>/info', views.GroupInfoView.as_view(), name='chat-group-info'),
     path('chat/conversations/<uuid:conversation_id>/photo', views.GroupPhotoView.as_view(), name='chat-group-photo'),
     path('chat/conversations/<uuid:conversation_id>/members', views.GroupMembersView.as_view(), name='chat-group-members'),

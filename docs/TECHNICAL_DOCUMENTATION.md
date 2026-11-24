@@ -571,6 +571,7 @@ open. Full design: `docs/CHAT_SPEC.md`.
 | GET | `/chat/people?search=` | active users with `chat_ready`, public key, online |
 | POST | `/chat/people/{user_id}/invite` | invite someone without chat: opens the waiting conversation (returned) with an "invitation sent" note, notifies and emails them; again = a reminder, once per pair per 24 h |
 | GET | `/chat/unread-count` | sidebar badge |
+| POST | `/chat/link-preview` | title, description and thumbnail for a link being written (public addresses only; nothing stored) |
 | POST | `/chat/groups` | create a group (browser-made id, encrypted details, keys for members with chat; others pending) |
 | PATCH | `/chat/conversations/{id}/info` | admins change the encrypted group name, description or photo |
 | GET, POST | `/chat/conversations/{id}/photo` | group photo download link / upload link |

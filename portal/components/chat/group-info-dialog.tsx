@@ -32,16 +32,17 @@ export function GroupInfoDialog({
   conversation,
   open,
   onOpenChange,
+  startAt = "info",
 }: {
   conversation: ChatConversation;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** "leave": open straight on leaving (from the chat options menu); Cancel then closes. */
+  startAt?: "info" | "leave";
 }) {
   const { userId, updateGroup, addGroupMembers, removeGroupMember, leaveGroup, setGroupAdmin, transferOwnership } =
     useChat();
-  // Leaving as owner: who takes over (the longest-standing admin is suggested).
-  const [heir, setHeir] = useState<number | null>(null);
-  const [view, setView] = useState<View>("info");
+  const [view, setView] = useState<View>(startAt);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -65,6 +66,8 @@ export function GroupInfoDialog({
         RANK[b.role ?? "member"] - RANK[a.role ?? "member"] ||
         new Date(a.joined_at ?? 0).getTime() - new Date(b.joined_at ?? 0).getTime(),
     );
+  // Leaving as owner: who takes over (the longest-standing admin is suggested).
+  const [heir, setHeir] = useState<number | null>(startAt === "leave" ? (successors[0]?.id ?? null) : null);
 
   /** What you may do to someone: the owner manages everyone; admins manage members only. */
   function canManage(member: Participant) {
@@ -372,7 +375,12 @@ export function GroupInfoDialog({
               </fieldset>
             ) : null}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => go("info")} disabled={busy}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => (startAt === "leave" ? close(false) : go("info"))}
+                disabled={busy}
+              >
                 Cancel
               </Button>
               <Button

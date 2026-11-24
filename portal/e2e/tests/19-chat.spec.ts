@@ -129,7 +129,7 @@ test("inviting someone opens a waiting chat, notifies and emails them", async ()
 
 test("setting up chat accepts the invitation on both sides", async () => {
   await setUpChat(chidi, CHIDI_PIN);
-  const invitation = main(chidi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(USERS.finance.name) });
+  const invitation = main(chidi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) });
   await expect(invitation).toBeVisible();
   await invitation.click();
   await expect(thread(chidi).getByText(`${USERS.finance.name} invited you to chat`)).toBeVisible();
@@ -156,7 +156,7 @@ test("messages arrive live, are encrypted before they leave, and show as seen", 
   // Chidi sees the unread count and the message without reloading.
   await expect(sidebar(chidi).getByRole("link", { name: /Chat\s*1 unread/ })).toBeVisible();
   await sidebar(chidi).getByRole("link", { name: /Chat/ }).click();
-  await main(chidi).getByRole("button", { name: new RegExp(USERS.finance.name) }).click();
+  await main(chidi).getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) }).click();
   await expect(thread(chidi).getByText("Hello Chidi, the invoices are ready")).toBeVisible();
 
   await expect(thread(femi).getByLabel("Seen").first()).toBeVisible();
@@ -212,12 +212,76 @@ test("files are encrypted, uploaded and opened by the other person", async () =>
   expect(stored.length).toBeGreaterThan(0);
   expect(stored).not.toContain("Quarterly budget notes");
 
+  // Download brings it into the chat (nothing is saved yet); then Open and Save appear.
+  const card = thread(chidi).locator("[data-message-id]").filter({ hasText: "budget-notes.txt" }).first();
+  await card.getByRole("button", { name: /^Download budget-notes\.txt/ }).click();
+  await expect(card.getByRole("button", { name: "Open budget-notes.txt" })).toBeVisible();
+  await expect(card.getByRole("button", { name: /^Download budget-notes\.txt/ })).toHaveCount(0);
+
+  // Open shows a file the browser can display in a new tab.
+  const popup = chidi.waitForEvent("popup");
+  await card.getByRole("button", { name: "Open budget-notes.txt" }).click();
+  const tab = await popup;
+  await expect(tab.locator("body")).toHaveText("Quarterly budget notes");
+  await tab.close();
+
+  // Save writes it to the computer (here without Chrome's "Save as" window, which a test cannot click).
+  await chidi.evaluate(() => {
+    (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
+  });
   const download = chidi.waitForEvent("download");
-  await thread(chidi).getByRole("button", { name: "Download budget-notes.txt" }).click();
+  await card.getByRole("button", { name: "Save budget-notes.txt" }).click();
   const file = await download;
-  const path = await file.path();
   const { readFile } = await import("node:fs/promises");
-  expect((await readFile(path)).toString()).toBe("Quarterly budget notes");
+  expect((await readFile(await file.path())).toString()).toBe("Quarterly budget notes");
+
+  // The sender's own copy opens and saves without downloading it back.
+  const mine = thread(femi).locator("[data-message-id]").filter({ hasText: "budget-notes.txt" }).first();
+  await expect(mine.getByRole("button", { name: "Open budget-notes.txt" })).toBeVisible();
+});
+
+test("links are clickable and show an encrypted preview with an Open button", async () => {
+  // A stand-in for the server's page fetch, so the test does not depend on the internet.
+  await femi.route("**/api/v1/chat/link-preview", (route) =>
+    route.fulfill({
+      json: {
+        preview: {
+          url: "https://example.com/board-pack",
+          title: "Board pack for November",
+          description: "Papers for the board meeting.",
+          site_name: "Example Intranet",
+          image: null,
+        },
+      },
+    }),
+  );
+  const before = sentBodies.length;
+  const composer = femi.getByRole("textbox", { name: `Message ${USERS.clerk.name}` });
+  await composer.fill("Please read https://example.com/board-pack before Friday.");
+  const draft = femi.getByRole("button", { name: "Don't show a preview" });
+  await expect(draft).toBeVisible();
+  await composer.press("Enter");
+
+  const message = thread(chidi).locator("[data-message-id]").filter({ hasText: "Please read" });
+  await expect(message.getByText("Board pack for November")).toBeVisible();
+  await expect(message.getByRole("link", { name: "https://example.com/board-pack" })).toHaveAttribute(
+    "href",
+    "https://example.com/board-pack",
+  );
+  await expect(message.getByRole("link", { name: "https://example.com/board-pack" })).toHaveAttribute("target", "_blank");
+  await expect(message.getByRole("button", { name: "Open Example Intranet in a new tab" })).toBeVisible();
+  // The preview travelled encrypted: only the link went to the preview fetch.
+  const messageBodies = sentBodies.slice(before).filter((body) => body.includes("ciphertext"));
+  expect(messageBodies.join("\n")).not.toContain("Board pack");
+
+  // Turning the preview off for a message sends just the link.
+  await composer.fill("And https://example.com/board-pack again");
+  await femi.getByRole("button", { name: "Don't show a preview" }).click();
+  await composer.press("Enter");
+  const plain = thread(chidi).locator("[data-message-id]").filter({ hasText: "again" });
+  await expect(plain.getByRole("link", { name: "https://example.com/board-pack" })).toBeVisible();
+  await expect(plain.getByText("Board pack for November")).toHaveCount(0);
+  await femi.unroute("**/api/v1/chat/link-preview");
 });
 
 test("photos show as a picture with a download button, then full size", async () => {
@@ -271,7 +335,7 @@ test("voice messages are recorded, reviewed, sent and played", async () => {
   // The other person gets a player, and the list says what it is.
   const play = thread(chidi).getByRole("button", { name: /^Play voice message, 0:0\d/ });
   await expect(play).toBeVisible();
-  await expect(main(chidi).getByRole("button", { name: new RegExp(USERS.finance.name) })).toContainText(/Voice message \(0:0\d\)/);
+  await expect(main(chidi).getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) })).toContainText(/Voice message \(0:0\d\)/);
   await play.click();
   await expect(thread(chidi).getByRole("button", { name: "Pause voice message" })).toBeVisible();
   await thread(chidi).getByRole("button", { name: "Pause voice message" }).click();
@@ -299,7 +363,7 @@ test("reactions are encrypted, live, one per person, and show in the list", asyn
   // Femi sees it live, and the list says who reacted to what.
   await expect(photo(femi).getByRole("button", { name: new RegExp(`^❤️ 1, ${USERS.clerk.name}\\.`) })).toBeVisible();
   await expect(
-    main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(USERS.clerk.name) }),
+    main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(`^${USERS.clerk.name}`) }),
   ).toContainText('Chidi reacted ❤️ to "Site photo"');
 
   // Femi adds the same emoji by choosing the chip: one chip, two people.
@@ -468,7 +532,7 @@ async function previewInPage(page: Page, conversationId: string, fallbackTitle: 
 
 test("notification previews are decrypted in the browser for direct chats", async () => {
   await chidi.goto("/chat");
-  await main(chidi).getByRole("button", { name: new RegExp(USERS.finance.name) }).first().click();
+  await main(chidi).getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) }).first().click();
   const reply = chidi.getByRole("textbox", { name: `Message ${USERS.finance.name}` });
   await reply.fill("Preview me please");
   await reply.press("Enter");
@@ -546,7 +610,7 @@ test("groups: create with a pending member, message, manage, and leave", async (
   await femi.keyboard.press("Escape");
 
   // Chidi sees the group live, with its (decrypted) name.
-  const groupRow = main(chidi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: /Finance team/ });
+  const groupRow = main(chidi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: /^Finance team/ });
   await expect(groupRow).toBeVisible();
   await groupRow.click();
   await expect(thread(chidi).getByText("Femi Finance created the group")).toBeVisible();
@@ -558,7 +622,7 @@ test("groups: create with a pending member, message, manage, and leave", async (
   const fromChidi = thread(femi).locator("[data-message-id]").filter({ hasText: "Hello team" });
   await expect(fromChidi.getByText(USERS.clerk.name, { exact: true })).toBeVisible();
   await expect(
-    main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: /Finance team/ }),
+    main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: /^Finance team/ }),
   ).toContainText("Chidi: Hello team");
 
   // Notification preview for a group: the group name, and who wrote what.
@@ -601,7 +665,7 @@ test("groups: create with a pending member, message, manage, and leave", async (
   const pat = await pageAs(browser, "peer");
   await fakeStorage(pat);
   await setUpChat(pat, "112233");
-  const patRow = main(pat).getByRole("list", { name: "Conversations" }).getByRole("button", { name: /Finance squad/ });
+  const patRow = main(pat).getByRole("list", { name: "Conversations" }).getByRole("button", { name: /^Finance squad/ });
   await expect(patRow).toBeVisible({ timeout: 15_000 });
   await patRow.click();
   await expect(thread(pat).getByText("You joined the group")).toBeVisible();
@@ -615,18 +679,30 @@ test("groups: create with a pending member, message, manage, and leave", async (
   await femi.getByRole("dialog", { name: "Group info" }).getByRole("button", { name: `Options for ${USERS.clerk.name}` }).click();
   await femi.getByRole("menuitem", { name: "Make admin" }).click();
   await expect(femi.getByText(`${USERS.clerk.name} is now an admin.`)).toBeVisible();
-  await femi.keyboard.press("Escape");
+  await femi.getByRole("dialog", { name: "Group info" }).getByRole("button", { name: "Close", exact: true }).last().click();
+  await expect(femi.getByRole("dialog", { name: "Group info" })).toHaveCount(0);
   await expect(thread(chidi).getByText("Femi Finance made you an admin")).toBeVisible();
   await chidi.getByRole("button", { name: "Finance squad, group info" }).click();
   const chidiInfo = chidi.getByRole("dialog", { name: "Group info" });
   await expect(chidiInfo.getByRole("button", { name: "Edit details" })).toBeVisible();
   await expect(chidiInfo.getByRole("button", { name: `Options for ${USERS.finance.name}` })).toHaveCount(0);
 
-  // Chidi leaves.
-  await chidiInfo.getByRole("button", { name: "Leave group" }).click();
-  await chidi.getByRole("dialog").getByRole("button", { name: "Leave group" }).click();
+  await chidiInfo.getByRole("button", { name: "Close", exact: true }).last().click();
+  await expect(chidiInfo).toHaveCount(0);
+
+  // Leaving from the chat's options: Cancel just closes.
+  await chidi.getByRole("button", { name: "Chat options" }).click();
+  await chidi.getByRole("menuitem", { name: "Leave group" }).click();
+  await expect(chidi.getByRole("dialog", { name: "Leave Finance squad?" })).toBeVisible();
+  await chidi.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(chidi.getByRole("dialog")).toHaveCount(0);
+
+  // Chidi leaves, from the ⋯ on the group's row in the list.
+  await main(chidi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: "Options for Finance squad" }).click();
+  await chidi.getByRole("menuitem", { name: "Leave group" }).click();
+  await chidi.getByRole("dialog", { name: "Leave Finance squad?" }).getByRole("button", { name: "Leave group" }).click();
   await expect(chidi.getByText("You left the group.")).toBeVisible();
-  await expect(main(chidi).getByRole("button", { name: /Finance squad/ })).toHaveCount(0);
+  await expect(main(chidi).getByRole("button", { name: /^Finance squad/ })).toHaveCount(0);
   await expect(thread(femi).getByText("Chidi Clerk left")).toBeVisible();
 
   // Chidi's screen goes back to the list.
@@ -640,11 +716,65 @@ test("groups: create with a pending member, message, manage, and leave", async (
   await expect(thread(femi).locator("[data-message-id]").filter({ hasText: "Still here" }).getByLabel(/Sent|Seen/)).toBeVisible();
 });
 
+test("mute, archive and hide a chat (only for yourself)", async () => {
+  await chidi.goto("/chat");
+  const list = main(chidi).getByRole("list", { name: "Conversations" });
+  const row = () => list.getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) }).first();
+  await row().click();
+
+  // Mute for 8 hours: a muted icon in the list, and Unmute in the menu.
+  await chidi.getByRole("button", { name: "Chat options" }).click();
+  await chidi.getByRole("menuitem", { name: "Mute notifications" }).click();
+  await chidi.getByRole("menuitem", { name: "For 8 hours" }).click();
+  await expect(chidi.getByText("Muted for 8 hours.")).toBeVisible();
+  await expect(row().getByLabel("Muted")).toBeVisible();
+  await chidi.getByRole("button", { name: "Chat options" }).click();
+  await chidi.getByRole("menuitem", { name: /^Unmute/ }).click();
+  await expect(row().getByLabel("Muted")).toHaveCount(0);
+
+  // The same options from the chat list: right-click a chat, or its ⋯ button.
+  await row().click({ button: "right" });
+  await expect(chidi.getByRole("menuitem", { name: "Mute notifications" })).toBeVisible();
+  await chidi.keyboard.press("Escape");
+
+  // Archive (from the row's ⋯): out of the main list, into Archived; then back.
+  await list.getByRole("button", { name: `Options for ${USERS.finance.name}` }).click();
+  await chidi.getByRole("menuitem", { name: "Archive" }).click();
+  await expect(chidi.getByText("Chat archived.")).toBeVisible();
+  await expect(list.getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) })).toHaveCount(0);
+  await main(chidi).getByRole("button", { name: /^Archived/ }).click();
+  const archived = main(chidi).getByRole("list", { name: "Archived chats" });
+  await expect(archived.getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) })).toBeVisible();
+  await chidi.getByRole("button", { name: "Chat options" }).click();
+  await chidi.getByRole("menuitem", { name: "Unarchive" }).click();
+  await main(chidi).getByRole("button", { name: "Archived chats" }).click();
+  await expect(row()).toBeVisible();
+
+  // Femi's side is unaffected.
+  await expect(
+    main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(`^${USERS.clerk.name}`) }).first(),
+  ).toBeVisible();
+
+  // Hide: gone from the list, back when a new message arrives.
+  await row().click();
+  await chidi.getByRole("button", { name: "Chat options" }).click();
+  await chidi.getByRole("menuitem", { name: "Hide chat" }).click();
+  await expect(chidi.getByText(/Chat hidden/)).toBeVisible();
+  await expect(list.getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) })).toHaveCount(0);
+  await femi.goto("/chat");
+  await main(femi).getByRole("list", { name: "Conversations" }).getByRole("button", { name: new RegExp(`^${USERS.clerk.name}`) }).first().click();
+  const box = femi.getByRole("textbox", { name: `Message ${USERS.clerk.name}` });
+  await box.fill("Are you there?");
+  await box.press("Enter");
+  await expect(row()).toBeVisible();
+  await expect(row()).toContainText("Are you there?");
+});
+
 test("the drawer opens chat from any page", async () => {
   await chidi.goto("/dashboard");
   await chidi.getByRole("button", { name: /^Open chat/ }).click();
   const drawer = chidi.getByRole("dialog", { name: "Chat" });
-  await drawer.getByRole("button", { name: new RegExp(USERS.finance.name) }).click();
+  await drawer.getByRole("button", { name: new RegExp(`^${USERS.finance.name}`) }).click();
   await expect(drawer.getByRole("log", { name: "Messages" }).getByText("budget-notes.txt").first()).toBeVisible();
   await chidi.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
@@ -679,7 +809,7 @@ test("signing out forgets the key; after signing back in only the PIN is asked",
   await expect(main(femi).getByRole("heading", { name: "Choose a new PIN" })).toHaveCount(0);
   await main(femi).getByRole("button", { name: "Back to PIN" }).click();
   await typePin(femi, /^Chat PIN/, FEMI_PIN);
-  await main(femi).getByRole("button", { name: new RegExp(USERS.clerk.name) }).click();
+  await main(femi).getByRole("button", { name: new RegExp(`^${USERS.clerk.name}`) }).click();
   await expect(thread(femi).getByText("budget-notes.txt").first()).toBeVisible();
 
   // Reloading keeps it unlocked for this sign-in.
@@ -729,6 +859,6 @@ test("resetting chat needs the code emailed to the user", async () => {
 
   // The other person is told.
   await femi.goto("/chat");
-  await main(femi).getByRole("button", { name: new RegExp(USERS.clerk.name) }).click();
+  await main(femi).getByRole("button", { name: new RegExp(`^${USERS.clerk.name}`) }).click();
   await expect(thread(femi).getByText(`${USERS.clerk.name} reset their chat.`, { exact: false })).toBeVisible();
 });

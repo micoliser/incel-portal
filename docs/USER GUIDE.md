@@ -457,6 +457,12 @@ Send private messages, photos, videos and files (up to 25 MB each) to anyone in 
 
 **Replies:** choose the quote at the top of a reply to jump to the message it answers.
 
+**Files:** choose the download button on a file to bring it into the chat, then **Open** to view it (in a new tab, or with the program your computer uses for it) or **Save** to keep a copy (Chrome and Edge ask where to save it; other browsers use your Downloads folder).
+
+**Mute, archive and hide:** use the ⋯ button at the top of a chat, or the ⋯ on the chat in your list (you can also right-click the chat, or press and hold it on a phone). **Mute notifications** (for 8 hours, a week or always) stops its notifications; it still shows unread messages, greyed out. **Archive** moves the chat into **Archived** at the top of your list until you unarchive it. **Hide chat** takes it out of your list until someone sends a new message. These only change things for you. In a group, the same menu also has **Leave group**.
+
+**Links:** links in messages open in a new tab. When you write a link, a preview (title, description and picture) appears above the message box; choose the × if you would rather send it without one.
+
 **Forwarding:** choose **Forward** in a message's menu, pick up to 5 chats (search for anyone else), add a note if you like, and choose **Forward**. Forwarded messages are marked **Forwarded** (or **Forwarded many times**), and do not show who wrote them originally.
 
 **Group chats:** choose the people button beside the search box, pick who is in the group (people who have not set up chat are invited and join when they do), then give it a name and, if you like, a description and photo. Choose the group's name at the top of the chat to see its members, add people, change its details (admins), or leave it. The person who creates a group is its **Owner**: nobody can remove them, and only they can remove or demote admins or make someone else the owner (**Make group owner** in a member's menu). Admins can add and remove members and make members admins. If you leave a group you own, you choose who takes over. New members can read messages from when they join, not before. On your own messages, **Message info** shows who has seen them.
