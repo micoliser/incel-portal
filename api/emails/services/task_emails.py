@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict
 
 from common.users import display_name
-from emails.config import EmailType
+from emails.config import EmailConfig, EmailType
 from emails.services.base_email_service import BaseEmailService
 
 logger = logging.getLogger(__name__)
@@ -242,7 +242,8 @@ class TaskEmailManager:
         sent = service.send([recipient_email], context)
         if sent:
             logger.info("Task %s %s email queued/sent to %s", task_id, label, recipient_email)
-        else:
+        elif EmailConfig.is_enabled():
+            # Not sent while email is switched off is expected (already logged as info).
             logger.error("Task %s %s email failed for %s", task_id, label, recipient_email)
 
     @staticmethod

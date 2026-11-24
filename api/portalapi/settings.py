@@ -281,7 +281,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '200/minute',
         'user': '1000/minute',
-        'login': '25/minute',
+        # Sign-in, password change and reset. The e2e suite raises it: every test signs in from one address.
+        'login': os.getenv('LOGIN_THROTTLE_RATE', '25/minute'),
         'refresh': '200/minute',
         'admin': '150/minute',
         'email': '25/hour',

@@ -840,6 +840,9 @@ replaces the last on the device.
 ## 11. Configuration reference
 
 All read in `api/portalapi/settings.py` from the environment or `api/.env`.
+Every variable, grouped by area with its default, is listed in
+`api/.env.example` (API) and `portal/.env.example` (web app); copy them to
+`api/.env` and `portal/.env` to start.
 
 ### Core
 
@@ -877,6 +880,7 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `LOGIN_MAX_ATTEMPTS` | `10` |
 | `LOGIN_LOCKOUT_SECONDS` | `900` |
 | `LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR` | `50` |
+| `LOGIN_THROTTLE_RATE` | `25/minute` (per client address; the e2e server raises it) |
 | `PASSWORD_RESET_TIMEOUT` | `3600` |
 | `ACCOUNT_SETUP_LINK_TIMEOUT` | `259200` (72 h) |
 | `PASSWORD_RESET_EMAILS_PER_HOUR` | `3` |
@@ -910,6 +914,7 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX` | `maintenance-attachments` |
 | `AWS_INVENTORY_PHOTO_S3_PREFIX` | `inventory/photos` |
 | `AWS_APPLICATION_LOGO_S3_PREFIX` | `application-logos` |
+| `AWS_PROFILE_PHOTO_S3_PREFIX` | `profile-photos` |
 | `SUMMARY_PDF_EXPORT_S3_PREFIX` | `pdf-exports` |
 | `TASK_ATTACHMENT_MAX_SIZE` | 10 MB |
 | `TASK_ATTACHMENT_MAX_FILES` | `10` |
@@ -935,7 +940,10 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 
 Web app (build time): `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_CHAT_WS_URL`
 (the realtime app's origin, e.g. `wss://workspacews.incelgroup.com`; defaults
-to the API origin).
+to the API origin). `portal/next.config.ts` also reads `AWS_S3_BUCKET_NAME`,
+`AWS_S3_REGION_NAME`, `AWS_S3_CUSTOM_DOMAIN` and `AWS_S3_ENDPOINT_URL` when the
+server starts, to allow those hosts for `next/image`. The end-to-end variables
+(`E2E_*`) are in `portal/e2e/README.md` and `portal/.env.example`.
 
 ## 12. Frontend architecture
 

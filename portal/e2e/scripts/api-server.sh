@@ -43,6 +43,9 @@ export VERIFY_UPLOADS=False
 # Nor to copy a forwarded file in.
 export CHAT_STORAGE_COPY=False
 export SEND_PUSH_CELERY=False
+# Every test signs in from 127.0.0.1, which the normal 25/minute sign-in limit
+# cannot take (sessions for each role plus the sign-in tests' wrong passwords).
+export LOGIN_THROTTLE_RATE=1000/minute
 
 "$PYTHON" manage.py migrate --noinput
 "$PYTHON" manage.py seed_e2e
