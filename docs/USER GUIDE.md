@@ -130,7 +130,9 @@ There is no default password. Nobody else, including IT, knows your password.
 3. Click "Sign in to Workspace"
 
 After a wrong password the page tells you how many attempts you have left.
-After 10 wrong attempts, sign-in from your device is blocked for 15 minutes.
+After 10 wrong attempts, sign-in from your device is blocked for 15 minutes,
+and the page counts down the time left. Wrong passwords typed in chat or in
+**Change password** count towards the same 10, and the block applies there too.
 
 **Forgot your password?**
 
@@ -157,6 +159,7 @@ The sidebar contains links to:
 - Tasks - View and manage all tasks
 - To-dos - Your personal to-do list with reminders
 - Goals - Track your performance targets
+- Chat - Private messages with colleagues (also available from the Chat button at the bottom right of every page)
 - Reports & Summaries - Submit daily reports and view weekly metrics
 - Org Summary - View organization-wide performance (executives)
 - Applications - Browse available applications
@@ -433,6 +436,58 @@ Complete audit trail of all system activities including:
 
 Search and filter by date and date range.
 
+### CHAT
+
+Send private messages, photos, videos and files (up to 25 MB each) to anyone in the portal.
+
+**Your chats are private.** Messages and files are encrypted on your computer before they are sent. Only you and the person you are talking to can read them. IT, portal administrators and anyone with access to the servers cannot.
+
+1. **Setting up (first time):**
+   - Open **Chat** in the sidebar.
+   - Choose a 6-digit **chat PIN**, then enter it again to confirm. (If chat first asks for your portal password, enter it: chat is locked with your password and your PIN together.)
+   - You are shown a **recovery code**. Write it down or keep it in a password manager, then type its last four characters to confirm. It is shown only once.
+
+2. **Each time you sign in:** the first time you open chat, enter your 6-digit PIN. On that computer chat then stays unlocked until you sign out. Signing out (or being signed out after an hour without activity) always forgets it, so shared computers keep nothing. After 5 wrong PINs, chat asks for your portal password again.
+
+3. **Starting a conversation:** type a name in **Search people to message** and choose **Message**. If someone has not set up chat yet, choose **Invite**: they get a portal notification and an email, and the conversation appears in your list with "Invitation sent". You can open it, but you can send messages only once they set up chat. Use **Send a reminder** (once a day) if they have not. When they set up chat, both of you see that the invitation was accepted, and you can start talking.
+
+4. **Sending:** type and press **Enter** (Shift + Enter for a new line). Use the paperclip, drag files in, or paste an image to attach files (up to 25 MB each). Photos and videos show as a picture in the chat: choose the download button in the middle to see a photo in full (click it to enlarge and save) or to play a video. Other files show with their name and size and a download button. To send a **voice message**, leave the message box empty and choose the microphone. Speak, then choose the square to stop and listen back before sending, or the send button to send it straight away; the bin (or Esc) throws it away. Voice messages can be up to 20 minutes. The first time, your browser asks to use the microphone. Play a voice message with its play button, tap the waveform to jump, and use **1×** to switch to 1.5× or 2× speed.
+
+**Reacting:** hover over a message and choose the smile, choose **React** in the message menu, or press and hold the message on a phone. Pick 👍 ❤️ 😂 😮 😢 🙏, or **+** for every emoji. You have one reaction per message: pick another to change it, or the same one (or your chip under the message) to remove it. Reactions are private like messages.
+
+**Replies:** choose the quote at the top of a reply to jump to the message it answers.
+
+**Files:** choose the download button on a file to bring it into the chat, then **Open** to view it (photos, videos, audio, PDFs and plain text open in a new tab; other files, such as SVG drawings or web pages, are downloaded and open with the program your computer uses for them) or **Save** to keep a copy (Chrome and Edge ask where to save it; other browsers use your Downloads folder).
+
+**Mute, archive and hide:** use the ⋯ button at the top of a chat, or the ⋯ on the chat in your list (you can also right-click the chat, or press and hold it on a phone). **Mute notifications** (for 8 hours, a week or always) stops its notifications; it still shows unread messages, greyed out. **Archive** moves the chat into **Archived** at the top of your list until you unarchive it. **Hide chat** takes it out of your list until someone sends a new message. These only change things for you. In a group, the same menu also has **Leave group**.
+
+**Links:** links in messages open in a new tab. When you write a link, a preview (title, description and picture) appears above the message box; choose the × if you would rather send it without one.
+
+**Forwarding:** choose **Forward** in a message's menu, pick up to 5 chats (search for anyone else), add a note if you like, and choose **Forward**. Forwarded messages are marked **Forwarded** (or **Forwarded many times**), and do not show who wrote them originally.
+
+**Group chats:** choose the people button beside the search box, pick who is in the group (people who have not set up chat are invited and join when they do), then give it a name and, if you like, a description and photo. Choose the group's name at the top of the chat to see its members, add people, change its details (admins), or leave it. The person who creates a group is its **Owner**: nobody can remove them, and only they can remove or demote admins or make someone else the owner (**Make group owner** in a member's menu). Admins can add and remove members and make members admins. If you leave a group you own, you choose who takes over. New members can read messages from when they join, not before. On your own messages, **Message info** shows who has seen them.
+
+**Notifications:** when you are not on the portal, chat notifications show who wrote and what they said (in a group, the group name and "Ada: …"). Your browser decrypts them itself; nobody else can read them. They show only while chat is unlocked in that browser; otherwise they just say "New message". To hide messages in notifications on a shared computer, turn off **Show message previews in notifications** in the chat settings menu.
+
+5. **Seen, typing and online:** one tick means sent; two ticks mean the other person has seen it. You also see when they are typing, and whether they are online or when they were last seen.
+
+6. **Message options** (the "…" next to a message):
+   - **Reply** quotes the message.
+   - **Edit** and **Delete for everyone** are available on your own messages for 30 minutes after sending. Deleted messages show "This message was deleted" to both of you.
+   - **Delete for me** removes a message only from your view, at any time.
+
+7. **Chat drawer:** the **Chat** button at the bottom right of every page opens a small chat window that stays open while you move around the portal. Use the expand icon to open the full page, and Escape to close it.
+
+8. **Settings** (the sliders icon): change your chat PIN, or lock chat on this computer.
+
+**Forgot your chat PIN?** On the unlock screen choose **Forgot PIN?**, enter your recovery code and choose a new PIN. You get a new recovery code; save it.
+
+**Changed your portal password?** If you change it with **Change password** in the portal, chat keeps working with the same PIN. If your password was reset with a reset link or by an administrator, chat asks for your recovery code once, then a new PIN.
+
+**Lost the PIN and the recovery code?** Choose **Lost the recovery code too?** to reset your chat. Read the warning, tick the box and choose **Email me a code**. We email you a code; enter it (it expires in 15 minutes), then choose a new PIN. You can chat again straight away, but your earlier messages can no longer be read by you, and the people you chat with see a note that you reset your chat. IT cannot recover them, because nobody else has the key, and IT cannot reset or delete your chat for you.
+
+**When someone leaves the company,** your conversation with them stays readable, but no new messages can be sent.
+
 ## ADVANCED FEATURES
 
 ### REAL-TIME NOTIFICATIONS
@@ -549,6 +604,14 @@ If your browser supports them, allow notifications when prompted to receive inst
 - Check spam/junk folder
 - Verify email address in profile
 - Contact administrator
+
+### Chat says "Reconnecting…"?
+
+Messages still send; they appear for the other person when the connection returns or when they reload. If it lasts, report it to IT.
+
+### Forgot your chat PIN?
+
+Use your recovery code from the unlock screen (see Chat above). IT cannot reset a chat PIN.
 
 ### Can't upload files?
 

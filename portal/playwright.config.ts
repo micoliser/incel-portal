@@ -39,9 +39,11 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 900 },
-        launchOptions: process.env.E2E_CHROMIUM_PATH
-          ? { executablePath: process.env.E2E_CHROMIUM_PATH }
-          : {},
+        launchOptions: {
+          // A fake microphone (a tone) with permission granted, for chat voice messages.
+          args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+          ...(process.env.E2E_CHROMIUM_PATH ? { executablePath: process.env.E2E_CHROMIUM_PATH } : {}),
+        },
       },
     },
   ],

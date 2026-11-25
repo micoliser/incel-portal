@@ -87,9 +87,7 @@ class BaseEmailService:
             bool: True if email was queued/sent, False otherwise
         """
         if not EmailConfig.is_enabled():
-            logger.warning(
-                f"Email sending disabled. Would send {subject} to {recipients}"
-            )
+            logger.info("Email sending disabled. Would send %s to %s", subject, recipients)
             return False
 
         if not recipients:

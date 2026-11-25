@@ -43,6 +43,7 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
     manager_scope = serializers.SerializerMethodField()
     department_code = serializers.SerializerMethodField()
     can_manage_inventory = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -67,10 +68,15 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
             'is_manager',
             'manager_scope',
             'can_manage_inventory',
+            'avatar_url',
         ]
 
     def _profile(self, obj):
         return getattr(obj, 'staff_profile', None)
+
+    def get_avatar_url(self, obj):
+        profile = self._profile(obj)
+        return (profile.avatar_url if profile else '') or None
 
     def get_can_manage_inventory(self, obj):
         from inventory.permissions import can_manage_inventory
@@ -352,3 +358,19 @@ class UpdateAdminUserSerializer(serializers.Serializer):
         if not Role.objects.filter(id=value).exists():
             raise serializers.ValidationError('Role not found.')
         return value
+
+
+class ProfilePhotoUploadUrlSerializer(serializers.Serializer):
+    content_type = serializers.ChoiceField(choices=['image/jpeg', 'image/png', 'image/webp'])
+    size = serializers.IntegerField(min_value=1)
+
+    def validate_size(self, value):
+        from accounts.s3 import PROFILE_PHOTO_MAX_SIZE
+
+        if value > PROFILE_PHOTO_MAX_SIZE:
+            raise serializers.ValidationError('A profile picture can be up to 5 MB.')
+        return value
+
+
+class ProfilePhotoSerializer(serializers.Serializer):
+    avatar_url = serializers.URLField(max_length=600)

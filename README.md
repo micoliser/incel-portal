@@ -81,6 +81,16 @@ for staff is [docs/USER GUIDE.md](docs/USER%20GUIDE.md).
   tree (departments, units, teams and their leaders), applications and access
   rules, audit log of sign-ins and every administrative change.
 
+**Chat**
+- One-to-one chat between any two staff, with photos, videos and files up to
+  25 MB. End-to-end encrypted: nobody but the two people, including IT and
+  admins, can read messages or files. Chat is unlocked with a 6-digit PIN
+  together with the portal password, and each person keeps a recovery code.
+- Live delivery, read receipts ("Seen"), typing and online status, replies,
+  edit and delete for everyone within 30 minutes, delete for me at any time.
+- A full page at `/chat` and a slide-up chat drawer on every page.
+- Design: [docs/CHAT_SPEC.md](docs/CHAT_SPEC.md).
+
 **Notifications**
 - In-app notification centre, emails, and optional browser push.
 
@@ -120,6 +130,7 @@ incel-portal/
 │   ├── support/               support requests
 │   ├── inventory/             assets, assignments, maintenance
 │   ├── notifications/         in-app notifications and browser push
+│   ├── chat/                  end-to-end encrypted chat (REST + WebSocket)
 │   ├── emails/                email templates, sending, email log
 │   ├── common/                shared code (permissions, pagination, storage,
 │   │                          cache, request parsing, errors)
@@ -173,6 +184,18 @@ python manage.py createsuperuser
 ```bash
 python manage.py runserver 127.0.0.1:8000
 ```
+
+`runserver` does not serve the chat WebSocket. To use chat locally, also run
+the realtime app on another port and point the web app at it with
+`NEXT_PUBLIC_CHAT_WS_URL=ws://localhost:8001`:
+
+```bash
+python -m uvicorn portalapi.asgi:application --host 127.0.0.1 --port 8001
+```
+
+For chat, both processes must share `CACHE_URL` and `CHANNEL_LAYER_URL`
+(Redis), since tickets and live events pass between them. Alternatively,
+serve everything from uvicorn on port 8000 instead of `runserver`.
 
 ### 2. Background workers
 
@@ -228,6 +251,10 @@ DB_PORT=5432
 
 CELERY_BROKER_URL=redis://127.0.0.1:6379/0
 
+# Chat (only needed when the API and realtime app are separate processes).
+CACHE_URL=redis://127.0.0.1:6379/14
+CHANNEL_LAYER_URL=redis://127.0.0.1:6379/13
+
 # Print emails to the worker log instead of sending them.
 EMAIL_ENABLED=True
 EMAIL_DEBUG=True
@@ -247,7 +274,9 @@ WEB_PUSH_VAPID_SUBJECT=mailto:you@example.com
 Outside debug mode the API refuses to start without `DJANGO_SECRET_KEY` and
 `DB_PASSWORD`.
 
-The web app needs one variable, `NEXT_PUBLIC_API_BASE_URL`, at build time.
+The web app needs `NEXT_PUBLIC_API_BASE_URL` at build time, and
+`NEXT_PUBLIC_CHAT_WS_URL` (the realtime app's address) when chat runs on a
+different host from the API.
 
 Every setting, its default and what it does is listed in
 [docs/TECHNICAL_DOCUMENTATION.md](docs/TECHNICAL_DOCUMENTATION.md#11-configuration-reference).
@@ -257,6 +286,7 @@ The ones that matter most in production:
 |---|---|
 | `CACHE_URL` | Redis for lockouts, rate limits and job locks. Use a different database number from Celery's. If Redis cannot be reached the API keeps working without these protections and `/health/` reports `degraded`. |
 | `TRUSTED_PROXY_COUNT` | Proxies in front of the API (production: `2`, Cloudflare then CapRover's nginx). Decides the client address used for lockouts, the admin IP allowlist and the audit log. |
+| `CHANNEL_LAYER_URL` | Redis database for chat's live delivery, shared by the API and the realtime app. |
 | `PORTAL_BASE_URL` | Address used in emailed links. |
 | `*_S3_PREFIX` | Folder in the bucket for each kind of upload; the AWS key must be allowed to read, write and delete there. |
 

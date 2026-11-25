@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'emails',
     'support',
     'inventory',
+    'chat',
 ]
 
 MIDDLEWARE = [
@@ -95,6 +96,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'portalapi.wsgi.application'
+# The realtime app (chat WebSockets) runs this under uvicorn; the REST API stays on WSGI.
+ASGI_APPLICATION = 'portalapi.asgi.application'
 
 
 # Database
@@ -222,6 +225,7 @@ AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL', '')
 AWS_APPLICATION_LOGO_S3_PREFIX = os.getenv('AWS_APPLICATION_LOGO_S3_PREFIX', 'application-logos')
 AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX = os.getenv('AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX', 'maintenance-attachments')
 AWS_INVENTORY_PHOTO_S3_PREFIX = os.getenv('AWS_INVENTORY_PHOTO_S3_PREFIX', 'inventory/photos')
+AWS_PROFILE_PHOTO_S3_PREFIX = os.getenv('AWS_PROFILE_PHOTO_S3_PREFIX', 'profile-photos')
 SUMMARY_PDF_EXPORT_S3_PREFIX = os.getenv('SUMMARY_PDF_EXPORT_S3_PREFIX', 'pdf-exports')
 AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_APPLICATION_LOGO_UPLOAD_URL_EXPIRES_IN', '900'))
 AWS_MAINTENANCE_ATTACHMENT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('AWS_MAINTENANCE_ATTACHMENT_UPLOAD_URL_EXPIRES_IN', '900'))
@@ -277,13 +281,20 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '200/minute',
         'user': '1000/minute',
-        'login': '25/minute',
+        # Sign-in, password change and reset. The e2e suite raises it: every test signs in from one address.
+        'login': os.getenv('LOGIN_THROTTLE_RATE', '25/minute'),
         'refresh': '200/minute',
         'admin': '150/minute',
         'email': '25/hour',
         'support': '100/minute',
         'uploads': '100/minute',
         'service': '120/minute',
+        'chat_messages': '60/minute',
+        'chat_uploads': '30/minute',
+        'chat_tickets': '30/minute',
+        'chat_keys': '20/minute',
+        'chat_link_preview': '10/minute',
+        'chat_session_secrets': '30/minute',
     },
 }
 
@@ -345,6 +356,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.prune_auth_failure_audit_logs',
         'schedule': crontab(hour=2, minute=30),  # Daily at 02:30
     },
+    'remove-unsent-chat-attachments': {
+        'task': 'chat.remove_unsent_attachments',
+        'schedule': crontab(hour=3, minute=0),  # Daily at 03:00
+    },
     'auto-close-support-requests': {
         'task': 'support.auto_close_resolved_requests',
         'schedule': crontab(hour=1, minute=0),  # Daily at 01:00
@@ -382,6 +397,37 @@ TASK_ATTACHMENT_MAX_FILES = int(os.getenv('TASK_ATTACHMENT_MAX_FILES', '10'))
 # (common/storage.verify_upload). Off only where there is no storage to ask:
 # test runs, and the end-to-end stack (which sets VERIFY_UPLOADS=False).
 VERIFY_UPLOADS = (not IS_TESTING) and os.getenv('VERIFY_UPLOADS', 'True').lower() == 'true'
+
+# Chat (docs/CHAT_SPEC.md). Files are encrypted in the browser, so storage only
+# ever holds opaque bytes; the limit is on the original file, and the encrypted
+# copy may be slightly larger.
+CHAT_ATTACHMENT_S3_PREFIX = os.getenv('CHAT_ATTACHMENT_S3_PREFIX', 'chat-attachments')
+CHAT_ATTACHMENT_MAX_SIZE = int(os.getenv('CHAT_ATTACHMENT_MAX_SIZE', str(25 * 1024 * 1024)))
+CHAT_ATTACHMENT_ENCRYPTION_OVERHEAD = 64 * 1024
+CHAT_THUMBNAIL_MAX_SIZE = 512 * 1024
+CHAT_GROUP_PHOTO_MAX_SIZE = 512 * 1024
+CHAT_ATTACHMENTS_PER_MESSAGE = 10
+CHAT_UPLOAD_URL_EXPIRES_IN = int(os.getenv('CHAT_UPLOAD_URL_EXPIRES_IN', '900'))
+CHAT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('CHAT_DOWNLOAD_URL_EXPIRES_IN', '300'))
+CHAT_EDIT_WINDOW_MINUTES = 30
+# Forwarding copies the encrypted file inside the bucket; off where there is no real storage.
+CHAT_STORAGE_COPY = os.getenv('CHAT_STORAGE_COPY', 'true').lower() in ('1', 'true', 'yes')
+# Encrypted message payload (text plus attachment details), base64.
+CHAT_MESSAGE_MAX_CIPHERTEXT = 96 * 1024
+
+# WebSocket delivery for chat. Point CHANNEL_LAYER_URL at a Redis database of
+# its own (Celery uses 15 and the cache 14 in production). Without it, events
+# only reach sockets held by the same process: fine for development and tests.
+CHANNEL_LAYER_URL = '' if IS_TESTING else os.getenv('CHANNEL_LAYER_URL', '')
+if CHANNEL_LAYER_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [CHANNEL_LAYER_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
 MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN = int(os.getenv('MAINTENANCE_ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN', '300'))
 TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES = _env_list(
     'TASK_ATTACHMENT_ALLOWED_CONTENT_TYPES',
@@ -423,7 +469,7 @@ X_FRAME_OPTIONS = 'DENY'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 _PROJECT_LOGGERS = (
     'accounts', 'applications', 'common', 'emails', 'inventory', 'notifications',
-    'organization', 'portalapi', 'support', 'tasks',
+    'organization', 'portalapi', 'support', 'tasks', 'chat',
 )
 LOGGING = {
     'version': 1,

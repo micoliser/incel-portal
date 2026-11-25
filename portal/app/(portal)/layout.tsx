@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   Calendar,
   CheckSquare2,
+  Camera,
   ListTodo,
-  MessagesSquare,
   Eye,
   EyeOff,
   Building2,
@@ -29,6 +29,7 @@ import {
   X,
   Package,
   Archive,
+  MessagesSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,14 +45,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NotificationCenter } from "@/components/notification-center";
+import { ChatDrawer } from "@/components/chat/chat-drawer";
+import { ProfilePhotoDialog } from "@/components/profile-photo-dialog";
+import { ChatProvider, useOptionalChat } from "@/components/chat/chat-provider";
+import { forgetKey } from "@/lib/chat/keystore";
+import { movePasswordLayer } from "@/lib/chat/password";
 import { cn } from "@/lib/utils";
 import {
   clearStoredTokens,
   buildLoginPath,
   getUserRoleLabel,
 } from "@/lib/auth";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, markLoggingOut } from "@/lib/api-client";
 import { extractApiErrorMessage } from "@/lib/api-errors";
+import { lockedUntilFrom, lockoutText, useSecondsLeft } from "@/lib/lockout";
 import Image from "next/image";
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
@@ -71,6 +78,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isAdmin, setIsAdmin] = useState(false);
   const [userInfo, setUserInfo] = useState<{
+    id?: number;
     username?: string;
     first_name?: string;
     last_name?: string;
@@ -81,6 +89,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     department_id?: number | string | null;
     department_code?: string | null;
     can_manage_inventory?: boolean;
+    avatar_url?: string | null;
     has_global_access?: boolean;
     is_manager?: boolean;
     manager_scope?: {
@@ -90,6 +99,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       description: string;
     } | null;
   } | null>(null);
+  const [isProfilePhotoOpen, setIsProfilePhotoOpen] = useState(false);
   const [changePasswordForm, setChangePasswordForm] = useState({
     old_password: "",
     new_password: "",
@@ -100,6 +110,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     Record<string, string | undefined>
   >({});
   const [changePasswordApiError, setChangePasswordApiError] = useState("");
+  const [changePasswordLockedUntil, setChangePasswordLockedUntil] = useState<number | null>(null);
+  const changePasswordLockLeft = useSecondsLeft(changePasswordLockedUntil);
+  const changePasswordLocked = changePasswordLockLeft > 0;
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("portal_theme");
@@ -127,6 +140,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         ]);
 
         const data = response.data as {
+          id?: number;
           username?: string;
           first_name?: string;
           last_name?: string;
@@ -279,6 +293,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(
     async (reason?: "inactivity" | "manual") => {
+      // Forget the chat key on this computer first, while the session that
+      // can end its server-side secret still exists.
+      await forgetKey().catch(() => undefined);
+      // From here, requests that fail because the session has ended must not
+      // redirect to the sign-in page themselves (this navigation does).
+      markLoggingOut();
       try {
         await apiClient.post("/auth/logout", {});
       } catch {
@@ -495,15 +515,23 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         old_password: changePasswordForm.old_password,
         new_password: changePasswordForm.new_password,
       });
+      // Chat's key is partly locked with the password: move that lock over.
+      await movePasswordLayer(changePasswordForm.old_password, changePasswordForm.new_password);
       resetChangePasswordForm();
       setIsChangePasswordOpen(false);
       setIsSidebarOpen(false);
       toast.success("Password changed.");
     } catch (error) {
-      setChangePasswordApiError(
-        extractApiErrorMessage(error, "Failed to change password."),
-      );
-      toast.error(extractApiErrorMessage(error, "Failed to change password."));
+      const until = lockedUntilFrom(error);
+      if (until) {
+        setChangePasswordLockedUntil(until);
+        toast.error("Too many wrong passwords. Try again later.");
+      } else {
+        setChangePasswordApiError(
+          extractApiErrorMessage(error, "Failed to change password."),
+        );
+        toast.error(extractApiErrorMessage(error, "Failed to change password."));
+      }
     } finally {
       setIsChangingPassword(false);
     }
@@ -563,7 +591,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
   const PageTitle = pageHasOwnHeading ? "p" : "h1";
 
-  return (
+  const chatUserId = typeof userInfo?.id === "number" ? userInfo.id : null;
+
+  const page = (
     <div className="h-screen overflow-hidden bg-background text-foreground">
       <a
         href="#main-content"
@@ -694,37 +724,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               <span>Goals</span>
             </Link>
 
-            <Link
-              href="/chat"
-              onClick={handleCloseSidebar}
-              className={cn(
-                "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
-                pathname.startsWith("/chat")
-                  ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <MessagesSquare
-                className={cn(
-                  "size-4 transition-transform duration-150",
-                  pathname.startsWith("/chat")
-                    ? "text-white"
-                    : "text-muted-foreground group-hover:text-foreground",
-                )}
-                aria-hidden="true"
-              />
-              <span className="flex-1">Chat</span>
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
-                  pathname.startsWith("/chat")
-                    ? "bg-white/20 text-white"
-                    : "bg-[#0d47a1]/10 text-[#0d47a1] dark:bg-[#38bdf8]/15 dark:text-[#38bdf8]",
-                )}
-              >
-                Soon
-              </span>
-            </Link>
+            <ChatNavLink active={pathname.startsWith("/chat")} onNavigate={handleCloseSidebar} />
           </div>
 
           {/* Group 2: Insights & Workspace */}
@@ -1052,9 +1052,26 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
             <div className="hidden h-7 w-px bg-border sm:block" />
 
             <div className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1.5">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-[#0d47a1] text-xs font-bold text-white shadow-xs">
-                {initials}
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsProfilePhotoOpen(true)}
+                aria-label={userInfo?.avatar_url ? "Change your profile picture" : "Add a profile picture"}
+                title={userInfo?.avatar_url ? "Change your profile picture" : "Add a profile picture"}
+                className="group/photo relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d47a1] text-xs font-bold text-white shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d47a1]"
+              >
+                {userInfo?.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={userInfo.avatar_url} alt="" className="size-full object-cover" />
+                ) : (
+                  initials
+                )}
+                <span
+                  className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover/photo:opacity-100 group-focus-visible/photo:opacity-100"
+                  aria-hidden="true"
+                >
+                  <Camera className="size-3.5" />
+                </span>
+              </button>
               <div className="leading-tight hidden sm:block">
                 <p className="text-sm font-semibold text-foreground">
                   {fullName}
@@ -1073,7 +1090,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         tabIndex={-1}
         className={cn(
           "h-screen max-w-full lg:ml-72 focus:outline-none",
-          pathname === "/summaries"
+          pathname === "/summaries" || pathname.startsWith("/chat")
             ? "pt-[72px] overflow-hidden"
             : "overflow-y-auto overflow-x-hidden pt-[105px] px-4 pb-8 sm:px-6 sm:pb-10 lg:px-8",
         )}
@@ -1202,12 +1219,12 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               ) : null}
             </div>
 
-            {changePasswordApiError ? (
+            {changePasswordLocked || changePasswordApiError ? (
               <div
                 role="alert"
                 className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
               >
-                {changePasswordApiError}
+                {changePasswordLocked ? lockoutText(changePasswordLockLeft) : changePasswordApiError}
               </div>
             ) : null}
 
@@ -1222,7 +1239,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               </Button>
               <Button
                 type="submit"
-                disabled={isChangingPassword}
+                disabled={isChangingPassword || changePasswordLocked}
                 className="bg-[#0d47a1] hover:bg-[#0a3880] text-white shadow-sm"
               >
                 {isChangingPassword ? "Saving..." : "Change password"}
@@ -1246,8 +1263,13 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
           {userInfo ? (
             <div className="my-1 flex items-center gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#0d47a1] text-xs font-semibold text-white shadow-xs">
-                {initials}
+              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d47a1] text-xs font-semibold text-white shadow-xs">
+                {userInfo.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={userInfo.avatar_url} alt="" className="size-full object-cover" />
+                ) : (
+                  initials
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground">
@@ -1304,6 +1326,60 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {chatUserId !== null ? <ChatDrawer /> : null}
+      <ProfilePhotoDialog<NonNullable<typeof userInfo>>
+        open={isProfilePhotoOpen}
+        onOpenChange={setIsProfilePhotoOpen}
+        name={fullName}
+        avatarUrl={userInfo?.avatar_url}
+        onSaved={(user) => setUserInfo(user)}
+      />
     </div>
+  );
+
+  return chatUserId !== null ? (
+    <ChatProvider key={chatUserId} userId={chatUserId}>
+      {page}
+    </ChatProvider>
+  ) : (
+    page
+  );
+}
+
+/** Sidebar link to the chat page, with the unread count when there is one. */
+function ChatNavLink({ active, onNavigate }: { active: boolean; onNavigate: () => void }) {
+  const chat = useOptionalChat();
+  const unread = chat?.unreadTotal ?? 0;
+  return (
+    <Link
+      href="/chat"
+      onClick={onNavigate}
+      className={cn(
+        "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+        active
+          ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <MessagesSquare
+        className={cn(
+          "size-4 transition-transform duration-150",
+          active ? "text-white" : "text-muted-foreground group-hover:text-foreground",
+        )}
+        aria-hidden="true"
+      />
+      <span className="flex-1">Chat</span>
+      {unread ? (
+        <span
+          className={cn(
+            "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold",
+            active ? "bg-white text-[#0d47a1]" : "bg-[#0d47a1] text-white",
+          )}
+        >
+          <span className="sr-only">{unread} unread</span>
+          <span aria-hidden="true">{unread > 99 ? "99+" : unread}</span>
+        </span>
+      ) : null}
+    </Link>
   );
 }

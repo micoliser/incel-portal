@@ -1,10 +1,9 @@
 """
-ASGI config for portalapi project.
+ASGI entry point.
 
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+The REST API runs under gunicorn (WSGI). The realtime app runs this module
+under uvicorn: plain HTTP is still handed to Django, and /ws/chat/ is the
+chat WebSocket (chat/consumers.py).
 """
 
 import os
@@ -13,4 +12,17 @@ from django.core.asgi import get_asgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'portalapi.settings')
 
-application = get_asgi_application()
+# Django must be set up before anything imports models.
+django_asgi_app = get_asgi_application()
+
+from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
+from django.urls import path  # noqa: E402
+
+from chat.consumers import ChatConsumer  # noqa: E402
+
+application = ProtocolTypeRouter(
+    {
+        'http': django_asgi_app,
+        'websocket': URLRouter([path('ws/chat/', ChatConsumer.as_asgi())]),
+    }
+)

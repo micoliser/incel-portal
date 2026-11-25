@@ -3,6 +3,8 @@
 A resource is a `GenericViewSet` plus only the mixins it needs, so nothing is
 exposed by accident (the default `ModelViewSet` offers every action, including
 PUT and DELETE). Changes are partial updates (PATCH); no resource accepts PUT.
+The only PUTs in the API set a single value you own (your profile photo,
+your reaction); see docs/TECHNICAL_DOCUMENTATION.md, section 6.
 """
 
 from rest_framework import mixins

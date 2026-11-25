@@ -50,6 +50,24 @@ export async function passwordLinkFor(address: string): Promise<string> {
   return link as string;
 }
 
+/** The newest chat reset code emailed to the address (it is in the subject). */
+export async function chatResetCodeFor(address: string): Promise<string> {
+  let code: string | undefined;
+  await expect
+    .poll(
+      () => {
+        code = messagesTo(address)
+          .map((message) => message.match(/^Subject: Your chat reset code: ([0-9A-Z]{8})\r?$/m)?.[1])
+          .filter(Boolean)
+          .at(-1);
+        return code;
+      },
+      { message: `a chat reset code should be emailed to ${address}` },
+    )
+    .toBeTruthy();
+  return code as string;
+}
+
 /** Follow the newest password link sent to the address and choose a password. */
 export async function setPasswordFromEmail(page: Page, address: string, password: string) {
   await page.goto(await passwordLinkFor(address));

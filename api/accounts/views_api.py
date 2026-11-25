@@ -27,17 +27,21 @@ from accounts.serializers import (
     PasswordResetValidateSerializer,
     RefreshTokenBodySerializer,
     UpdateAdminUserSerializer,
+    ProfilePhotoSerializer,
+    ProfilePhotoUploadUrlSerializer,
     UserWithProfileSerializer,
     with_profile,
 )
 from accounts.services import (
     LoginGuard,
     burn_password_check,
+    check_signed_in_password,
     revoke_user_sessions,
     send_account_setup_link,
     send_admin_password_reset_link,
     send_self_service_reset_link,
     should_log_unknown_login,
+    tries_left_text,
     user_for_password_link,
 )
 from audit import log_audit
@@ -47,7 +51,7 @@ from common.authentication import (
     PublicEndpointAuthentication,
     ServiceApiKeyAuthentication,
 )
-from common.exceptions import AccountLocked, Conflict
+from common.exceptions import AccountLocked, Conflict, ServiceUnavailable
 from common.network import client_ip
 from common.pagination import paginate
 from common.params import bool_param, uuid_param
@@ -146,7 +150,7 @@ class LoginView(APIView):
 
         guard = LoginGuard(email, ip)
         if guard.is_locked():
-            raise AccountLocked(wait=settings.LOGIN_LOCKOUT_SECONDS)
+            raise AccountLocked(wait=guard.seconds_left())
 
         user = User.objects.filter(email__iexact=email).first()
         if user is None:
@@ -158,9 +162,10 @@ class LoginView(APIView):
                     target_type='User',
                     metadata={'email': email},
                 )
-            raise AuthenticationFailed(
-                {'detail': 'Invalid credentials.', 'attempts_remaining': guard.record_failure()}
-            )
+            left = guard.record_failure()
+            if left <= 0:
+                raise AccountLocked(wait=guard.seconds_left())
+            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': left})
 
         # The password is checked before the account status, so only someone
         # who knows the password learns that an account is disabled.
@@ -172,9 +177,10 @@ class LoginView(APIView):
                 target_id=user.id,
                 metadata={'email': email},
             )
-            raise AuthenticationFailed(
-                {'detail': 'Invalid credentials.', 'attempts_remaining': guard.record_failure()}
-            )
+            left = guard.record_failure()
+            if left <= 0:
+                raise AccountLocked(wait=guard.seconds_left())
+            raise AuthenticationFailed({'detail': 'Invalid credentials.', 'attempts_remaining': left})
 
         if not user.is_active:
             log_audit(
@@ -323,16 +329,11 @@ class ChangePasswordView(APIView):
         old_password = serializer.validated_data['old_password']
         new_password = serializer.validated_data['new_password']
 
-        if not request.user.check_password(old_password):
-            log_audit(
-                action=AuditAction.AUTH_PASSWORD_CHANGE_FAILED,
-                request=request,
-                actor_user=request.user,
-                target_type='User',
-                target_id=request.user.id,
-                metadata={'reason': 'incorrect_old_password'},
-            )
-            raise ValidationError('Old password is incorrect.')
+        left = check_signed_in_password(
+            request, old_password, audit_action=AuditAction.AUTH_PASSWORD_CHANGE_FAILED, where='change_password'
+        )
+        if left is not None:
+            raise ValidationError(f'Old password is incorrect. {tries_left_text(left)}')
 
         request.user.set_password(new_password)
         request.user.save(update_fields=['password'])
@@ -490,6 +491,72 @@ class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        return Response(UserWithProfileSerializer(request.user).data)
+
+
+class MeProfilePhotoUploadUrlView(APIView):
+    """A signed link to upload a new profile picture straight to storage."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'uploads'
+
+    def post(self, request):
+        from accounts.s3 import ProfilePhotoError, generate_profile_photo_upload_url
+
+        serializer = ProfilePhotoUploadUrlSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if _profile_or_none(request.user) is None:
+            raise ValidationError('This account has no staff profile to add a picture to.')
+        try:
+            payload = generate_profile_photo_upload_url(
+                user_id=request.user.id, content_type=serializer.validated_data['content_type']
+            )
+        except ProfilePhotoError as exc:
+            raise ServiceUnavailable(str(exc))
+        return Response(payload)
+
+
+class MeProfilePhotoView(APIView):
+    """PUT: use an uploaded picture (checked in storage first). DELETE: back to initials."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'uploads'
+
+    def put(self, request):
+        from accounts.s3 import PROFILE_PHOTO_MAX_SIZE, PROFILE_PHOTO_TYPES, delete_profile_photo, own_photo_key
+        from common.uploads import checked_upload
+
+        serializer = ProfilePhotoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        url = serializer.validated_data['avatar_url']
+        profile = _profile_or_none(request.user)
+        if profile is None:
+            raise ValidationError('This account has no staff profile to add a picture to.')
+        key = own_photo_key(url, request.user.id)
+        if key is None:
+            raise ValidationError({'avatar_url': ['Upload the picture through the portal.']})
+        checked_upload(key, field='avatar_url', max_size=PROFILE_PHOTO_MAX_SIZE, allowed_types=PROFILE_PHOTO_TYPES)
+
+        previous = profile.avatar_url
+        profile.avatar_url = url
+        profile.save(update_fields=['avatar_url', 'updated_at'])
+        if previous and previous != url:
+            delete_profile_photo(previous, request.user.id)
+        log_audit(action=AuditAction.PROFILE_PHOTO_UPDATED, request=request, target_type='User', target_id=request.user.id)
+        return Response(UserWithProfileSerializer(request.user).data)
+
+    def delete(self, request):
+        from accounts.s3 import delete_profile_photo
+
+        profile = _profile_or_none(request.user)
+        if profile is not None and profile.avatar_url:
+            previous = profile.avatar_url
+            profile.avatar_url = ''
+            profile.save(update_fields=['avatar_url', 'updated_at'])
+            delete_profile_photo(previous, request.user.id)
+            log_audit(action=AuditAction.PROFILE_PHOTO_REMOVED, request=request, target_type='User', target_id=request.user.id)
         return Response(UserWithProfileSerializer(request.user).data)
 
 

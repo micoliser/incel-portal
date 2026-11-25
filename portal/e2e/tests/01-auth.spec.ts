@@ -57,6 +57,24 @@ test.describe("signing in", () => {
     await expect(signInError(page)).toContainText("(8 attempts remaining before lockout.)");
   });
 
+  test("locks out after ten wrong passwords and counts the wait down", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("textbox", { name: "Company Email Address" }).fill(`locked-${Date.now()}@e2e.test`);
+    await page.getByRole("textbox", { name: "Password" }).fill("Wrong-Password-1");
+    const submit = page.getByRole("button", { name: "Sign in to Workspace" });
+    for (let attempt = 1; attempt < 10; attempt++) {
+      await submit.click();
+      await expect(signInError(page)).toContainText(`(${10 - attempt} attempt`);
+    }
+    await submit.click();
+
+    const notice = page.getByRole("alert").filter({ hasText: "Too many wrong passwords." });
+    await expect(notice).toContainText(/Try again in 1[45]:\d\d\./);
+    const first = await notice.innerText();
+    await expect.poll(async () => notice.innerText(), { timeout: 5_000 }).not.toBe(first);
+    await expect(submit).toBeDisabled();
+  });
+
   test("rejects a wrong password, then accepts the right one", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("textbox", { name: "Company Email Address" }).fill(USERS.warehouse.email);

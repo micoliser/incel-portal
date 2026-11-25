@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "components/chat/message-thread.tsx"
+        ],
+        "createdAt": "2026-11-19T10:41:32.341Z",
+        "reason": "Claude: 2px bar on a quoted reply inside a chat bubble is the standard chat reply-quote convention, not a card accent"
+      }
+    ]
+  }
+}

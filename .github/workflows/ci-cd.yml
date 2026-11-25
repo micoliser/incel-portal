@@ -137,6 +137,7 @@ jobs:
         working-directory: portal
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ inputs.frontend_api_base_url || 'https://workspaceapi.incelgroup.com/api/v1' }}
+          NEXT_PUBLIC_CHAT_WS_URL: wss://workspacews.incelgroup.com
         run: npm run build
 
   e2e-tests:
@@ -257,6 +258,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=${{ inputs.frontend_api_base_url || 'https://workspaceapi.incelgroup.com/api/v1' }}
+            NEXT_PUBLIC_CHAT_WS_URL=wss://workspacews.incelgroup.com
           tags: |
             ghcr.io/${{ env.GHCR_OWNER }}/incel-portal-frontend:${{ env.IMAGE_TAG }}
             ghcr.io/${{ env.GHCR_OWNER }}/incel-portal-frontend:${{ env.LATEST_TAG }}
@@ -293,6 +295,14 @@ jobs:
           server: ${{ env.CAPROVER_SERVER }}
           app: incel-portal-celery-beat
           token: ${{ secrets.CAPROVER_TOKEN_CELERY_BEAT }}
+          image: ghcr.io/${{ env.GHCR_OWNER }}/incel-portal-backend:${{ env.IMAGE_TAG }}
+
+      - name: Deploy Realtime (chat WebSockets)
+        uses: caprover/deploy-from-github@v1.1.2
+        with:
+          server: ${{ env.CAPROVER_SERVER }}
+          app: incel-portal-realtime
+          token: ${{ secrets.CAPROVER_TOKEN_REALTIME }}
           image: ghcr.io/${{ env.GHCR_OWNER }}/incel-portal-backend:${{ env.IMAGE_TAG }}
 
       - name: Deploy Frontend

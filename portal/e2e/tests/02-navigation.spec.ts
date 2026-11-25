@@ -2,13 +2,12 @@ import { USERS, type Role } from "../support/seed";
 import { expect, test } from "../support/fixtures";
 import { header, main, sidebar } from "../support/ui";
 
-// Chat carries a "Soon" tag until it ships.
-const COMMON_LINKS: Array<string | RegExp> = [
-  "Dashboard", "Tasks", "My To-Dos", "Goals", /^Chat\s*Soon$/, "Reports", "Summaries", "Applications", "My Assets", "Support",
+const COMMON_LINKS = [
+  "Dashboard", "Tasks", "My To-Dos", "Goals", "Chat", "Reports", "Summaries", "Applications", "My Assets", "Support",
 ];
 const ADMIN_LINKS = [...COMMON_LINKS, "Users", "Departments", "Inventory", "Organization", "Logs"];
 
-const NAVIGATION: Array<{ role: Role; links: Array<string | RegExp> }> = [
+const NAVIGATION: Array<{ role: Role; links: string[] }> = [
   { role: "staff", links: COMMON_LINKS },
   { role: "manager", links: COMMON_LINKS },
   { role: "itmanager", links: [...COMMON_LINKS, "Inventory"] },
@@ -66,11 +65,11 @@ test.describe("pages a staff member may not open", () => {
 test.describe("sidebar links", () => {
   test.use({ role: "staff" });
 
-  const DESTINATIONS: Array<[string | RegExp, string, string]> = [
+  const DESTINATIONS: Array<[string, string, string]> = [
     ["Tasks", "/tasks", "Tasks"],
     ["My To-Dos", "/todos", "My To-Dos"],
     ["Goals", "/goals", "Goals"],
-    [/^Chat/, "/chat", "Chat"],
+    ["Chat", "/chat", "Chat"],
     ["Reports", "/reports", "Reports"],
     ["Summaries", "/summaries", "Summaries"],
     ["Applications", "/applications", "Applications"],
@@ -81,18 +80,8 @@ test.describe("sidebar links", () => {
   for (const [link, url] of DESTINATIONS) {
     test(`"${link}" opens ${url}`, async ({ page }) => {
       await page.goto("/dashboard");
-      await sidebar(page).getByRole("link", typeof link === "string" ? { name: link, exact: true } : { name: link }).click();
+      await sidebar(page).getByRole("link", { name: link, exact: true }).click();
       await expect(page).toHaveURL(url);
     });
   }
-});
-
-test.describe("chat teaser", () => {
-  test.use({ role: "staff" });
-
-  test("says chat is coming soon", async ({ page }) => {
-    await page.goto("/chat");
-    await expect(main(page).getByRole("heading", { name: "Chat is coming soon." })).toBeVisible();
-    await expect(main(page).getByText("Private by design")).toBeVisible();
-  });
 });

@@ -68,6 +68,7 @@ type User = {
   team_name?: string | null;
   role_id?: string | null;
   is_active?: boolean;
+  avatar_url?: string | null;
 };
 
 type Team = { id: string; name: string; code: string };
@@ -752,8 +753,13 @@ export default function UsersPage() {
                           {/* 1. User Column (Avatar + Name + Email) */}
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-3">
-                              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#0d47a1]/10 text-xs font-bold text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
-                                {initials}
+                              <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d47a1]/10 text-xs font-bold text-[#0d47a1] dark:bg-[#0d47a1]/20 dark:text-[#38bdf8]">
+                                {user.avatar_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={user.avatar_url} alt="" loading="lazy" className="size-full object-cover" />
+                                ) : (
+                                  initials
+                                )}
                               </div>
                               <div className="min-w-0">
                                 <p className="font-semibold text-foreground group-hover:text-[#0d47a1] dark:group-hover:text-[#38bdf8] transition-colors truncate">
