@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import time
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -143,33 +144,55 @@ def burn_password_check(password):
 
 
 class LoginGuard:
-    """Counts failed sign-ins for one email from one client address.
+    """Counts wrong passwords for one email from one client address.
 
     The pair is locked out after LOGIN_MAX_ATTEMPTS failures. Failures from
-    every address also count towards a higher per-account ceiling.
+    every address also count towards a higher per-account ceiling. Sign-in and
+    every password check made by a signed-in user (chat, changing the
+    password) share these counters, so guesses cannot be spread across them.
     """
 
     def __init__(self, email, ip):
-        digest = hashlib.sha256(email.encode('utf-8')).hexdigest()[:32]
+        digest = hashlib.sha256(email.strip().lower().encode('utf-8')).hexdigest()[:32]
         pair = f'{digest}:{ip or "unknown"}'
         self._fails_key = f'login_fails:{pair}'
         self._lock_key = f'login_lock:{pair}'
         self._account_key = f'login_account_fails:{digest}'
+        self._account_until_key = f'login_account_until:{digest}'
+
+    @staticmethod
+    def _left(until, fallback):
+        # Locks written before the expiry time was stored hold True.
+        if until is True or not isinstance(until, (int, float)):
+            return fallback
+        return max(0, int(until - time.time() + 0.999))
+
+    def seconds_left(self):
+        """How long until this pair may try again; 0 when not locked."""
+        left = 0
+        until = cache.get(self._lock_key)
+        if until:
+            left = self._left(until, settings.LOGIN_LOCKOUT_SECONDS)
+        if cache.get(self._account_key, 0) >= settings.LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR:
+            left = max(left, self._left(cache.get(self._account_until_key), 3600))
+        return left
 
     def is_locked(self):
-        if cache.get(self._lock_key):
-            return True
-        return cache.get(self._account_key, 0) >= settings.LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR
+        return self.seconds_left() > 0
 
     def record_failure(self):
         """Record a failure and return how many attempts are left before lockout."""
+        now = time.time()
         account_fails = cache.get(self._account_key, 0) + 1
         cache.set(self._account_key, account_fails, 3600)
+        cache.set(self._account_until_key, now + 3600, 3600)
 
         fails = cache.get(self._fails_key, 0) + 1
         if fails >= settings.LOGIN_MAX_ATTEMPTS:
-            cache.set(self._lock_key, True, settings.LOGIN_LOCKOUT_SECONDS)
+            cache.set(self._lock_key, now + settings.LOGIN_LOCKOUT_SECONDS, settings.LOGIN_LOCKOUT_SECONDS)
             cache.delete(self._fails_key)
+            return 0
+        if account_fails >= settings.LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR:
             return 0
 
         cache.set(self._fails_key, fails, settings.LOGIN_LOCKOUT_SECONDS)
@@ -177,6 +200,42 @@ class LoginGuard:
 
     def record_success(self):
         cache.delete(self._fails_key)
+
+
+def check_signed_in_password(request, password, *, audit_action, where):
+    """Check a signed-in user's portal password under the sign-in lockout.
+
+    Returns None when the password is right, otherwise how many tries are left.
+    Raises AccountLocked while locked, including straight after the try that
+    used up the last attempt, so the portal can count down at once.
+    """
+    from audit import log_audit
+    from common.exceptions import AccountLocked
+    from common.network import client_ip
+
+    user = request.user
+    guard = LoginGuard(user.email, client_ip(request))
+    if guard.is_locked():
+        raise AccountLocked(wait=guard.seconds_left())
+    if user.check_password(password):
+        guard.record_success()
+        return None
+    log_audit(
+        action=audit_action,
+        request=request,
+        actor_user=user,
+        target_type='User',
+        target_id=user.id,
+        metadata={'where': where},
+    )
+    left = guard.record_failure()
+    if left <= 0:
+        raise AccountLocked(wait=guard.seconds_left())
+    return left
+
+
+def tries_left_text(left):
+    return f'{left} {"try" if left == 1 else "tries"} left before a lockout.'
 
 
 def should_log_unknown_login(email, ip):

@@ -21,7 +21,7 @@ export async function sessionFor(role: Role): Promise<StorageState> {
   const response = await api.post("auth/login", {
     data: { email: USERS[role].email, password: PASSWORD },
   });
-  expect(response.ok(), `login as ${role} should succeed`).toBeTruthy();
+  expect(response.ok(), `login as ${role} should succeed (status ${response.status()})`).toBeTruthy();
   const state = await api.storageState();
   await api.dispose();
 

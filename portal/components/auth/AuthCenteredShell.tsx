@@ -112,7 +112,7 @@ export function AuthCenteredShell({ children }: AuthCenteredShellProps) {
       <footer className="relative z-10 py-6 text-center text-xs text-muted-foreground space-y-1.5">
         <p className="flex items-center justify-center gap-1.5">
           <Lock className="size-3 text-muted-foreground" />
-          <span>Protected by 256-bit security encryption & audit verification</span>
+          <span>Protected by automated inactivity lockout & audit monitoring</span>
         </p>
         <p>
           Incel Group &copy; {new Date().getFullYear()}. All rights reserved.

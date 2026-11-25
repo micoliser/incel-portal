@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from common.users import display_name
-from emails.config import EmailType
+from emails.config import EmailConfig, EmailType
 from emails.services.base_email_service import BaseEmailService
 from emails.services.daily_report_emails import get_portal_base_url
 
@@ -73,7 +73,7 @@ class SummaryEmailManager:
                 user.email,
                 summary_data.get('week_start_date'),
             )
-        else:
+        elif EmailConfig.is_enabled():
             logger.error(
                 "Weekly summary email failed for recipient %s, week %s",
                 user.email,
@@ -150,7 +150,7 @@ class SummaryEmailManager:
                 recipient_email,
                 summary_week,
             )
-        else:
+        elif EmailConfig.is_enabled():
             logger.error(
                 "Summary shared email failed for recipient %s, week %s",
                 recipient_email,

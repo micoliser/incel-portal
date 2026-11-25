@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "e2e/.report/**",
     "e2e/.results/**",
     "e2e/.mail/**",
+    // libsodium builds copied in by scripts/copy-sodium.mjs (not our code).
+    "public/vendor/**",
   ]),
 ]);
 

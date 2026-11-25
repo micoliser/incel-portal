@@ -141,6 +141,72 @@ class LoginProtectionTests(SecurityTestCase):
                 self.assertEqual(throttle.get_ident(request_a), '203.0.113.9')
 
 
+class SignedInPasswordLockoutTests(SecurityTestCase):
+    """The chat password step and changing the password share the sign-in lockout."""
+
+    CHAT = '/api/v1/chat/account/check-password'
+
+    def setUp(self):
+        super().setUp()
+        self.client.credentials(**self.auth_headers_for(self.staff_user))
+
+    def check(self, password):
+        return self.client.post(self.CHAT, {'password': password}, format='json')
+
+    def change(self, old):
+        return self.client.post(
+            reverse('auth-change-password'),
+            {'old_password': old, 'new_password': 'AnotherStrongPass456!', 'confirm_password': 'AnotherStrongPass456!'},
+            format='json',
+        )
+
+    @override_settings(LOGIN_MAX_ATTEMPTS=3)
+    def test_chat_password_check_locks_out_and_counts_down(self):
+        first = self.check('wrong')
+        self.assertEqual(first.status_code, 400)
+        self.assertIn('2 tries left', str(first.data))
+        self.assertTrue(AuditLog.objects.filter(action='AUTH_PASSWORD_CHECK_FAILED', actor_user=self.staff_user).exists())
+
+        self.check('wrong')
+        locked = self.check('wrong')
+        self.assertEqual(locked.status_code, 403)
+        self.assertEqual(locked.data['error']['type'], 'account_locked')
+        retry_after = int(locked.data['error']['metadata']['retry_after'])
+        self.assertTrue(0 < retry_after <= 15 * 60)
+        self.assertEqual(int(locked.headers['Retry-After']), retry_after)
+
+        # Even the right password is refused while locked, and so is signing in.
+        self.assertEqual(self.check(STAFF_PASSWORD).status_code, 403)
+        self.client.credentials()
+        self.assertEqual(self.login().status_code, 403)
+
+    @override_settings(LOGIN_MAX_ATTEMPTS=4)
+    def test_failures_add_up_across_sign_in_chat_and_change_password(self):
+        self.login(password='wrong')
+        self.check('wrong')
+        self.assertIn('1 try left', str(self.change('wrong').data))
+        self.assertEqual(self.check('wrong').status_code, 403)
+        self.assertEqual(self.change(STAFF_PASSWORD).status_code, 403)
+
+    @override_settings(LOGIN_MAX_ATTEMPTS=3)
+    def test_the_wait_shrinks_as_time_passes(self):
+        from unittest.mock import patch
+
+        for _ in range(3):
+            self.check('wrong')
+        start = int(self.check(STAFF_PASSWORD).data['error']['metadata']['retry_after'])
+        import time as real_time
+
+        with patch('accounts.services.time.time', return_value=real_time.time() + 120):
+            later = int(self.check(STAFF_PASSWORD).data['error']['metadata']['retry_after'])
+        self.assertLessEqual(later, start - 119)
+
+    def test_right_password_clears_the_count(self):
+        self.check('wrong')
+        self.assertEqual(self.check(STAFF_PASSWORD).status_code, 204)
+        self.assertIn('9 tries left', str(self.check('wrong').data))
+
+
 class CookieAndOriginTests(SecurityTestCase):
     @override_settings(DEBUG=False)
     def test_cookies_are_secure_outside_debug(self):

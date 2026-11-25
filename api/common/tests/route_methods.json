@@ -105,6 +105,185 @@
       "post"
     ]
   },
+  "api/v1/chat/account": {
+    "name": "chat-account",
+    "methods": [
+      "get",
+      "patch",
+      "post"
+    ]
+  },
+  "api/v1/chat/account/check-password": {
+    "name": "chat-account-check-password",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/account/reset": {
+    "name": "chat-account-reset",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/account/reset/code": {
+    "name": "chat-account-reset-code",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/account/reset/code/check": {
+    "name": "chat-account-reset-code-check",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/attachments/{}/download": {
+    "name": "chat-attachment-download",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/chat/conversations": {
+    "name": "chat-conversations",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}": {
+    "name": "chat-conversation",
+    "methods": [
+      "get",
+      "patch"
+    ]
+  },
+  "api/v1/chat/conversations/{}/attachments": {
+    "name": "chat-conversation-attachments",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/attachments/forward": {
+    "name": "chat-conversation-attachments-forward",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/info": {
+    "name": "chat-group-info",
+    "methods": [
+      "patch"
+    ]
+  },
+  "api/v1/chat/conversations/{}/keys": {
+    "name": "chat-conversation-keys",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/members": {
+    "name": "chat-group-members",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/members/{}": {
+    "name": "chat-group-member",
+    "methods": [
+      "delete",
+      "patch"
+    ]
+  },
+  "api/v1/chat/conversations/{}/messages": {
+    "name": "chat-conversation-messages",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/owner": {
+    "name": "chat-group-owner",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/photo": {
+    "name": "chat-group-photo",
+    "methods": [
+      "get",
+      "post"
+    ]
+  },
+  "api/v1/chat/conversations/{}/read": {
+    "name": "chat-conversation-read",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/groups": {
+    "name": "chat-groups",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/link-preview": {
+    "name": "chat-link-preview",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/messages/{}": {
+    "name": "chat-message",
+    "methods": [
+      "delete",
+      "patch"
+    ]
+  },
+  "api/v1/chat/messages/{}/reaction": {
+    "name": "chat-message-reaction",
+    "methods": [
+      "delete",
+      "put"
+    ]
+  },
+  "api/v1/chat/people": {
+    "name": "chat-people",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/chat/people/{}/invite": {
+    "name": "chat-people-invite",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/session-secrets": {
+    "name": "chat-session-secrets",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/chat/session-secrets/{}": {
+    "name": "chat-session-secret",
+    "methods": [
+      "delete",
+      "get"
+    ]
+  },
+  "api/v1/chat/unread-count": {
+    "name": "chat-unread-count",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/chat/ws-ticket": {
+    "name": "chat-ws-ticket",
+    "methods": [
+      "post"
+    ]
+  },
   "api/v1/external/users": {
     "name": "external-users-list",
     "methods": [
@@ -221,6 +400,19 @@
     "name": "me-permissions",
     "methods": [
       "get"
+    ]
+  },
+  "api/v1/me/profile-photo": {
+    "name": "me-profile-photo",
+    "methods": [
+      "delete",
+      "put"
+    ]
+  },
+  "api/v1/me/profile-photo/upload-url": {
+    "name": "me-profile-photo-upload-url",
+    "methods": [
+      "post"
     ]
   },
   "api/v1/me/recent-applications": {

@@ -68,6 +68,7 @@ api/
 ├── support/              support requests; services.py (routing, transitions)
 ├── inventory/            categories, items, assignments, maintenance logs
 ├── notifications/        Notification, PushSubscription, services.py, tasks.py
+├── chat/                 encrypted chat: models, services.py, consumers.py (WebSocket), realtime.py
 ├── emails/               templates, BaseEmailService, EmailLog, signals
 ├── common/
 │   ├── authentication.py cookie JWT auth with origin check, service-key auth
@@ -156,7 +157,8 @@ are deleted after `AUDIT_AUTH_FAILURE_RETENTION_DAYS` (90).
 
 - **Views.** A resource is a `GenericViewSet` (from `common.viewsets`) with
   only the mixins it needs, or actions written out. Changes are PATCH
-  (`PartialUpdateModelMixin`); nothing accepts PUT, and there is no
+  (`PartialUpdateModelMixin`); no resource accepts PUT (the only PUTs set a
+  single value you own, see section 6), and there is no
   `ModelViewSet` or `http_method_names`. Permissions and rate limits that
   differ per action go in `get_permissions()` and `get_throttles()`, keyed on
   `self.action`. Viewsets go on `ApiRouter`, or, where route names or typed
@@ -206,7 +208,15 @@ are deleted after `AUDIT_AUTH_FAILURE_RETENTION_DAYS` (90).
    failures (`LOGIN_MAX_ATTEMPTS`) lock that pair for 15 minutes
    (`LOGIN_LOCKOUT_SECONDS`); 50 failures an hour across all addresses
    (`LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR`) lock the account. Locked returns
-   403 `account_locked` with `Retry-After`.
+   403 `account_locked` with `Retry-After` and `error.metadata.retry_after`
+   (seconds left, which the portal counts down live; `lib/lockout.ts`). The
+   try that uses up the last attempt already returns the lockout.
+   Signed-in password checks share the same counters
+   (`check_signed_in_password`): the chat password step
+   (`/chat/account/check-password`, audited as `AUTH_PASSWORD_CHECK_FAILED`)
+   and changing the password (`AUTH_PASSWORD_CHANGE_FAILED`). Their wrong
+   answers say how many tries are left, and a lock from any of the three
+   applies to all of them.
 2. Unknown email: a password hash is computed anyway (equal timing), 401
    "Invalid credentials." with `error.metadata.attempts_remaining`. Audit rows
    for unknown emails are limited to one per email and address every 10
@@ -330,7 +340,10 @@ departments. An inactive application cannot be opened.
   (`APPEND_SLASH = False`; a trailing slash is a 404).
 - **JSON only** in request bodies.
 - **Methods**: `GET` read, `POST` create or action, `PATCH` partial update,
-  `DELETE` remove. No `PUT` anywhere.
+  `DELETE` remove. `PUT` only sets a single value that belongs to the caller,
+  replacing it whole: `PUT /me/profile-photo` and
+  `PUT /chat/messages/{id}/reaction`. A resource with several fields is
+  changed with `PATCH`, never `PUT`.
 - **Parameters**: free text is `search`; filters on related records are
   `<name>_id`; several values are comma-separated
   (`?status=pending,in_progress`); leave a filter out for "all" (no `all`
@@ -396,6 +409,8 @@ All paths are under `/api/v1`. Generated from the URL configuration on
 | GET | `/me/permissions` | `{is_superuser, has_global_access, role_code, department_id}` |
 | GET | `/me/recent-applications` | last four opened |
 | GET | `/me/inventory` | assets assigned to me |
+| POST | `/me/profile-photo/upload-url` | where to upload a new profile photo |
+| PUT, DELETE | `/me/profile-photo` | set or replace your profile photo / remove it |
 
 ### Users
 
@@ -544,6 +559,49 @@ All paths are under `/api/v1`. Generated from the URL configuration on
 | GET, POST | `/notifications/subscriptions` | POST upsert: 201 new, 200 existing |
 | DELETE | `/notifications/subscriptions/{subscription_id}` | |
 
+### Chat
+
+End-to-end encrypted; every encrypted value is base64 text the server cannot
+open. Full design: `docs/CHAT_SPEC.md`.
+
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST, PATCH | `/chat/account` | own key: status; first setup (409 if set up); replace the PIN and/or recovery copy |
+| POST | `/chat/account/check-password` | 204 if it is the user's portal password, else 400 with tries left; shares the sign-in lockout (403 `account_locked`) |
+| POST | `/chat/account/reset/code` | email an 8-character reset code (15 minutes, one per minute, five tries) |
+| POST | `/chat/account/reset/code/check` | check the reset code before the new PIN is chosen |
+| POST | `/chat/account/reset` | start over with a new key pair (needs the emailed `code`); adds a "reset" system message to each conversation |
+| POST | `/chat/session-secrets` | `{id, secret}` that seals this browser's copy of the unlocked key (12 h) |
+| GET, DELETE | `/chat/session-secrets/{id}` | 404 when gone (unlock again) |
+| POST | `/chat/ws-ticket` | single-use WebSocket ticket, 30 s |
+| GET | `/chat/people?search=` | active users with `chat_ready`, public key, online |
+| POST | `/chat/people/{user_id}/invite` | invite someone without chat: opens the waiting conversation (returned) with an "invitation sent" note, notifies and emails them; again = a reminder, once per pair per 24 h |
+| GET | `/chat/unread-count` | sidebar badge |
+| POST | `/chat/link-preview` | title, description and thumbnail for a link being written (public addresses only; nothing stored) |
+| POST | `/chat/groups` | create a group (browser-made id, encrypted details, keys for members with chat; others pending) |
+| PATCH | `/chat/conversations/{id}/info` | admins change the encrypted group name, description or photo |
+| GET, POST | `/chat/conversations/{id}/photo` | group photo download link / upload link |
+| POST | `/chat/conversations/{id}/members` | admins add people with a new key version |
+| PATCH, DELETE | `/chat/conversations/{id}/members/{user_id}` | make admin (admins) or not (owner); remove members (admins) or admins (owner); the owner cannot be removed; leave (yourself) |
+| POST | `/chat/conversations/{id}/owner` | the owner hands the group over |
+| GET, POST | `/chat/conversations` | list one page (`limit`, default 30; `before` cursor; returns `has_more`, `next`, `unread_total`); start a direct chat with wrapped keys (200 if it exists) |
+| GET, PATCH | `/chat/conversations/{id}` | one conversation; `muted_until`, `archived` |
+| GET, POST | `/chat/conversations/{id}/keys` | own wrapped keys; add the next key version (409 if not next) |
+| GET, POST | `/chat/conversations/{id}/messages` | `before_seq`, `after_seq`, `limit` (≤100); send (idempotent on the client's message id) |
+| POST | `/chat/conversations/{id}/read` | `{seq}`, only moves forward |
+| POST | `/chat/conversations/{id}/attachments` | reserve an encrypted upload, returns presigned PUT URLs |
+| PATCH, DELETE | `/chat/messages/{id}` | edit (sender, 30 min, `revision` = current + 1); `?scope=everyone` (sender, 30 min) or `?scope=me` |
+| POST | `/chat/conversations/{id}/attachments/forward` | copy an encrypted file from another of your chats into this one, for forwarding |
+| PUT, DELETE | `/chat/messages/{id}/reaction` | set or replace your reaction (encrypted emoji, newest key version) / remove it |
+| GET | `/chat/attachments/{id}/download?part=file\|thumb` | presigned GET for the encrypted bytes |
+
+Errors with their own type: `key_outdated` (409: refresh keys, make a new
+version, resend) and `chat_not_set_up` (403). Non-participants get 404.
+
+WebSocket (realtime app): `wss://<realtime host>/ws/chat/?ticket=…`. Origin
+must be in `CORS_ALLOWED_ORIGINS`; close codes 4001 (ticket or account) and
+4003 (origin). Events are listed in `docs/CHAT_SPEC.md` 4.3.
+
 Outside `/api/v1`: `GET /health/` (200 `ok`, 200 `degraded` when the cache is
 unreachable, 503 when the database is) and `/admin/` (Django admin, IP
 allowlist).
@@ -657,6 +715,37 @@ allowlist).
 - Changing an application's departments emails the departments that gained
   access and the people who lost it.
 
+### 8.8 Chat
+
+- Anyone active can message anyone active who has set up chat. One direct
+  conversation per pair (`Conversation.direct_key`).
+- The server never receives plaintext. Keys: one X25519 pair per user; the
+  private key is stored only encrypted: once with a 6-digit chat PIN inside a
+  second layer made from the portal password (both Argon2id, derived in the
+  browser), and once with a recovery code. The sign-in form derives the
+  password layer's secret and keeps it sealed for the session; the portal's
+  change-password dialog moves that layer to the new password. After a reset
+  by link or admin, the recovery code is needed once. Each conversation has versioned symmetric keys, each
+  wrapped for every participant. Messages: XChaCha20-Poly1305 with associated
+  data `conversation|message|sender|key version|revision`. Files: libsodium
+  secretstream, 64 KiB chunks, the file key inside the message.
+- A message must use the newest key version, and that version must have been
+  made for every participant's current key; otherwise `key_outdated`.
+- Edit and delete for everyone: sender only, 30 minutes from sending. Delete
+  for everyone clears the ciphertext and removes the files from storage;
+  everyone sees "This message was deleted". Delete for me: any time, per user
+  (`HiddenMessage`).
+- A deactivated user's conversations stay readable; nobody can send to them.
+- Invitations: inviting someone without chat creates the direct conversation
+  with no key and an `invite_sent` system message; sending is refused (403)
+  until every member has set up chat. Setting up chat adds `invite_accepted`
+  to each conversation the user was invited to and tells the members
+  (`key.changed`); the first sender then makes key version 1.
+- Push for a message goes only to recipients with no open socket and not
+  muted, says "New message", and creates no bell entry.
+- The audit log records chat setup, backup changes and resets, never message
+  activity.
+
 ## 9. File uploads
 
 Flow: the browser asks the API for a presigned PUT URL (`*-upload-url`),
@@ -696,6 +785,7 @@ write (in development every folder is under `development/`).
 | `tasks.check_due_todo_reminders` | every minute |
 | `tasks.send_eod_daily_reports` | 17:05 Monday–Friday |
 | `support.auto_close_resolved_requests` | 01:00 daily |
+| `chat.remove_unsent_attachments` | 03:00 daily (files reserved over a day ago and never sent) |
 | `accounts.flush_expired_tokens` | 02:00 daily |
 | `accounts.prune_auth_failure_audit_logs` | 02:30 daily |
 | `tasks.generate_weekly_summaries` | 00:00 Monday |
@@ -746,11 +836,19 @@ Types: `task_assigned`, `task_status_changed`, `task_comment`,
 `support_request_submitted`, `support_request_assigned`,
 `support_status_updated`, `support_comment_added`, `support_request_resolved`,
 `support_request_closed`, `todo_reminder`, `inventory_assigned`,
-`summary_shared`.
+`summary_shared`, `chat_nudge` (chat invitation; also emailed with
+`emails/chat/chat_invitation.html`).
+
+Chat messages are pushed with `notifications.services.push_to_user` (no
+`Notification` row); the payload has a per-conversation `tag`, so a new one
+replaces the last on the device.
 
 ## 11. Configuration reference
 
 All read in `api/portalapi/settings.py` from the environment or `api/.env`.
+Every variable, grouped by area with its default, is listed in
+`api/.env.example` (API) and `portal/.env.example` (web app); copy them to
+`api/.env` and `portal/.env` to start.
 
 ### Core
 
@@ -775,6 +873,7 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `DB_PASSWORD` | placeholder | required outside debug |
 | `CACHE_URL` | empty (memory) | Redis URL, a different database number from Celery |
 | `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | |
+| `CHANNEL_LAYER_URL` | empty (in-process) | Redis URL for chat WebSocket delivery, its own database number; required in production |
 | `CELERY_RESULT_BACKEND` | broker URL | |
 | `CELERY_TASK_SOFT_TIME_LIMIT`, `CELERY_TASK_TIME_LIMIT` | `540`, `600` | seconds |
 | `RECURRING_MAX_CATCH_UP_RUNS` | `1` | |
@@ -787,6 +886,7 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `LOGIN_MAX_ATTEMPTS` | `10` |
 | `LOGIN_LOCKOUT_SECONDS` | `900` |
 | `LOGIN_ACCOUNT_MAX_ATTEMPTS_PER_HOUR` | `50` |
+| `LOGIN_THROTTLE_RATE` | `25/minute` (per client address; the e2e server raises it) |
 | `PASSWORD_RESET_TIMEOUT` | `3600` |
 | `ACCOUNT_SETUP_LINK_TIMEOUT` | `259200` (72 h) |
 | `PASSWORD_RESET_EMAILS_PER_HOUR` | `3` |
@@ -820,6 +920,7 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `AWS_MAINTENANCE_ATTACHMENT_S3_PREFIX` | `maintenance-attachments` |
 | `AWS_INVENTORY_PHOTO_S3_PREFIX` | `inventory/photos` |
 | `AWS_APPLICATION_LOGO_S3_PREFIX` | `application-logos` |
+| `AWS_PROFILE_PHOTO_S3_PREFIX` | `profile-photos` |
 | `SUMMARY_PDF_EXPORT_S3_PREFIX` | `pdf-exports` |
 | `TASK_ATTACHMENT_MAX_SIZE` | 10 MB |
 | `TASK_ATTACHMENT_MAX_FILES` | `10` |
@@ -838,8 +939,17 @@ All read in `api/portalapi/settings.py` from the environment or `api/.env`.
 | `WEB_PUSH_TIMEOUT_SECONDS` | `10` |
 | `SUMMARY_SHARE_LINK_DAYS` | `30` |
 | `SUPPORT_AUTO_CLOSE_DAYS` | `7` |
+| `CHAT_ATTACHMENT_S3_PREFIX` | `chat-attachments` |
+| `CHAT_STORAGE_COPY` | `true` (forwarding copies encrypted files with S3 CopyObject; the AWS key needs read and write on the chat prefix) |
+| `CHAT_ATTACHMENT_MAX_SIZE` | 25 MB (original file) |
+| `CHAT_UPLOAD_URL_EXPIRES_IN`, `CHAT_DOWNLOAD_URL_EXPIRES_IN` | `900`, `300` seconds |
 
-Web app: `NEXT_PUBLIC_API_BASE_URL` (build time).
+Web app (build time): `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_CHAT_WS_URL`
+(the realtime app's origin, e.g. `wss://workspacews.incelgroup.com`; defaults
+to the API origin). `portal/next.config.ts` also reads `AWS_S3_BUCKET_NAME`,
+`AWS_S3_REGION_NAME`, `AWS_S3_CUSTOM_DOMAIN` and `AWS_S3_ENDPOINT_URL` when the
+server starts, to allow those hosts for `next/image`. The end-to-end variables
+(`E2E_*`) are in `portal/e2e/README.md` and `portal/.env.example`.
 
 ## 12. Frontend architecture
 
@@ -851,7 +961,8 @@ Web app: `NEXT_PUBLIC_API_BASE_URL` (build time).
   `/reports/subreports/[subreportId]`, `/reports/all`, `/summaries`,
   `/summaries/[id]/files`, `/organization-summary`, `/applications`,
   `/support`, `/support/[id]`, `/inventory`, `/inventory/[id]`,
-  `/inventory/maintenance`, `/my-assets`, `/users`, `/departments`, `/logs`.
+  `/inventory/maintenance`, `/my-assets`, `/users`, `/departments`, `/logs`,
+  `/chat`, `/chat/[conversationId]`.
 - **Layout** (`app/(portal)/layout.tsx`) loads `/me` and `/me/permissions`,
   guards admin-only routes, and builds the sidebar from the same flags.
 - **API client** (`lib/api-client.ts`): `withCredentials` (cookies); on a 401
@@ -871,6 +982,17 @@ Web app: `NEXT_PUBLIC_API_BASE_URL` (build time).
   The unread count is polled every 30 seconds only while the tab is visible;
   the Goals page refreshes when the tab comes back into view.
 - **Charts** (`recharts`) load on demand (`next/dynamic`) on the summary page.
+- **Chat**: `components/chat/chat-provider.tsx` sits in the portal layout and
+  owns the unlocked key, decrypted messages (memory only), the WebSocket
+  (`lib/chat/socket.ts`: ticket, 25 s ping, back-off reconnect, catch-up with
+  `after_seq`) and the drawer. The full page and the slide-up drawer
+  (`chat-drawer.tsx`, hidden on `/chat`) share its components. Encryption is
+  in `lib/chat/crypto.ts` (`libsodium-wrappers-sumo`); the unlocked key is kept
+  in IndexedDB sealed with a server session secret (`lib/chat/keystore.ts`)
+  and forgotten on sign-out before `/auth/logout` is called. The PIN screen
+  is `components/chat/pin-input.tsx` (six circles over one numeric input). Thumbnails are
+  made in the browser (`lib/chat/media.ts`). The S3 bucket's CORS must allow
+  `GET` and `PUT` from the portal origin.
 
 ### 12.1 Accessibility and visual rules
 
@@ -909,17 +1031,18 @@ CapRover on one server, behind Cloudflare (`TRUSTED_PROXY_COUNT=2`).
 | `incel-portal-api` | `ghcr.io/<owner>/incel-portal-backend:<sha>` | `python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn portalapi.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120` |
 | `incel-portal-celery-worker` | same backend image | `celery -A portalapi worker --loglevel=info` |
 | `incel-portal-celery-beat` | same backend image | `celery -A portalapi beat --loglevel=info` |
+| `incel-portal-realtime` | same backend image | `uvicorn portalapi.asgi:application --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers` (WebSocket support on; domain `workspacews.incelgroup.com`) |
 | `incel-portal-frontend` | `ghcr.io/<owner>/incel-portal-frontend:<sha>` | image default |
 
 Postgres and Redis run as their own CapRover apps; look up their service
 names with `docker service ls` (use the names that work in
 `CELERY_BROKER_URL`). The backend image runs as an unprivileged user.
 
-Set the backend variables of section 11 on all three backend apps. Required
+Set the backend variables of section 11 on all four backend apps. Required
 in production beyond the defaults: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`,
 `DJANGO_ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS=https://workspace.incelgroup.com`,
 `CSRF_TRUSTED_ORIGINS`, `PORTAL_BASE_URL`, `DB_*`, `CELERY_BROKER_URL`,
-`CACHE_URL`, `TRUSTED_PROXY_COUNT=2`, `ADMIN_ALLOWED_IPS`, AWS settings and
+`CACHE_URL`, `CHANNEL_LAYER_URL`, `TRUSTED_PROXY_COUNT=2`, `ADMIN_ALLOWED_IPS`, AWS settings and
 every `*_S3_PREFIX`, email settings, VAPID keys.
 
 ### 13.2 Releasing
@@ -976,6 +1099,8 @@ Expectations:
   pattern).
 - Tests that touch storage mock `common.storage.s3_client` and switch on
   `VERIFY_UPLOADS` explicitly.
+- The end-to-end API runs under uvicorn (`e2e/scripts/api-server.sh`) so the
+  chat WebSocket works; `19-chat.spec.ts` stands in for S3 inside the browser.
 
 CI (`.github/workflows/ci-cd.yml`) runs backend (Postgres), frontend and end
 to end on every pull request into `main` and every push to `main`; images are
@@ -998,7 +1123,7 @@ against the old API must be updated:
   removed; `/users/{id}/role`, `/department` and `/status` folded into
   `PATCH /users/{id}`.
 - One pagination shape, one error shape, `_id` write fields, `search`
-  parameter, JSON-only bodies, no `PUT`.
+  parameter, JSON-only bodies, `PUT` only for a single value you own.
 - Tokens only in cookies; cookie writes need a portal origin.
 - Creating tasks or schedules returns `{count, results}`.
 - Status codes: lockout 403, expired share 410, conflicts 409.

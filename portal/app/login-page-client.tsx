@@ -27,6 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buildLoginPath, clearStoredTokens } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
+import { lockedUntilFrom, lockoutText, useSecondsLeft } from "@/lib/lockout";
+import { keepPasswordForChat } from "@/lib/chat/password";
 import { AuthShell } from "@/components/auth/AuthShell";
 
 type LoginPageClientProps = {
@@ -45,6 +47,9 @@ export default function LoginPageClient({
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const lockSecondsLeft = useSecondsLeft(lockedUntil);
+  const isLocked = lockSecondsLeft > 0;
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
@@ -112,6 +117,9 @@ export default function LoginPageClient({
         email: email.trim(),
         password,
       });
+      // Chat is locked with the portal password and a PIN; keep the
+      // password's part for this sign-in so chat only asks for the PIN.
+      await keepPasswordForChat(password);
 
       clearStoredTokens();
       try {
@@ -124,7 +132,11 @@ export default function LoginPageClient({
       }
       router.replace(returnToPath ?? "/dashboard");
     } catch (error) {
-      if (axios.isAxiosError(error)) {
+      const until = lockedUntilFrom(error);
+      if (until) {
+        setLockedUntil(until);
+        setErrorMessage("");
+      } else if (axios.isAxiosError(error)) {
         // The API's error handler nests extra fields under error.metadata,
         // and sends them as strings.
         const responseData = error.response?.data as
@@ -152,6 +164,8 @@ export default function LoginPageClient({
 
   function handleEmailChange(value: string) {
     setEmail(value);
+    // The lockout is per account: another email may be tried.
+    setLockedUntil(null);
     setFieldErrors((current) => {
       if (!current.email) return current;
 
@@ -229,13 +243,24 @@ export default function LoginPageClient({
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit} noValidate>
-            {errorMessage ? (
+            {isLocked || errorMessage ? (
               <div
                 role="alert"
                 className="flex items-start gap-3 rounded-xl border border-[#dc2626]/30 bg-[#dc2626]/10 p-3.5 text-xs text-destructive-text font-medium leading-relaxed animate-in fade-in-50 duration-200"
               >
                 <AlertCircle className="size-4 shrink-0 mt-0.5" />
-                <div className="flex-1">{errorMessage}</div>
+                <div className="flex-1">
+                  {isLocked ? (
+                    <>
+                      <span aria-hidden="true">{lockoutText(lockSecondsLeft)}</span>
+                      <span className="sr-only">
+                        Too many wrong passwords. Try again in {Math.ceil(lockSecondsLeft / 60)} minutes.
+                      </span>
+                    </>
+                  ) : (
+                    errorMessage
+                  )}
+                </div>
               </div>
             ) : null}
 
@@ -330,7 +355,7 @@ export default function LoginPageClient({
               <Button
                 className="w-full h-11 rounded-xl font-semibold bg-[#0d47a1] hover:bg-[#0a3880] text-white transition-all shadow-sm flex items-center justify-center gap-2 group cursor-pointer"
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isLocked}
               >
                 {isSubmitting ? (
                   <>

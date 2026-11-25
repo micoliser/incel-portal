@@ -63,6 +63,13 @@ html.theme-switching *::after {
   animation: none !important;
 }
 
+/* Chat PIN: a short side-to-side shake on a wrong or mismatched PIN. */
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
 @keyframes theme-fade-in {
   from {
     opacity: 0;

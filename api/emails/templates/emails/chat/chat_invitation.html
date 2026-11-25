@@ -1,0 +1,10 @@
+{% extends "emails/_base.html" %}
+{% block title %}{{ inviter_name }} wants to chat with you{% endblock %}
+{% block preheader %}Set up private chat in Incel Portal to reply to {{ inviter_name }}.{% endblock %}
+{% block heading %}{{ inviter_name }} wants to chat with you{% endblock %}
+{% block content %}
+<p>Hi {{ first_name }},</p>
+<p>{{ inviter_name }} has invited you to chat in Incel Portal. Set up chat to read and reply to their messages.</p>
+<p>Setting up takes a minute: choose a 6-digit chat PIN and save the recovery code you are shown. Messages are encrypted on your device, so nobody else can read them, including IT and portal admins.</p>
+{% include "emails/_button.html" with url=portal_url path="/chat" label="Set up chat" only %}
+{% endblock %}

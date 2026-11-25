@@ -40,8 +40,16 @@ export AWS_ACCESS_KEY_ID=e2e
 export AWS_SECRET_ACCESS_KEY=e2e
 # There is no storage to ask about an upload, so uploads are not verified.
 export VERIFY_UPLOADS=False
+# Nor to copy a forwarded file in.
+export CHAT_STORAGE_COPY=False
 export SEND_PUSH_CELERY=False
+# Every test signs in from 127.0.0.1, which the normal 25/minute sign-in limit
+# cannot take (sessions for each role plus the sign-in tests' wrong passwords).
+export LOGIN_THROTTLE_RATE=1000/minute
 
 "$PYTHON" manage.py migrate --noinput
 "$PYTHON" manage.py seed_e2e
-exec "$PYTHON" manage.py runserver "127.0.0.1:${E2E_API_PORT:-8100}" --noreload
+# Served by uvicorn (ASGI) rather than runserver so the chat WebSocket works
+# on the same port as the REST API. One worker keeps chat tickets and
+# presence, which live in the in-process cache here, in one place.
+exec "$PYTHON" -m uvicorn portalapi.asgi:application --host 127.0.0.1 --port "${E2E_API_PORT:-8100}" --workers 1 --lifespan off --log-level warning

@@ -16,6 +16,8 @@ urlpatterns = [
     path('auth/password-reset/validate', views_api.PasswordResetValidateView.as_view(), name='auth-password-reset-validate'),
     path('auth/password-reset/confirm', views_api.PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
     path('me', views_api.MeView.as_view(), name='me'),
+    path('me/profile-photo', views_api.MeProfilePhotoView.as_view(), name='me-profile-photo'),
+    path('me/profile-photo/upload-url', views_api.MeProfilePhotoUploadUrlView.as_view(), name='me-profile-photo-upload-url'),
     path('me/permissions', views_api.MePermissionsView.as_view(), name='me-permissions'),
     path('', include(router.urls)),
     # Called by another service: its path and response shape must not change.

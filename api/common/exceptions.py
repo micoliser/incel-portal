@@ -5,16 +5,30 @@ from rest_framework.views import exception_handler
 
 
 class AccountLocked(APIException):
-    """Too many failed sign-ins. Distinct from rate limiting (429): the caller
-    may retry other requests, but not this account until the lock expires."""
+    """Too many wrong passwords. Distinct from rate limiting (429): the caller
+    may retry other requests, but not this account until the lock expires.
+
+    `retry_after` (seconds) is sent in the error metadata so the portal can
+    count down, and as a Retry-After header."""
 
     status_code = status.HTTP_403_FORBIDDEN
-    default_detail = 'Account is temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.'
+    default_detail = 'Account is temporarily locked after too many wrong passwords. Please try again in 15 minutes.'
     default_code = 'account_locked'
     error_type = 'account_locked'
 
     def __init__(self, wait=None):
-        super().__init__()
+        detail = None
+        if wait:
+            wait = max(1, int(wait))
+            minutes = max(1, -(-wait // 60))
+            detail = {
+                'detail': (
+                    'Account is temporarily locked after too many wrong passwords. '
+                    f'Please try again in {minutes} minute{"" if minutes == 1 else "s"}.'
+                ),
+                'retry_after': wait,
+            }
+        super().__init__(detail)
         # DRF's handler turns `wait` into a Retry-After header.
         self.wait = wait
 

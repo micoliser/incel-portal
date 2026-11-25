@@ -21,6 +21,7 @@ class Notification(CreatedAtModel):
         TODO_REMINDER = 'todo_reminder', 'To-Do Reminder'
         INVENTORY_ASSIGNED = 'inventory_assigned', 'Inventory Assigned'
         SUMMARY_SHARED = 'summary_shared', 'Summary Shared'
+        CHAT_NUDGE = 'chat_nudge', 'Chat Invitation'
 
     TYPE_CHOICES = Type.choices
     # The names the rest of the code uses (plain strings).
@@ -36,6 +37,7 @@ class Notification(CreatedAtModel):
     TYPE_TODO_REMINDER = Type.TODO_REMINDER.value
     TYPE_INVENTORY_ASSIGNED = Type.INVENTORY_ASSIGNED.value
     TYPE_SUMMARY_SHARED = Type.SUMMARY_SHARED.value
+    TYPE_CHAT_NUDGE = Type.CHAT_NUDGE.value
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
