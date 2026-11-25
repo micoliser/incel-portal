@@ -227,6 +227,17 @@ export function associatedData(conversationId: string, messageId: string, sender
   return `chat-v1|${conversationId}|${messageId}|${senderId}|${keyVersion}|${revision}`;
 }
 
+/**
+ * Fingerprint of a group's details, exactly as they are encrypted. Only admins
+ * set it on the server (with new details), and browsers show details only when
+ * they match it, so a member who re-locks the details with a newer key cannot
+ * change them.
+ */
+export async function groupInfoDigest(sealed: unknown): Promise<string> {
+  const s = await getSodium();
+  return s.to_hex(s.crypto_generichash(32, JSON.stringify(sealed)));
+}
+
 /** Binds a group's encrypted details to the group and the key version. */
 export function groupInfoAssociatedData(conversationId: string, keyVersion: number) {
   return `chat-info-v1|${conversationId}|${keyVersion}`;

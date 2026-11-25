@@ -147,9 +147,12 @@ class AccountResetView(ThrottledChatView):
         return Response({'set_up': True, 'account': account_payload(account)})
 
 
-class SessionSecretsView(ChatView):
+class SessionSecretsView(ThrottledChatView):
     """A per-browser secret that seals the unlocked key kept in that browser,
-    so the copy left on a shared computer is useless after sign-out."""
+    so the copy left on a shared computer is useless after sign-out. Each one
+    is kept for hours, so making them is rate limited."""
+
+    throttle_scope = 'chat_session_secrets'
 
     def post(self, request):
         # Also used straight after sign-in, before chat is set up, to seal the
@@ -343,19 +346,22 @@ class LinkPreviewView(ThrottledChatView):
     throttle_scope = 'chat_link_preview'
 
     def post(self, request):
-        from chat.link_preview import PreviewUnavailable, fetch_preview
+        from chat.link_preview import PreviewUnavailable, fetch_preview, preview_slot
 
         services.require_account(request.user)
         serializer = LinkPreviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            preview = fetch_preview(serializer.validated_data['url'])
-        except PreviewUnavailable:
-            preview = None
-        except Exception:
-            # Never log the link itself: it can be private.
-            logger.warning('Link preview failed unexpectedly', exc_info=True)
-            preview = None
+        preview = None
+        with preview_slot() as free:
+            # All slots busy: the message simply goes without a preview.
+            if free:
+                try:
+                    preview = fetch_preview(serializer.validated_data['url'])
+                except PreviewUnavailable:
+                    pass
+                except Exception:
+                    # Never log the link itself: it can be private.
+                    logger.warning('Link preview failed unexpectedly', exc_info=True)
         return Response({'preview': preview})
 
 

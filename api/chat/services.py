@@ -565,6 +565,7 @@ def conversation_payload(user, participant: Participant) -> dict:
                 'key_version': conversation.info_key_version,
                 'nonce': conversation.info_nonce,
                 'ciphertext': conversation.info_ciphertext,
+                'digest': conversation.info_digest or None,
             }
             if conversation.kind == Conversation.Kind.GROUP and conversation.info_ciphertext
             else None
@@ -1083,16 +1084,26 @@ def remove_reaction(user, message_id) -> None:
 MAX_GROUP_MEMBERS = 100
 
 
-def _set_info(conversation, info: dict, *, version: int | None = None) -> None:
+def _set_info(conversation, info: dict, *, version: int | None = None, new_details: bool = False) -> None:
     """Store the encrypted group details. They must use the newest key version,
-    so every current member (and anyone added later) can open them."""
+    so every current member (and anyone added later) can open them.
+
+    `new_details`: an admin or the owner is setting new details, with their
+    fingerprint. Otherwise this is the same details re-locked with a newer
+    key, and the fingerprint stays as it is, whatever was sent."""
     key_version = info['key_version']
     if key_version != (version if version is not None else _latest_version(conversation)):
         raise KeyOutdated('The group details must use the newest key.')
     conversation.info_key_version = key_version
     conversation.info_nonce = info['nonce']
     conversation.info_ciphertext = info['ciphertext']
-    conversation.save(update_fields=['info_key_version', 'info_nonce', 'info_ciphertext'])
+    fields = ['info_key_version', 'info_nonce', 'info_ciphertext']
+    if new_details:
+        if not info.get('digest'):
+            raise ValidationError({'info': ['New group details need their fingerprint.']})
+        conversation.info_digest = info['digest']
+        fields.append('info_digest')
+    conversation.save(update_fields=fields)
 
 
 MANAGERS = (Participant.Role.ADMIN, Participant.Role.OWNER)
@@ -1175,7 +1186,7 @@ def create_group(user, *, id, member_ids: list[int], keys: list[dict], info: dic
             + [Participant(conversation=conversation, user=p, pending=True) for p in pending]
         )
         _store_keys(conversation, 1, user, account, by_recipient, members)
-        _set_info(conversation, info, version=1)
+        _set_info(conversation, info, version=1, new_details=True)
         conversation = Conversation.objects.select_for_update().get(pk=conversation.pk)
         _system_note(conversation, Message.SystemEvent.GROUP_CREATED, {'user_id': user.pk})
         _invite_pending(user, conversation, pending)
@@ -1192,14 +1203,14 @@ def update_group_info(user, conversation_id, *, info: dict, changed: list[str], 
     With nothing `changed`, any member may re-lock the same details with the
     newest key: after someone who could not read them (a member who just
     joined) made that key, so new members can read the name and photo. That
-    posts no note. The server cannot check the content is unchanged (it is
-    encrypted); a member who abused this would only be renaming the group."""
+    posts no note and keeps the details' fingerprint, so a member cannot use it
+    to change them: browsers only show details that match the fingerprint."""
     relock = not changed and photo_object_key is ...
     with transaction.atomic():
         _participant, conversation = _group_membership(user, conversation_id, admin=not relock)
         if relock and conversation.info_key_version == _latest_version(conversation):
             return conversation  # already current
-        _set_info(conversation, info)
+        _set_info(conversation, info, new_details=not relock)
         if photo_object_key is not ...:
             previous = conversation.photo_object_key
             if photo_object_key:

@@ -68,6 +68,13 @@ class Conversation(CreatedAtModel):
     info_key_version = models.PositiveIntegerField(null=True, blank=True)
     info_nonce = models.CharField(max_length=64, blank=True)
     info_ciphertext = models.TextField(blank=True)
+    # Fingerprint of the exact details, set only when an admin or the owner
+    # creates or changes them. Any member may re-lock the details with a newer
+    # key (so people who join can read them) but cannot change this, and
+    # browsers show the details only when they match it: so only admins can
+    # change what the group is called. The details carry a random value, so
+    # the fingerprint reveals nothing about them.
+    info_digest = models.CharField(max_length=64, blank=True)
     # The group photo's encrypted bytes in storage (its key is in the info).
     photo_object_key = models.CharField(max_length=512, blank=True)
 

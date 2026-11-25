@@ -5,7 +5,7 @@ const NOTIFICATION_ICON = "/logo2.png";
 // these load here; if they fail, chat notifications still show, without text.
 try {
   importScripts("/vendor/libsodium-sumo.js", "/vendor/libsodium-wrappers.js", "/chat-push.js");
-} catch (error) {
+} catch {
   // Previews are off for this worker.
 }
 

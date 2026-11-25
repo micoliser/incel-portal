@@ -154,6 +154,8 @@ class GroupInfoSerializer(serializers.Serializer):
     key_version = serializers.IntegerField(min_value=1)
     nonce = Base64Field(size=NONCE_BYTES)
     ciphertext = Base64Field(max_size=8 * 1024)
+    # Fingerprint of the details (hex BLAKE2b-256), sent by admins with new details.
+    digest = serializers.RegexField(r'^[0-9a-f]{64}$', required=False)
 
 
 class KeyVersionSerializer(serializers.Serializer):

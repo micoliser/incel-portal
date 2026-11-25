@@ -122,6 +122,13 @@ export const rememberPasswordSecret = (userId: number, secret: Uint8Array) => re
 
 export const recallPasswordSecret = (userId: number) => recall("password", userId);
 
+/**
+ * Forget the unlocked key (not the password secret). Run at every sign-in: a
+ * key left in this browser by an earlier sign-in that ended without "Sign out"
+ * (tab closed, session expired) must not open chat without the PIN.
+ */
+export const forgetUnlockedKey = () => forget("key");
+
 /** Forget only the password secret (too many wrong PINs). */
 export const forgetPasswordSecret = () => forget("password");
 

@@ -293,7 +293,8 @@ REST_FRAMEWORK = {
         'chat_uploads': '30/minute',
         'chat_tickets': '30/minute',
         'chat_keys': '20/minute',
-        'chat_link_preview': '30/minute',
+        'chat_link_preview': '10/minute',
+        'chat_session_secrets': '30/minute',
     },
 }
 
@@ -468,7 +469,7 @@ X_FRAME_OPTIONS = 'DENY'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 _PROJECT_LOGGERS = (
     'accounts', 'applications', 'common', 'emails', 'inventory', 'notifications',
-    'organization', 'portalapi', 'support', 'tasks',
+    'organization', 'portalapi', 'support', 'tasks', 'chat',
 )
 LOGGING = {
     'version': 1,

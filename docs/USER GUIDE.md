@@ -457,7 +457,7 @@ Send private messages, photos, videos and files (up to 25 MB each) to anyone in 
 
 **Replies:** choose the quote at the top of a reply to jump to the message it answers.
 
-**Files:** choose the download button on a file to bring it into the chat, then **Open** to view it (in a new tab, or with the program your computer uses for it) or **Save** to keep a copy (Chrome and Edge ask where to save it; other browsers use your Downloads folder).
+**Files:** choose the download button on a file to bring it into the chat, then **Open** to view it (photos, videos, audio, PDFs and plain text open in a new tab; other files, such as SVG drawings or web pages, are downloaded and open with the program your computer uses for them) or **Save** to keep a copy (Chrome and Edge ask where to save it; other browsers use your Downloads folder).
 
 **Mute, archive and hide:** use the ⋯ button at the top of a chat, or the ⋯ on the chat in your list (you can also right-click the chat, or press and hold it on a phone). **Mute notifications** (for 8 hours, a week or always) stops its notifications; it still shows unread messages, greyed out. **Archive** moves the chat into **Archived** at the top of your list until you unarchive it. **Hide chat** takes it out of your list until someone sends a new message. These only change things for you. In a group, the same menu also has **Leave group**.
 

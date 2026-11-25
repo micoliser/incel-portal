@@ -38,7 +38,13 @@ export type Participant = ChatPerson & {
 export type GroupRole = "member" | "admin" | "owner";
 
 /** Group name, description and photo key, encrypted with a conversation key version. */
-export type RawGroupInfo = { key_version: number; nonce: string; ciphertext: string };
+export type RawGroupInfo = {
+  key_version: number;
+  nonce: string;
+  ciphertext: string;
+  /** Fingerprint of the details, set by admins (see groupInfoDigest). */
+  digest?: string | null;
+};
 
 export type RawAttachment = { id: string; size: number | null; has_thumb: boolean };
 

@@ -7,6 +7,7 @@ import type { ChatAttachment } from "@/components/chat/chat-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
+  canOpenInBrowser,
   decryptedUrl,
   formatBytes,
   INLINE_IMAGE_TYPES,
@@ -93,21 +94,12 @@ async function saveFile(attachment: ChatAttachment) {
   downloadLink(url, attachment.name);
 }
 
-// Types a browser shows by itself; anything else is handed to the computer to open.
-function opensInBrowser(mime: string) {
-  return (
-    mime === "application/pdf" ||
-    mime === "application/json" ||
-    mime.startsWith("image/") ||
-    mime.startsWith("video/") ||
-    mime.startsWith("audio/") ||
-    (mime.startsWith("text/") && mime !== "text/html")
-  );
-}
-
-/** Open the file: in a new tab when the browser can show it, otherwise as a download the browser offers to open. */
+/**
+ * Open the file: in a new tab for safe types (photos, video, audio, PDF, plain
+ * text), otherwise as a download the computer opens. See canOpenInBrowser.
+ */
 async function openFile(attachment: ChatAttachment) {
-  if (!opensInBrowser(attachment.mime)) {
+  if (!canOpenInBrowser(attachment.mime)) {
     downloadLink(await fileUrl(attachment), attachment.name);
     return;
   }

@@ -7,6 +7,34 @@ import { decryptFile, encryptFile, MAX_FILE_BYTES } from "@/lib/chat/crypto";
 
 export const INLINE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 export const INLINE_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
+const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-wav", "audio/flac"]);
+
+/**
+ * Types that are opened in a browser tab. Only passive content: a file's type
+ * is chosen by whoever sent it, and a page opened from a decrypted file runs
+ * as the portal itself, so anything that can carry script (SVG, HTML, XML…)
+ * must never be opened, only saved.
+ */
+const OPENABLE_TYPES = new Set([...INLINE_IMAGE_TYPES, ...INLINE_VIDEO_TYPES, ...AUDIO_TYPES, "application/pdf", "text/plain"]);
+
+/** "Image/PNG; charset=x" → "image/png". */
+export function baseMime(mime: unknown): string {
+  return typeof mime === "string" ? mime.split(";")[0].trim().toLowerCase() : "";
+}
+
+export function canOpenInBrowser(mime: unknown) {
+  return OPENABLE_TYPES.has(baseMime(mime));
+}
+
+/**
+ * An object URL for file bytes, typed so the browser can never run it as a
+ * page: types not on the list above become a plain download.
+ */
+export function safeObjectUrl(data: Blob | BlobPart, mime: unknown) {
+  const base = baseMime(mime);
+  const type = !OPENABLE_TYPES.has(base) ? "application/octet-stream" : base === "text/plain" ? "text/plain;charset=utf-8" : base;
+  return URL.createObjectURL(new Blob([data], { type }));
+}
 const THUMB_EDGE = 480;
 
 export type FileDetails = {
@@ -153,7 +181,7 @@ export function decryptedUrl(attachmentId: string, part: "file" | "thumb", key: 
       const response = await fetch(url);
       if (!response.ok) throw new Error("Download failed.");
       const plain = await decryptFile(await response.arrayBuffer(), key);
-      return URL.createObjectURL(new Blob([plain as BlobPart], { type: part === "thumb" ? "image/jpeg" : mime }));
+      return safeObjectUrl(plain as BlobPart, part === "thumb" ? "image/jpeg" : mime);
     })();
     pending.catch(() => objectUrls.delete(cacheKey));
     objectUrls.set(cacheKey, pending);

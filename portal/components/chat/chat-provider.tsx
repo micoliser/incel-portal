@@ -34,6 +34,7 @@ import {
   encryptJson,
   generateIdentity,
   getSodium,
+  groupInfoDigest,
   makeRecoveryCode,
   newSymmetricKey,
   normaliseRecoveryCode,
@@ -52,10 +53,11 @@ import {
   rememberPasswordSecret,
   writePushConfig,
 } from "@/lib/chat/keystore";
-import { releaseDecryptedFiles, uploadEncrypted, type UploadedAttachment } from "@/lib/chat/media";
+import { releaseDecryptedFiles, safeObjectUrl, uploadEncrypted, type UploadedAttachment } from "@/lib/chat/media";
+import { parseMessagePayload } from "@/lib/chat/payload";
 import { formatDuration } from "@/lib/chat/voice";
 import { PROFILE_CHANGED_EVENT } from "@/lib/profile-photo";
-import { cleanPreview, firstLink, type LinkPreview } from "@/components/chat/link-preview";
+import { firstLink, type LinkPreview } from "@/components/chat/link-preview";
 import { getApiBaseUrl } from "@/lib/auth";
 import { ChatSocket, type ChatEvent } from "@/lib/chat/socket";
 
@@ -118,7 +120,29 @@ export type ChatConversation = RawConversation & {
 };
 
 /** A group's name, description and photo key, as decrypted in the browser. */
-export type GroupInfo = { name: string; description: string; photo: { file_key: string } | null };
+export type GroupInfo = {
+  name: string;
+  description: string;
+  photo: { file_key: string } | null;
+  /**
+   * The details exactly as encrypted (with their random value). A new key
+   * re-locks this unchanged, so it still matches the fingerprint admins set.
+   */
+  sealed?: Record<string, unknown>;
+};
+
+/** New details (an admin's change): a fresh random value, so the fingerprint says nothing about them. */
+async function sealGroupInfo(value: GroupInfo): Promise<GroupInfo> {
+  const s = await getSodium();
+  const sealed = {
+    v: 1,
+    name: value.name,
+    description: value.description,
+    photo: value.photo,
+    salt: toB64(s, s.randombytes_buf(16)),
+  };
+  return { name: value.name, description: value.description, photo: value.photo, sealed };
+}
 
 type Thread = { messages: ChatMessage[]; hasMore: boolean; loading: boolean; loaded: boolean };
 
@@ -461,10 +485,18 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
     );
   }, []);
 
-  const encryptGroupInfo = useCallback(async (conversationId: string, version: number, key: Uint8Array, value: GroupInfo) => {
-    const encrypted = await encryptJson({ v: 1, ...value }, key, groupInfoAssociatedData(conversationId, version));
-    return { key_version: version, ...encrypted };
-  }, []);
+  /**
+   * Lock group details with a key version. `fresh`: new details from an admin,
+   * sent with their fingerprint; otherwise the same details re-locked.
+   */
+  const encryptGroupInfo = useCallback(
+    async (conversationId: string, version: number, key: Uint8Array, value: GroupInfo, fresh = false) => {
+      const sealed = value.sealed ?? { v: 1, name: value.name, description: value.description, photo: value.photo };
+      const encrypted = await encryptJson(sealed, key, groupInfoAssociatedData(conversationId, version));
+      return { key_version: version, ...encrypted, ...(fresh ? { digest: await groupInfoDigest(sealed) } : {}) };
+    },
+    [],
+  );
 
   /** Make a new key version for everyone currently in the conversation. */
   const rotateKey = useCallback(
@@ -575,24 +607,26 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         let key = map.get(raw.key_version);
         if (!key) key = (await conversationKeys(raw.conversation_id, true)).get(raw.key_version);
         if (!key) return { ...base, state: "unreadable" };
-        const payload = await decryptJson<Payload>(
+        const payload = await decryptJson<unknown>(
           raw.ciphertext,
           raw.nonce,
           key,
           associatedData(raw.conversation_id, raw.id, raw.sender_id ?? 0, raw.key_version, raw.revision),
         );
+        // Anything the portal would not have sent makes the whole message unavailable.
+        const contents = parseMessagePayload(payload);
+        if (!contents) return { ...base, state: "unreadable" };
         const thumbs = new Map(raw.attachments.map((a) => [a.id, a.has_thumb]));
-        const preview = payload.reply_preview;
         return {
           ...base,
-          text: payload.text ?? "",
-          replyTo: payload.reply_to ?? null,
-          replyPreview:
-            preview && typeof preview.text === "string" ? { senderId: preview.sender_id ?? null, text: preview.text } : null,
+          text: contents.text,
+          replyTo: contents.replyTo,
+          replyPreview: contents.replyPreview,
           reactions: await decryptReactions(raw.conversation_id, raw.id, raw.reactions ?? []),
-          linkPreview: cleanPreview(payload.link_preview),
-          forwarded: Number.isFinite(Number(payload.forwarded)) ? Math.min(Math.max(0, Number(payload.forwarded)), 1000) : 0,
-          attachments: (payload.attachments ?? [])
+          linkPreview: contents.linkPreview,
+          forwarded: contents.forwarded,
+          // Files the server has no record of (never uploaded, or cleaned up) cannot be shown.
+          attachments: contents.attachments
             .filter((a) => thumbs.has(a.id))
             .map((a) => ({ ...a, has_thumb: Boolean(thumbs.get(a.id) && a.thumb_key) })),
         };
@@ -614,7 +648,8 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         if (!map.has(version)) map = await conversationKeys(conversationId, true);
         const key = map.get(version);
         if (!key) return;
-        const encrypted = await encryptJson({ v: 1, ...info }, key, groupInfoAssociatedData(conversationId, version));
+        const sealed = info.sealed ?? { v: 1, name: info.name, description: info.description, photo: info.photo };
+        const encrypted = await encryptJson(sealed, key, groupInfoAssociatedData(conversationId, version));
         await api.updateGroupInfo(conversationId, { info: { key_version: version, ...encrypted }, changed: [] });
       } catch {
         // Another member may have done it first, or a newer key appeared; the next load tries again.
@@ -639,17 +674,23 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
         if (!map.has(raw.key_version)) map = await conversationKeys(conversation.id, true);
         const key = map.get(raw.key_version);
         if (key) {
-          const value = await decryptJson<Partial<GroupInfo>>(
+          const value = await decryptJson<Record<string, unknown>>(
             raw.ciphertext,
             raw.nonce,
             key,
             groupInfoAssociatedData(conversation.id, raw.key_version),
           );
-          info = {
-            name: typeof value.name === "string" && value.name.trim() ? value.name.slice(0, 80) : "Group",
-            description: typeof value.description === "string" ? value.description.slice(0, 500) : "",
-            photo: value.photo && typeof value.photo.file_key === "string" ? { file_key: value.photo.file_key } : null,
-          };
+          // Only details an admin set: a member re-locking them with a new key cannot change them.
+          const genuine = !raw.digest || (await groupInfoDigest(value)) === raw.digest;
+          const photo = value.photo as { file_key?: unknown } | null | undefined;
+          if (genuine && value && typeof value === "object") {
+            info = {
+              name: typeof value.name === "string" && value.name.trim() ? value.name.slice(0, 80) : "Group",
+              description: typeof value.description === "string" ? value.description.slice(0, 500) : "",
+              photo: photo && typeof photo.file_key === "string" ? { file_key: photo.file_key } : null,
+              sealed: value,
+            };
+          }
         }
       } catch {
         info = null;
@@ -1436,13 +1477,14 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       }
       if (!changed.length) return;
       const { version, key } = await currentKey(conversationId);
-      const info = await encryptGroupInfo(conversationId, version, key, next);
+      const sealedNext = await sealGroupInfo(next);
+      const info = await encryptGroupInfo(conversationId, version, key, sealedNext, true);
       const fresh = await api.updateGroupInfo(conversationId, {
         info,
         changed,
         ...(photoObjectKey !== undefined ? { photo_object_key: photoObjectKey } : {}),
       });
-      rememberGroupInfo(conversationId, next);
+      rememberGroupInfo(conversationId, sealedNext);
       replaceConversation(fresh);
     },
     [currentKey, encryptGroupInfo, rememberGroupInfo, replaceConversation, uploadGroupPhoto],
@@ -1456,12 +1498,12 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       const key = await newSymmetricKey();
       const ready = input.people.filter((p) => p.chat_ready && p.public_key && p.key_id);
       const keys = await wrapForMembers(key, [self(), ...ready.map((p) => ({ ...p, last_read_seq: 0, left: false }))]);
-      const value: GroupInfo = { name: input.name.trim(), description: input.description.trim(), photo: null };
+      const value = await sealGroupInfo({ name: input.name.trim(), description: input.description.trim(), photo: null });
       const created = await api.createGroup({
         id,
         member_ids: input.people.map((p) => p.id),
         keys,
-        info: await encryptGroupInfo(id, 1, key, value),
+        info: await encryptGroupInfo(id, 1, key, value, true),
       });
       keysRef.current.set(created.id, new Map([[1, key]]));
       rememberGroupInfo(created.id, value);
@@ -1692,9 +1734,9 @@ export function ChatProvider({ userId, children }: { userId: number; children: R
       const localUrls = input.prepared
         ? []
         : input.voice
-        ? [input.voice.url ?? URL.createObjectURL(input.files[0])]
+        ? [input.voice.url ?? safeObjectUrl(input.files[0], input.files[0].type)]
         : // Your own files open and save straight away, without downloading them back.
-          input.files.map((f) => URL.createObjectURL(f));
+          input.files.map((f) => safeObjectUrl(f, f.type));
       const quoted = input.replyTo
         ? threadsRef.current[conversationId]?.messages.find((m) => m.id === input.replyTo)
         : undefined;

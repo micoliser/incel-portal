@@ -5,7 +5,7 @@
 import { apiClient } from "@/lib/api-client";
 import { getAccount, updateBackups } from "@/lib/chat/api";
 import { derivePasswordSecret, replacePasswordLayer } from "@/lib/chat/crypto";
-import { rememberPasswordSecret } from "@/lib/chat/keystore";
+import { forgetUnlockedKey, rememberPasswordSecret } from "@/lib/chat/keystore";
 
 async function currentUserId(): Promise<number | null> {
   try {
@@ -16,8 +16,12 @@ async function currentUserId(): Promise<number | null> {
   }
 }
 
-/** After a successful sign-in: keep the password-derived secret for this sign-in. */
+/**
+ * After a successful sign-in: chat starts locked (the PIN is asked for again),
+ * and the password-derived secret is kept for this sign-in.
+ */
 export async function keepPasswordForChat(password: string) {
+  await forgetUnlockedKey().catch(() => undefined);
   try {
     const userId = await currentUserId();
     if (userId === null) return;

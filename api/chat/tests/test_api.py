@@ -224,6 +224,22 @@ class AccountTests(ChatTestCase):
         self.assertEqual(self.client.delete(url).status_code, 204)
         self.assertEqual(self.client.get(url).status_code, 404)
 
+    def test_making_session_secrets_is_rate_limited_but_reading_them_is_not(self):
+        # Each one is kept for hours, so a user cannot fill the cache with them;
+        # the service worker reads one for every push, so reads are not limited.
+        from django.core.cache import cache
+
+        # The test base switches rate limits off; this test needs them.
+        self.throttle_patcher.stop()
+        self.addCleanup(self.throttle_patcher.start)
+        cache.clear()
+        self.as_user(self.staff_user)
+        responses = [self.client.post('/api/v1/chat/session-secrets') for _ in range(31)]
+        self.assertTrue(all(r.status_code == 201 for r in responses[:30]))
+        self.assertEqual(responses[30].status_code, 429)
+        url = f'/api/v1/chat/session-secrets/{responses[0].json()["id"]}'
+        self.assertTrue(all(self.client.get(url).status_code == 200 for _ in range(40)))
+
     def test_ticket_requires_setup(self):
         self.as_user(self.staff_user)
         response = self.client.post('/api/v1/chat/ws-ticket')
@@ -771,8 +787,15 @@ class ChatAdminTests(ChatTestCase):
         )
 
 
-def info(version=1):
-    return {'key_version': version, 'nonce': b64(24), 'ciphertext': b64(80)}
+def info(version=1, digest='a' * 64):
+    """Encrypted group details. `digest`: the fingerprint an admin sends with new
+    details (None: leave it out, as a member re-locking does)."""
+    return {
+        'key_version': version,
+        'nonce': b64(24),
+        'ciphertext': b64(80),
+        **({'digest': digest} if digest else {}),
+    }
 
 
 class GroupTests(ChatTestCase):
@@ -850,6 +873,52 @@ class GroupTests(ChatTestCase):
         self.assertEqual(
             self.client.patch(f'{base}/info', {'info': info(2), 'changed': ['name']}, format='json').status_code, 403
         )
+
+    def test_only_admins_set_the_details_fingerprint(self):
+        """Members re-lock the details with new keys, but only an admin's change
+        sets the fingerprint browsers check, so a member cannot rename the group."""
+        created = self.create(member_ids=[self.other.pk])
+        group = created.json()
+        self.assertEqual(group['info']['digest'], 'a' * 64)
+        base = f'/api/v1/chat/conversations/{group["id"]}'
+        digest = lambda: Conversation.objects.get(pk=group['id']).info_digest  # noqa: E731
+
+        # A plain member makes a new key and sends other details with it: the fingerprint stays.
+        self.as_user(self.other)
+        rotated = self.client.post(
+            f'{base}/keys',
+            {'version': 2, 'keys': self.wrapped_for(self.staff_user, self.other), 'info': info(2, digest='b' * 64)},
+            format='json',
+        )
+        self.assertEqual(rotated.status_code, 201, rotated.content)
+        self.assertEqual(digest(), 'a' * 64)
+        # Nor through a re-lock.
+        self.client.post(f'{base}/keys', {'version': 3, 'keys': self.wrapped_for(self.staff_user, self.other)}, format='json')
+        relocked = self.client.patch(f'{base}/info', {'info': info(3, digest='c' * 64), 'changed': []}, format='json')
+        self.assertEqual(relocked.status_code, 200, relocked.content)
+        self.assertEqual(digest(), 'a' * 64)
+
+        # The admin changes the details: the new fingerprint is kept, and it is required.
+        self.as_user(self.staff_user)
+        missing = self.client.patch(f'{base}/info', {'info': info(3, digest=None), 'changed': ['name']}, format='json')
+        self.assertEqual(missing.status_code, 400)
+        changed = self.client.patch(f'{base}/info', {'info': info(3, digest='d' * 64), 'changed': ['name']}, format='json')
+        self.assertEqual(changed.status_code, 200, changed.content)
+        self.assertEqual(digest(), 'd' * 64)
+
+    def test_a_group_needs_the_details_fingerprint(self):
+        self.as_user(self.staff_user)
+        response = self.client.post(
+            '/api/v1/chat/groups',
+            {
+                'id': str(uuid.uuid4()),
+                'member_ids': [self.other.pk],
+                'keys': self.wrapped_for(self.staff_user, self.other),
+                'info': info(digest=None),
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_keys_must_cover_every_member_with_chat(self):
         response = self.create(keys=self.wrapped_for(self.staff_user))

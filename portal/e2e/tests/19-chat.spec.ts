@@ -240,6 +240,53 @@ test("files are encrypted, uploaded and opened by the other person", async () =>
   await expect(mine.getByRole("button", { name: "Open budget-notes.txt" })).toBeVisible();
 });
 
+test("a file that could run as a page (SVG) is only ever downloaded, never opened", async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>document.title="pwned"</script></svg>';
+  await femi.locator('input[type="file"]').setInputFiles({ name: "chart.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg) });
+  await femi.getByRole("button", { name: "Send message" }).click();
+  const card = thread(chidi).locator("[data-message-id]").filter({ hasText: "chart.svg" }).first();
+  await card.getByRole("button", { name: /^Download chart\.svg/ }).click();
+
+  // Open hands it to the computer as a download: no tab, so its script cannot run as the portal.
+  let opened = false;
+  chidi.context().once("page", () => (opened = true));
+  const download = chidi.waitForEvent("download");
+  await card.getByRole("button", { name: "Open chart.svg" }).click();
+  const file = await download;
+  const { readFile } = await import("node:fs/promises");
+  expect((await readFile(await file.path())).toString()).toBe(svg);
+  expect(opened).toBe(false);
+
+  // The sender's own copy is treated the same.
+  const mine = thread(femi).locator("[data-message-id]").filter({ hasText: "chart.svg" }).first();
+  const own = femi.waitForEvent("download");
+  await mine.getByRole("button", { name: "Open chart.svg" }).click();
+  await own;
+  expect(opened).toBe(false);
+});
+
+test("a message whose contents are not what the portal sends shows as not available", async () => {
+  // Act as a modified client: change the message just before it is encrypted.
+  await femi.evaluate(() => {
+    const stringify = JSON.stringify;
+    JSON.stringify = function (value: unknown, ...rest: unknown[]) {
+      const v = value as { v?: number; text?: unknown } | null;
+      if (v && v.v === 1 && v.text === "tampered message") value = { ...v, text: { not: "text" } };
+      return stringify.call(JSON, value, ...(rest as [])) as string;
+    } as typeof JSON.stringify;
+  });
+  const box = femi.getByRole("textbox", { name: `Message ${USERS.clerk.name}` });
+  await box.fill("tampered message");
+  await box.press("Enter");
+
+  await expect(thread(chidi).getByText("This message is not available.").last()).toBeVisible();
+  // The chat keeps working for both of them.
+  await femi.reload();
+  await box.fill("All good after that");
+  await box.press("Enter");
+  await expect(thread(chidi).getByText("All good after that")).toBeVisible();
+});
+
 test("links are clickable and show an encrypted preview with an Open button", async () => {
   // A stand-in for the server's page fetch, so the test does not depend on the internet.
   await femi.route("**/api/v1/chat/link-preview", (route) =>
@@ -814,6 +861,22 @@ test("signing out forgets the key; after signing back in only the PIN is asked",
 
   // Reloading keeps it unlocked for this sign-in.
   await femi.reload();
+  await expect(thread(femi).getByText("budget-notes.txt").first()).toBeVisible();
+});
+
+test("a sign-in that ended without signing out does not leave chat unlocked for the next one", async () => {
+  // The session ends without "Sign out" (browser closed, session expired): the
+  // unlocked key is still in this browser, but the next sign-in must not use it.
+  await femi.context().clearCookies();
+  await femi.goto("/");
+  await femi.getByRole("textbox", { name: "Company Email Address" }).fill(USERS.finance.email);
+  await femi.getByRole("textbox", { name: "Password" }).fill(PASSWORD);
+  await femi.getByRole("button", { name: "Sign in to Workspace" }).click();
+  await expect(femi).toHaveURL(/\/dashboard/);
+  await femi.goto("/chat");
+  await expect(main(femi).getByRole("heading", { name: "Enter your chat PIN" })).toBeVisible();
+  await typePin(femi, /^Chat PIN/, FEMI_PIN);
+  await main(femi).getByRole("button", { name: new RegExp(`^${USERS.clerk.name}`) }).click();
   await expect(thread(femi).getByText("budget-notes.txt").first()).toBeVisible();
 });
 

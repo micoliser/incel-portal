@@ -157,7 +157,8 @@ are deleted after `AUDIT_AUTH_FAILURE_RETENTION_DAYS` (90).
 
 - **Views.** A resource is a `GenericViewSet` (from `common.viewsets`) with
   only the mixins it needs, or actions written out. Changes are PATCH
-  (`PartialUpdateModelMixin`); nothing accepts PUT, and there is no
+  (`PartialUpdateModelMixin`); no resource accepts PUT (the only PUTs set a
+  single value you own, see section 6), and there is no
   `ModelViewSet` or `http_method_names`. Permissions and rate limits that
   differ per action go in `get_permissions()` and `get_throttles()`, keyed on
   `self.action`. Viewsets go on `ApiRouter`, or, where route names or typed
@@ -339,7 +340,10 @@ departments. An inactive application cannot be opened.
   (`APPEND_SLASH = False`; a trailing slash is a 404).
 - **JSON only** in request bodies.
 - **Methods**: `GET` read, `POST` create or action, `PATCH` partial update,
-  `DELETE` remove. No `PUT` anywhere.
+  `DELETE` remove. `PUT` only sets a single value that belongs to the caller,
+  replacing it whole: `PUT /me/profile-photo` and
+  `PUT /chat/messages/{id}/reaction`. A resource with several fields is
+  changed with `PATCH`, never `PUT`.
 - **Parameters**: free text is `search`; filters on related records are
   `<name>_id`; several values are comma-separated
   (`?status=pending,in_progress`); leave a filter out for "all" (no `all`
@@ -405,6 +409,8 @@ All paths are under `/api/v1`. Generated from the URL configuration on
 | GET | `/me/permissions` | `{is_superuser, has_global_access, role_code, department_id}` |
 | GET | `/me/recent-applications` | last four opened |
 | GET | `/me/inventory` | assets assigned to me |
+| POST | `/me/profile-photo/upload-url` | where to upload a new profile photo |
+| PUT, DELETE | `/me/profile-photo` | set or replace your profile photo / remove it |
 
 ### Users
 
@@ -1117,7 +1123,7 @@ against the old API must be updated:
   removed; `/users/{id}/role`, `/department` and `/status` folded into
   `PATCH /users/{id}`.
 - One pagination shape, one error shape, `_id` write fields, `search`
-  parameter, JSON-only bodies, no `PUT`.
+  parameter, JSON-only bodies, `PUT` only for a single value you own.
 - Tokens only in cookies; cookie writes need a portal origin.
 - Creating tasks or schedules returns `{count, results}`.
 - Status codes: lockout 403, expired share 410, conflicts 409.

@@ -22,7 +22,7 @@
       var request;
       try {
         request = indexedDB.open(DB_NAME, 1);
-      } catch (error) {
+      } catch {
         resolve(null);
         return;
       }
@@ -44,7 +44,7 @@
             db.close();
             resolve(null);
           };
-        } catch (error) {
+        } catch {
           db.close();
           resolve(null);
         }
@@ -76,9 +76,12 @@
   }
 
   function summary(payload) {
+    // Contents come from the sender's browser: anything unexpected gets the plain text.
+    if (!payload || typeof payload !== "object") return "New message";
+    if (typeof payload.text !== "string" && payload.text != null) return "New message";
     if (payload.text) return payload.text;
-    var first = (payload.attachments || [])[0];
-    if (!first) return "New message";
+    var first = Array.isArray(payload.attachments) ? payload.attachments[0] : null;
+    if (!first || typeof first !== "object") return "New message";
     if (first.voice) return "Voice message (" + duration(first.duration) + ")";
     if (String(first.mime || "").indexOf("image/") === 0) return "Photo";
     if (String(first.mime || "").indexOf("video/") === 0) return "Video";
@@ -123,7 +126,7 @@
         if (!row) return null;
         try {
           return s.crypto_box_open_easy(b64(row.wrapped_key), b64(row.nonce), b64(row.wrapper_public_key), privateKey);
-        } catch (error) {
+        } catch {
           return null;
         }
       };
@@ -181,13 +184,13 @@
               ),
             );
             if (details && details.name) name = shorten(details.name, 80);
-          } catch (error) {
+          } catch {
             // Keep "Group".
           }
         }
       }
       return { title: name, body: sender + ": " + text };
-    } catch (error) {
+    } catch {
       return null;
     } finally {
       s.memzero(privateKey);
