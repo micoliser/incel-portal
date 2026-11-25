@@ -1,6 +1,8 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
+# npm ci runs the postinstall script (it copies libsodium for the service worker).
+COPY scripts ./scripts
 RUN npm ci
 
 FROM node:22-alpine AS builder
