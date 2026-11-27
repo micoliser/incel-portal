@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileSpreadsheet, History, Loader2, Pencil, PlusCircle } from "lucide-react";
+import { ArrowLeft, ClipboardList, FileSpreadsheet, History, Loader2, Pencil, PlusCircle } from "lucide-react";
 
 import { ClientFormDialog } from "@/components/clients/client-form-dialog";
 import { PageErrorCard } from "@/components/page-error-card";
@@ -214,7 +214,14 @@ export default function ClientDetailPage() {
         ) : (
           <ol className="mt-4 space-y-4">
             {history.map((entry) => {
-              const Icon = entry.source === "imported" ? FileSpreadsheet : entry.source === "created" ? PlusCircle : Pencil;
+              const Icon =
+                entry.source === "imported"
+                  ? FileSpreadsheet
+                  : entry.source === "created"
+                    ? PlusCircle
+                    : entry.source === "request"
+                      ? ClipboardList
+                      : Pencil;
               const who = entry.changed_by?.full_name ?? "Someone";
               const what =
                 entry.source === "created"
@@ -223,7 +230,9 @@ export default function ClientDetailPage() {
                     ? Object.keys(entry.changes).length
                       ? `updated it from ${entry.file_name ?? "an import"}`
                       : `imported it from ${entry.file_name ?? "a spreadsheet"}`
-                    : "edited it";
+                    : entry.source === "request"
+                      ? `changed its balance: ${entry.note}`
+                      : "edited it";
               return (
                 <li key={entry.id} className="flex gap-3">
                   <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">

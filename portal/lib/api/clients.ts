@@ -47,11 +47,13 @@ export type ClientFormValues = {
 
 export type ClientChange = {
   id: string;
-  source: "created" | "edited" | "imported";
+  source: "created" | "edited" | "imported" | "request";
   changed_by: UserSummary | null;
   /** {field: [old, new]} */
   changes: Record<string, [string, string]>;
   file_name: string | null;
+  /** What caused it, for request-driven changes, e.g. "TKT-2026-00042 submitted". */
+  note: string;
   created_at: string;
 };
 

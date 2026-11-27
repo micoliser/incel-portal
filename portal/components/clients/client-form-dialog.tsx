@@ -154,8 +154,10 @@ export function ClientFormDialog({ open, onOpenChange, client, onSaved }: Props)
   ) => (
     <div className="space-y-1.5">
       <Label htmlFor={`client-${name}`}>
-        {label}
-        {required ? <span className="text-destructive-text"> *</span> : null}
+        <span>
+          {label}
+          {required ? <span className="text-destructive-text"> *</span> : null}
+        </span>
       </Label>
       <Input
         id={`client-${name}`}

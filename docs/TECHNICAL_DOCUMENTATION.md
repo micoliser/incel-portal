@@ -289,6 +289,7 @@ minute.
 | Manager | leads a department (`line_manager`), unit (`supervisor`) or team (`team_lead`); `tasks/hierarchy.py` |
 | Asset management | member of a department with `manages_inventory=True` (`inventory.permissions.can_manage_inventory`) |
 | Credit clients | `clients.permissions`: **manage** = superuser, a member of a unit with `credit_client_access=manage` (Tourism Accounts), or the supervisor of a unit with `supervisor_manages` (Tourism / Operations); **view** = anyone who manages, global access, members of a unit with any `credit_client_access` (Operations, Tourism Internal Control), or the line manager of a department with `manager_views_credit_clients` (Tourism). Set in Django admin on the unit or department; migration `organization/0006` set them by the production codes |
+| Service requests | `service_requests.access`: `Audience` rows per service (Django admin) name who **submits**, **views**, is **notified**, gives the **first approval** and the **final approval**: members of a unit, a unit's supervisor, a department's line manager, or a role. Everyone in any of them, and global access, sees every request. Migration `service_requests/0002` set the agreed ticket audiences by the production codes |
 | Managing another user | `can_manage_user`: administrators may manage ordinary staff; superusers and executives can only be managed by a superuser |
 
 A deactivated role confers nothing.
@@ -558,6 +559,23 @@ All paths are under `/api/v1`. Generated from the URL configuration on
 | POST | `/clients/imports/preview` | multipart `file`; checks only, saves nothing (managers) |
 | POST | `/clients/imports/confirm` | multipart `file`, `confirmed=true`, `decisions` JSON `{group id: "reject" or row number}`; 409 when errors or decisions are missing |
 
+### Service requests
+
+| Methods | Path | Notes |
+|---|---|---|
+| GET | `/service-requests` | `search` (reference, client, title, PNR), `status`, `payment_type`, `mine`, `awaiting_me` |
+| POST | `/service-requests/tickets` | the ticket form; 400 lists every field problem at once; `confirm_zero_revenue` when revenue is 0 |
+| GET | `/service-requests/{pk}` | includes `allowed` (approve, reject, complete, cancel, copy) for the signed-in user |
+| POST | `/service-requests/{pk}/approve` | first-stage approver or ED, never the submitter |
+| POST | `/service-requests/{pk}/reject` | `{reason}` |
+| POST | `/service-requests/{pk}/complete` | submitter only, from submitted or approved |
+| POST | `/service-requests/{pk}/cancel` | submitter only, `{reason}`, any open status |
+| GET | `/service-requests/{pk}/history` | paginated events |
+| GET | `/service-requests/{pk}/evidence` | `{url}`: short-lived link to the payment evidence |
+| GET | `/service-requests/awaiting-count` | requests waiting for the user's approval |
+| POST | `/service-requests/evidence-upload-url` | submitters; `{file_name, content_type, size}`; images and PDF, 5 MB |
+| GET | `/service-requests/suggestions` | `field=airline` or `vendor`, `search`; earlier values, most used first |
+
 ### Notifications
 
 | Methods | Path | Notes |
@@ -750,6 +768,44 @@ allowlist).
   error. Confirming re-checks the same file and saves everything or nothing.
 - Every create, edit and import is in the client's history and the audit log
   (`CREDIT_CLIENT_CREATED`, `CREDIT_CLIENT_UPDATED`, `CREDIT_CLIENTS_IMPORTED`).
+
+### 8.6b Service requests (tickets)
+
+- Replaces the emailed approval templates. Ticket and affiliate ticket share
+  one form (`party_type`); the other services (visa, hotel, other service,
+  travel package, refund) and part payment are not built yet.
+- A request starts with **cash or credit**. Cash: client name typed, amount
+  paid (at least the selling price) and payment evidence (image or PDF, 5 MB)
+  required. Credit: an active credit client is chosen; no evidence.
+- Pricing (`service_requests/validation.py`): revenue = selling − cost, never
+  typed; negative is refused, zero must be confirmed. The optional discount
+  section (required for affiliates) sets cost = published fare − commission
+  given and balance commission = net commission − commission given
+  (`ticket_costs`, the formula Tourism confirmed). Errors when commission given
+  > net commission or net commission > published fare.
+- Another currency: optional for cash (both amount and rate, or neither);
+  required for a credit client billed in another currency, whose balance is
+  charged the foreign amount. Amount × rate must cover the selling price.
+- PNR: 5 to 8 letters and digits, unique among requests that are not cancelled
+  or rejected (`TicketDetails.active_pnr`). Route: `LOS-ABV` style codes.
+- Credit: the client row is locked; within the balance the request is
+  **Submitted** and the utilization rises at once. Over it, **Pending
+  approval**: first stage (any first-stage approver), then the final stage
+  (ED); the utilization rises on the final approval. Nobody approves their own
+  request. A rejection (with reason) closes it and frees the PNR; the balance
+  does not change.
+- Only the submitter marks it **Completed** (the ticket is issued) or
+  **Cancelled** (reason required, any open status; a credit request's amount
+  goes back). No editing after submitting: a cancelled or rejected request can
+  be copied into a new one (`created_from`), evidence included.
+- References per service and year (`TKT-2026-00042`, `ReferenceCounter`).
+  Title: `[TICKET] Client: [CLIENT_PASSENGER +N | Amount: ₦X]`.
+- Every event notifies (in-app, push and email) the people agreed: submitted →
+  notify audience; needs approval → also first-stage approvers; first approval
+  → submitter and final approvers; approved or rejected → all of them;
+  completed or cancelled → everyone told before. The actor is never notified.
+  Balance changes appear in the client's history (`CreditClientChange` source
+  `request`).
 
 ### 8.7 Applications
 

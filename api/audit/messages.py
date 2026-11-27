@@ -263,6 +263,17 @@ def build_message(action, metadata, target_type='', target_id=''):
         returned_by = _clean_text(payload.get('returned_by_user'), fallback='a user')
         return f'Admin marked {item_name} as returned by {returned_by}.'
 
+    if action.startswith('SERVICE_REQUEST_'):
+        reference = _clean_text(payload.get('reference'), fallback='A service request')
+        verb = {
+            'SERVICE_REQUEST_SUBMITTED': 'was submitted',
+            'SERVICE_REQUEST_APPROVED': 'was approved' + (' (first approval)' if payload.get('stage') == 'first' else ''),
+            'SERVICE_REQUEST_REJECTED': 'was rejected',
+            'SERVICE_REQUEST_COMPLETED': 'was marked completed',
+            'SERVICE_REQUEST_CANCELLED': 'was cancelled',
+        }.get(action, 'changed')
+        return f'{reference} {verb}: {_clean_text(payload.get("title"), fallback="")}'.rstrip(': ') + '.'
+
     if action == 'CREDIT_CLIENT_CREATED':
         return f'Credit client added: {_clean_text(payload.get("name"), fallback="a client")}.'
 

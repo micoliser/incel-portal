@@ -92,6 +92,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     can_manage_inventory?: boolean;
     can_view_clients?: boolean;
     can_manage_clients?: boolean;
+    can_view_requests?: boolean;
+    can_submit_requests?: boolean;
+    can_approve_requests?: boolean;
     avatar_url?: string | null;
     has_global_access?: boolean;
     is_manager?: boolean;
@@ -156,6 +159,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           can_manage_inventory?: boolean;
           can_view_clients?: boolean;
           can_manage_clients?: boolean;
+          can_view_requests?: boolean;
+          can_submit_requests?: boolean;
+          can_approve_requests?: boolean;
           has_global_access?: boolean;
           is_manager?: boolean;
           manager_scope?: {
@@ -186,11 +192,18 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           router.replace("/dashboard");
         } else if (pathname.startsWith("/inventory") && !isAdminUser && !hasGlobalAccess && !isIT) {
           router.replace("/dashboard");
-        } else if (pathname.startsWith("/service-requests") && !data.can_view_clients) {
-          // Until the requests tab exists, Service Requests is the clients pages.
+        } else if (pathname.startsWith("/service-requests") && !data.can_view_requests && !data.can_view_clients) {
           router.replace("/dashboard");
+        } else if (pathname.startsWith("/service-requests/clients") && !data.can_view_clients) {
+          router.replace("/service-requests/requests");
         } else if (pathname.startsWith("/service-requests/clients/import") && !data.can_manage_clients) {
           router.replace("/service-requests/clients");
+        } else if (pathname.startsWith("/service-requests/requests") && !data.can_view_requests) {
+          router.replace("/service-requests/clients");
+        } else if (pathname.startsWith("/service-requests/requests/new") && !data.can_submit_requests) {
+          router.replace("/service-requests/requests");
+        } else if (pathname.startsWith("/service-requests/approvals") && !data.can_approve_requests) {
+          router.replace("/service-requests");
         } else if (pathname.startsWith("/logs") && !isAdminUser && !hasGlobalAccess) {
           router.replace("/dashboard");
         }
@@ -694,7 +707,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               />
               <span>Tasks</span>
             </Link>
-            {userInfo?.can_view_clients ? (
+            {userInfo?.can_view_requests || userInfo?.can_view_clients ? (
               <Link
                 href="/service-requests"
                 onClick={handleCloseSidebar}

@@ -10,4 +10,5 @@ urlpatterns = [
     path('', include('inventory.api_urls')),
     path('', include('chat.api_urls')),
     path('', include('clients.api_urls')),
+    path('', include('service_requests.api_urls')),
 ]

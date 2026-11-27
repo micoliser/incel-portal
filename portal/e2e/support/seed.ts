@@ -105,3 +105,14 @@ export const CLIENTS = {
   active: { name: "Harbour Logistics Ltd", tin: "10000001", currency: "NGN" }, // 5,000,000 limit, 1,250,000 used
   inactive: { name: "Old Mill Supplies", tin: "10000003", currency: "NGN" },
 } as const;
+
+/**
+ * Ticket requests (no requests are seeded). Logistics members submit; Wale,
+ * Sam, Mary and Dele are told; Sam or Mary gives the first approval and Dele
+ * (ED) the final one. The two clients below are only used by those tests:
+ * Lagoon Tours never runs out of credit, Tight Budget Ltd always needs approval.
+ */
+export const REQUEST_CLIENTS = {
+  roomy: { name: "Lagoon Tours", tin: "20000001" },
+  tight: { name: "Tight Budget Ltd", tin: "20000002" },
+} as const;

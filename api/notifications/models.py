@@ -22,6 +22,12 @@ class Notification(CreatedAtModel):
         INVENTORY_ASSIGNED = 'inventory_assigned', 'Inventory Assigned'
         SUMMARY_SHARED = 'summary_shared', 'Summary Shared'
         CHAT_NUDGE = 'chat_nudge', 'Chat Invitation'
+        SERVICE_REQUEST_SUBMITTED = 'service_request_submitted', 'Service Request Submitted'
+        SERVICE_REQUEST_APPROVAL_NEEDED = 'service_request_approval_needed', 'Service Request Needs Approval'
+        SERVICE_REQUEST_APPROVED = 'service_request_approved', 'Service Request Approved'
+        SERVICE_REQUEST_REJECTED = 'service_request_rejected', 'Service Request Rejected'
+        SERVICE_REQUEST_COMPLETED = 'service_request_completed', 'Service Request Completed'
+        SERVICE_REQUEST_CANCELLED = 'service_request_cancelled', 'Service Request Cancelled'
 
     TYPE_CHOICES = Type.choices
     # The names the rest of the code uses (plain strings).

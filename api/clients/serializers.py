@@ -92,7 +92,7 @@ class CreditClientChangeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CreditClientChange
-        fields = ['id', 'source', 'changed_by', 'changes', 'file_name', 'created_at']
+        fields = ['id', 'source', 'changed_by', 'changes', 'file_name', 'note', 'created_at']
         read_only_fields = fields
 
 

@@ -194,9 +194,30 @@ class MeSerializer(UserWithProfileSerializer):
 
     can_view_clients = serializers.SerializerMethodField()
     can_manage_clients = serializers.SerializerMethodField()
+    can_view_requests = serializers.SerializerMethodField()
+    can_submit_requests = serializers.SerializerMethodField()
+    can_approve_requests = serializers.SerializerMethodField()
 
     class Meta(UserWithProfileSerializer.Meta):
-        fields = UserWithProfileSerializer.Meta.fields + ['can_view_clients', 'can_manage_clients']
+        fields = UserWithProfileSerializer.Meta.fields + [
+            'can_view_clients', 'can_manage_clients', 'can_view_requests', 'can_submit_requests',
+            'can_approve_requests',
+        ]
+
+    def get_can_view_requests(self, obj):
+        from service_requests.access import can_view_requests
+
+        return can_view_requests(obj)
+
+    def get_can_submit_requests(self, obj):
+        from service_requests.access import can_submit
+
+        return can_submit(obj)
+
+    def get_can_approve_requests(self, obj):
+        from service_requests.access import can_approve
+
+        return can_approve(obj)
 
     def get_can_view_clients(self, obj):
         from clients.permissions import can_view_clients

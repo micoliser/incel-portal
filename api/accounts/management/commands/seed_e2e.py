@@ -76,6 +76,7 @@ class Seeder:
         self.seed_notifications()
         self.seed_audit_logs()
         self.seed_credit_clients()
+        self.seed_service_requests()
 
     # ------------------------------------------------------------------
     # Organization and people
@@ -572,6 +573,10 @@ class Seeder:
             ('Harbour Logistics Ltd', '10000001', '5000000.00', '1250000.00', 'NGN', 'active'),
             ('Desert Rose Travel', '10000002', '20000.00', '25000.00', 'USD', 'active'),
             ('Old Mill Supplies', '10000003', '100000.00', '0.00', 'NGN', 'inactive'),
+            # For the service request tests (TINs outside the 1000000 range the
+            # clients tests count): one that never runs out, one always over.
+            ('Lagoon Tours', '20000001', '1000000000.00', '0.00', 'NGN', 'active'),
+            ('Tight Budget Ltd', '20000002', '100000.00', '0.00', 'NGN', 'active'),
         ]:
             client = CreditClient.objects.create(
                 name=name, tin=tin, credit_limit=Decimal(limit), credit_utilization=Decimal(used),
@@ -582,3 +587,26 @@ class Seeder:
             CreditClientChange.objects.create(
                 client=client, changed_by=self.users['warehouse'], source=CreditClientChange.Source.CREATED,
             )
+
+    # ------------------------------------------------------------------
+    # Service requests
+    # ------------------------------------------------------------------
+
+    def seed_service_requests(self):
+        """Who takes part in ticket requests (no requests are seeded): Logistics
+        submits; Wale, Sam, Mary and the ED are told; Sam or Mary gives the
+        first approval and the ED the final one."""
+        from service_requests.models import Audience
+
+        rows = [
+            ('submit', 'unit_members', {'unit': self.unit_logistics}),
+            ('notify', 'unit_members', {'unit': self.unit_warehouse}),
+            ('notify', 'unit_supervisor', {'unit': self.unit_logistics}),
+            ('notify', 'department_manager', {'department': self.dept_ops}),
+            ('notify', 'role', {'role': self.role_ed}),
+            ('first_approval', 'unit_supervisor', {'unit': self.unit_logistics}),
+            ('first_approval', 'department_manager', {'department': self.dept_ops}),
+            ('final_approval', 'role', {'role': self.role_ed}),
+        ]
+        for purpose, kind, target in rows:
+            Audience.objects.create(service='ticket', purpose=purpose, kind=kind, **target)

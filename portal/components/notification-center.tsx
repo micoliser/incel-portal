@@ -12,6 +12,7 @@ import {
   Check,
   CheckCheck,
   CheckSquare2,
+  ClipboardList,
   Clock,
   FileText,
   Loader2,
@@ -60,6 +61,7 @@ function getTodayKey() {
 
 function getNotificationIcon(type: string, title: string) {
   const t = `${type || ""} ${title || ""}`.toLowerCase();
+  if (t.includes("service_request")) return ClipboardList;
   if (t.includes("task") || t.includes("schedule") || t.includes("todo") || t.includes("reminder"))
     return CheckSquare2;
   if (t.includes("comment") || t.includes("mention") || t.includes("chat"))

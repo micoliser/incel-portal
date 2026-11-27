@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'inventory',
     'chat',
     'clients',
+    'service_requests',
 ]
 
 MIDDLEWARE = [
@@ -287,6 +288,8 @@ REST_FRAMEWORK = {
         'refresh': '200/minute',
         # Checking and importing credit client spreadsheets.
         'credit_client_import': '30/minute',
+        # Upload links for service request payment evidence.
+        'service_request_upload': '30/minute',
         'admin': '150/minute',
         'email': '25/hour',
         'support': '100/minute',

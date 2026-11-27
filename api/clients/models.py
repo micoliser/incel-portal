@@ -78,6 +78,9 @@ class CreditClientChange(CreatedAtModel):
         CREATED = 'created', 'Created'
         EDITED = 'edited', 'Edited'
         IMPORTED = 'imported', 'Imported'
+        # Utilization moved by a service request (taken when a credit request
+        # goes through, given back when it is cancelled).
+        REQUEST = 'request', 'Service request'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     client = models.ForeignKey(CreditClient, on_delete=models.CASCADE, related_name='changes')
@@ -90,6 +93,8 @@ class CreditClientChange(CreatedAtModel):
     )
     # {field: [old, new]} with values as text; empty for a newly created client.
     changes = models.JSONField(default=dict, blank=True)
+    # What caused it, when not the form or an import, e.g. "TKT-2026-00042 submitted".
+    note = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ['-created_at']

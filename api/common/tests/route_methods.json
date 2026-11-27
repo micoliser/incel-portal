@@ -676,6 +676,78 @@
       "post"
     ]
   },
+  "api/v1/service-requests": {
+    "name": "service-request-list",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/service-requests/awaiting-count": {
+    "name": "service-request-awaiting-count",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/service-requests/evidence-upload-url": {
+    "name": "service-request-evidence-upload-url",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/service-requests/suggestions": {
+    "name": "service-request-suggestions",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/service-requests/tickets": {
+    "name": "service-request-tickets",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/service-requests/{}": {
+    "name": "service-request-detail",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/service-requests/{}/approve": {
+    "name": "service-request-approve",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/service-requests/{}/cancel": {
+    "name": "service-request-cancel",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/service-requests/{}/complete": {
+    "name": "service-request-complete",
+    "methods": [
+      "post"
+    ]
+  },
+  "api/v1/service-requests/{}/evidence": {
+    "name": "service-request-evidence",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/service-requests/{}/history": {
+    "name": "service-request-history",
+    "methods": [
+      "get"
+    ]
+  },
+  "api/v1/service-requests/{}/reject": {
+    "name": "service-request-reject",
+    "methods": [
+      "post"
+    ]
+  },
   "api/v1/summaries/organization": {
     "name": "summary-organization",
     "methods": [

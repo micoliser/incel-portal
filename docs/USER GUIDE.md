@@ -346,6 +346,35 @@ to them under My Assets.
 - View a dedicated list of all physical assets (laptops, phones, etc.) assigned to you
 - Review assignment dates and item details
 
+### SERVICE REQUESTS (TICKETS)
+
+Ticket requests replace the approval emails. Open Service Requests in the
+sidebar; the Requests tab lists every request.
+
+Who can do what: Tourism Operations submits. Tourism Internal Control, Tourism
+Accounts, the Tourism manager, the ED and the MD can see every request.
+
+**Submitting a ticket request (Tourism Operations):**
+
+1. Click "New request", then choose **Cash** or **Credit**.
+2. For credit, search for and pick the credit client. Its limit, utilization
+   and available balance are shown.
+3. Fill in the form. Choose Client or Affiliate; affiliates need the full
+   discount section. Revenue is worked out for you.
+4. For cash, enter the amount received and upload the payment evidence (an
+   image or a PDF).
+5. Submit. If anything is wrong, every problem is marked at once.
+
+**After submitting:**
+
+- A request within the client's credit goes straight through. When the ticket
+  is issued, open it and click "Mark completed".
+- A credit request that takes the client over its limit waits for approval:
+  first the Sales supervisor, the Operations supervisor or the Tourism manager,
+  then the ED. They find it under the Approvals tab.
+- To fix a mistake, cancel the request with a reason, then click "New request
+  from this one": the form opens with everything filled in.
+
 ### CREDIT CLIENTS
 
 Clients who take services on credit, each with a credit limit.
