@@ -6,6 +6,9 @@ DEPLOYMENT.md
 deployment/
 deploy.sh
 *.csv
+# Service request templates and other spreadsheets (they hold client data)
+*.xlsx
+*.xls
 REALTIME_IMPLEMENTATION.txt
 
 # Local audit trackers (working notes, not for the repository)

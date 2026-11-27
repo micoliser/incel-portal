@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'support',
     'inventory',
     'chat',
+    'clients',
 ]
 
 MIDDLEWARE = [
@@ -284,6 +285,8 @@ REST_FRAMEWORK = {
         # Sign-in, password change and reset. The e2e suite raises it: every test signs in from one address.
         'login': os.getenv('LOGIN_THROTTLE_RATE', '25/minute'),
         'refresh': '200/minute',
+        # Checking and importing credit client spreadsheets.
+        'credit_client_import': '30/minute',
         'admin': '150/minute',
         'email': '25/hour',
         'support': '100/minute',

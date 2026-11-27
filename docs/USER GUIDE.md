@@ -346,6 +346,42 @@ to them under My Assets.
 - View a dedicated list of all physical assets (laptops, phones, etc.) assigned to you
 - Review assignment dates and item details
 
+### CREDIT CLIENTS
+
+Clients who take services on credit, each with a credit limit.
+
+Who can do what: the Tourism Operations supervisor and Tourism Accounts add,
+edit and import clients. Tourism Operations, Tourism Internal Control, the
+Tourism manager, the ED and the MD can view them.
+
+**Viewing clients:**
+
+- Open Service Requests in the sidebar, then the Clients tab. Search by name,
+  TIN, contact person or email, and filter by status or currency.
+- **Available balance** is always credit limit minus credit utilization. A
+  negative balance (shown in red) means the client is over its limit.
+- Open a client to see its details and its history: who changed what, when,
+  and the old and new values.
+
+**Adding and editing (Tourism Operations supervisor and Tourism Accounts):**
+
+- Click "Add client". Name, TIN, contact person, phone, email, credit limit
+  and credit days are required.
+- Clients are never deleted. Set a client to Inactive instead.
+
+**Importing from a spreadsheet:**
+
+1. Click "Import spreadsheet" and download the template. Column names must
+   match it; capitals, spaces, underscores and hyphens don't matter.
+2. Choose your .xlsx or .csv file. Nothing is saved yet.
+3. If a required column is missing or any row has a mistake, the page lists
+   each problem by row and column. Fix the file and choose it again.
+4. Otherwise, review the notices (for example, no Currency column means new
+   clients get NGN) and tick the box to confirm them.
+5. For each duplicate (same name or TIN as another row or an existing client),
+   choose which row to keep, or reject it.
+6. Click "Confirm import". Everything is imported at once, or nothing is.
+
 ### GOALS & TARGETS
 
 Set measurable targets and track your personal progress.

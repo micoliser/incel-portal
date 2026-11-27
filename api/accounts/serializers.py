@@ -188,6 +188,27 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
         return profile.team.name
 
 
+class MeSerializer(UserWithProfileSerializer):
+    """The signed-in user (GET /me), with rights that cost queries to work out,
+    so they are not repeated for every row of the user list."""
+
+    can_view_clients = serializers.SerializerMethodField()
+    can_manage_clients = serializers.SerializerMethodField()
+
+    class Meta(UserWithProfileSerializer.Meta):
+        fields = UserWithProfileSerializer.Meta.fields + ['can_view_clients', 'can_manage_clients']
+
+    def get_can_view_clients(self, obj):
+        from clients.permissions import can_view_clients
+
+        return can_view_clients(obj)
+
+    def get_can_manage_clients(self, obj):
+        from clients.permissions import can_manage_clients
+
+        return can_manage_clients(obj)
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)

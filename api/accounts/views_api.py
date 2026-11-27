@@ -29,6 +29,7 @@ from accounts.serializers import (
     UpdateAdminUserSerializer,
     ProfilePhotoSerializer,
     ProfilePhotoUploadUrlSerializer,
+    MeSerializer,
     UserWithProfileSerializer,
     with_profile,
 )
@@ -491,7 +492,7 @@ class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(UserWithProfileSerializer(request.user).data)
+        return Response(MeSerializer(request.user).data)
 
 
 class MeProfilePhotoUploadUrlView(APIView):

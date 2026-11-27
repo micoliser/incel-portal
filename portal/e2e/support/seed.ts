@@ -93,3 +93,15 @@ export const INVENTORY = {
   assignedToPeer: { name: "MacBook Air M2", code: "100006" },
   categories: ["Furniture", "Laptops", "Vehicles"],
 } as const;
+
+/**
+ * Credit clients. Wale Warehouse (a member of a "manage" unit) and Sam
+ * Supervisor (supervisor of a "supervisor manages" unit) manage them; the rest
+ * of Logistics and Mary Manager view; IT and Finance staff have no access.
+ * Ordered by name, as the list shows them.
+ */
+export const CLIENTS = {
+  overLimit: { name: "Desert Rose Travel", tin: "10000002", currency: "USD" }, // 20,000 limit, 25,000 used
+  active: { name: "Harbour Logistics Ltd", tin: "10000001", currency: "NGN" }, // 5,000,000 limit, 1,250,000 used
+  inactive: { name: "Old Mill Supplies", tin: "10000003", currency: "NGN" },
+} as const;

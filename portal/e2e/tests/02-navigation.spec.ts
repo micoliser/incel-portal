@@ -5,11 +5,13 @@ import { header, main, sidebar } from "../support/ui";
 const COMMON_LINKS = [
   "Dashboard", "Tasks", "My To-Dos", "Goals", "Chat", "Reports", "Summaries", "Applications", "My Assets", "Support",
 ];
-const ADMIN_LINKS = [...COMMON_LINKS, "Users", "Departments", "Inventory", "Organization", "Logs"];
+// Service Requests sits under Tasks for those who may see credit clients (see CLIENTS in seed.ts).
+const CLIENT_LINKS = ["Dashboard", "Tasks", "Service Requests", ...COMMON_LINKS.slice(2)];
+const ADMIN_LINKS = [...CLIENT_LINKS, "Users", "Departments", "Inventory", "Organization", "Logs"];
 
 const NAVIGATION: Array<{ role: Role; links: string[] }> = [
-  { role: "staff", links: COMMON_LINKS },
-  { role: "manager", links: COMMON_LINKS },
+  { role: "staff", links: CLIENT_LINKS },
+  { role: "manager", links: CLIENT_LINKS },
   { role: "itmanager", links: [...COMMON_LINKS, "Inventory"] },
   { role: "itstaff", links: [...COMMON_LINKS, "Inventory"] },
   { role: "director", links: ADMIN_LINKS },

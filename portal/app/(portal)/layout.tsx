@@ -23,6 +23,7 @@ import {
   ScrollText,
   Sun,
   LifeBuoy,
+  ClipboardList,
   TrendingUp,
   Users,
   Network,
@@ -89,6 +90,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     department_id?: number | string | null;
     department_code?: string | null;
     can_manage_inventory?: boolean;
+    can_view_clients?: boolean;
+    can_manage_clients?: boolean;
     avatar_url?: string | null;
     has_global_access?: boolean;
     is_manager?: boolean;
@@ -151,6 +154,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           department_id?: number | string | null;
           department_code?: string | null;
           can_manage_inventory?: boolean;
+          can_view_clients?: boolean;
+          can_manage_clients?: boolean;
           has_global_access?: boolean;
           is_manager?: boolean;
           manager_scope?: {
@@ -181,6 +186,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           router.replace("/dashboard");
         } else if (pathname.startsWith("/inventory") && !isAdminUser && !hasGlobalAccess && !isIT) {
           router.replace("/dashboard");
+        } else if (pathname.startsWith("/service-requests") && !data.can_view_clients) {
+          // Until the requests tab exists, Service Requests is the clients pages.
+          router.replace("/dashboard");
+        } else if (pathname.startsWith("/service-requests/clients/import") && !data.can_manage_clients) {
+          router.replace("/service-requests/clients");
         } else if (pathname.startsWith("/logs") && !isAdminUser && !hasGlobalAccess) {
           router.replace("/dashboard");
         }
@@ -204,6 +214,11 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
     ? {
         title: "Chat",
         subtitle: "Private messages with colleagues, encrypted end to end.",
+      }
+    : pathname.startsWith("/service-requests")
+    ? {
+        title: "Service Requests",
+        subtitle: "Service requests and the credit clients they are made for.",
       }
     : pathname.startsWith("/summaries")
     ? {
@@ -679,6 +694,29 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
               />
               <span>Tasks</span>
             </Link>
+            {userInfo?.can_view_clients ? (
+              <Link
+                href="/service-requests"
+                onClick={handleCloseSidebar}
+                className={cn(
+                  "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                  pathname.startsWith("/service-requests")
+                    ? "bg-[#0d47a1] text-white shadow-[0_2px_8px_rgba(13, 71, 161,0.28)] font-semibold"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <ClipboardList
+                  className={cn(
+                    "size-4 transition-transform duration-150",
+                    pathname.startsWith("/service-requests")
+                      ? "text-white"
+                      : "text-muted-foreground group-hover:text-foreground",
+                  )}
+                  aria-hidden="true"
+                />
+                <span>Service Requests</span>
+              </Link>
+            ) : null}
 
             <Link
               href="/todos"

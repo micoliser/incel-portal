@@ -288,6 +288,7 @@ minute.
 | Global access (executive) | `has_global_access`: superuser, or an active role with `has_global_access=True` (ED, MD) |
 | Manager | leads a department (`line_manager`), unit (`supervisor`) or team (`team_lead`); `tasks/hierarchy.py` |
 | Asset management | member of a department with `manages_inventory=True` (`inventory.permissions.can_manage_inventory`) |
+| Credit clients | `clients.permissions`: **manage** = superuser, a member of a unit with `credit_client_access=manage` (Tourism Accounts), or the supervisor of a unit with `supervisor_manages` (Tourism / Operations); **view** = anyone who manages, global access, members of a unit with any `credit_client_access` (Operations, Tourism Internal Control), or the line manager of a department with `manager_views_credit_clients` (Tourism). Set in Django admin on the unit or department; migration `organization/0006` set them by the production codes |
 | Managing another user | `can_manage_user`: administrators may manage ordinary staff; superusers and executives can only be managed by a superuser |
 
 A deactivated role confers nothing.
@@ -545,6 +546,18 @@ All paths are under `/api/v1`. Generated from the URL configuration on
 | POST | `/inventory/maintenance-logs/attachment-upload-url` | |
 | GET | `/inventory/maintenance-logs/export` | CSV |
 
+### Credit clients
+
+| Methods | Path | Notes |
+|---|---|---|
+| GET, POST | `/clients` | `search` (name, TIN, contact, email), `status`, `currency`; POST managers only |
+| GET, PATCH | `/clients/{pk}` | no DELETE: set `status` to `inactive` |
+| GET | `/clients/{pk}/history` | every change: who, when, created/edited/imported, `{field: [old, new]}` |
+| GET | `/clients/imports` | confirmed imports with counts |
+| GET | `/clients/imports/template` | .xlsx with the expected headers (managers) |
+| POST | `/clients/imports/preview` | multipart `file`; checks only, saves nothing (managers) |
+| POST | `/clients/imports/confirm` | multipart `file`, `confirmed=true`, `decisions` JSON `{group id: "reject" or row number}`; 409 when errors or decisions are missing |
+
 ### Notifications
 
 | Methods | Path | Notes |
@@ -708,6 +721,35 @@ allowlist).
   read-only. At most five attachments per log.
 - An item with assignment or maintenance history cannot be deleted (409).
 - Exports stream and are formula-safe.
+
+### 8.6a Credit clients
+
+- The portal shows them under Service Requests (`/service-requests/clients`),
+  the one sidebar section for the whole service request feature; requests and
+  approvals will be further tabs there.
+- Fields: name (unique, ignoring case), TIN (unique; 8 to 15 digits, optional
+  `-` and 4 digits; spaces removed), contact person, phone (7 to 15 digits) and
+  email (all three required), address, credit limit (> 0, 2 decimals), credit days (whole, 0 to
+  3650), credit utilization (>= 0), currency (NGN, USD, AED, GBP, EUR), status
+  (active/inactive), notes. The rules live in `clients/validation.py` and are
+  shared by the form and the import.
+- Available balance is never stored: credit limit minus credit utilization. It
+  may be negative (utilization above the limit), which later makes requests
+  need approval. Repayments are not recorded yet.
+- Import (`clients/importer.py`): .xlsx (first sheet) or UTF-8 .csv, at most
+  5 MB, 5000 rows. Headers match ignoring case, extra spaces, underscores and
+  hyphens. In order: (1) a missing required column (Name, TIN, Contact
+  Person, Phone, Email, Credit Limit, Credit Days) or a repeated column rejects the file; (2) any field error
+  rejects it, listed by row and column; (3) only then the review: unrecognised
+  columns (not imported), missing Status/Currency/Credit Utilization (new
+  clients get Active/NGN/0, updated clients keep theirs), an Available Balance
+  column (ignored), clients over their limit, and duplicates. Rows sharing a
+  name or TIN with each other or with an existing client form one group; the
+  uploader picks one row to import (or update the existing client with), or
+  rejects the group. A row matching two different existing clients is an
+  error. Confirming re-checks the same file and saves everything or nothing.
+- Every create, edit and import is in the client's history and the audit log
+  (`CREDIT_CLIENT_CREATED`, `CREDIT_CLIENT_UPDATED`, `CREDIT_CLIENTS_IMPORTED`).
 
 ### 8.7 Applications
 

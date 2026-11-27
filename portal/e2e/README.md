@@ -83,6 +83,11 @@ together. Everyone's password is the `PASSWORD` constant in `seed.ts`.
 | Femi Finance, Chidi Clerk | The sandbox pair. Tests that create or change data act as them. |
 | Ina Inbox | Holds the seeded notifications. |
 | Chika Changer | Used for the change-password test and for being moved between departments. |
+
+Credit clients: Wale Warehouse's unit manages them and so does Sam Supervisor
+(Logistics supervisor); the rest of Logistics and Mary Manager can view them.
+Three clients are seeded (`CLIENTS` in `seed.ts`), all with TINs starting
+`1000000`; tests that add clients use other TINs and unique names.
 | Fola Former | Deactivated account. |
 
 Tests that change data use the sandbox users and give new records unique

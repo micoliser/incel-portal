@@ -263,6 +263,22 @@ def build_message(action, metadata, target_type='', target_id=''):
         returned_by = _clean_text(payload.get('returned_by_user'), fallback='a user')
         return f'Admin marked {item_name} as returned by {returned_by}.'
 
+    if action == 'CREDIT_CLIENT_CREATED':
+        return f'Credit client added: {_clean_text(payload.get("name"), fallback="a client")}.'
+
+    if action == 'CREDIT_CLIENT_UPDATED':
+        changes = payload.get('changes') or {}
+        fields = ', '.join(_humanize_token(field).lower() for field in changes) if isinstance(changes, dict) else ''
+        name = _clean_text(payload.get('name'), fallback='a client')
+        return f'Credit client {name} updated' + (f' ({fields}).' if fields else '.')
+
+    if action == 'CREDIT_CLIENTS_IMPORTED':
+        return (
+            f'Credit clients imported from {_clean_text(payload.get("file_name"), fallback="a file")}: '
+            f'{_clean_text(payload.get("created"), "0")} added, {_clean_text(payload.get("updated"), "0")} updated, '
+            f'{_clean_text(payload.get("rejected"), "0")} rejected.'
+        )
+
     label = action_label(action)
     target = target_label(target_type, target_id)
     return f'{label} on {target}.'

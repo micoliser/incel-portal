@@ -13,14 +13,14 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'line_manager', 'is_active', 'updated_at')
-    list_filter = ('is_active',)
+    list_filter = ('is_active', 'manager_views_credit_clients')
     search_fields = ('name', 'code')
 
 
 @admin.register(Unit)
 class UnitAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'department', 'supervisor', 'is_active', 'updated_at')
-    list_filter = ('is_active', 'department')
+    list_display = ('name', 'code', 'department', 'supervisor', 'credit_client_access', 'is_active', 'updated_at')
+    list_filter = ('is_active', 'credit_client_access', 'department')
     search_fields = ('name', 'code')
 
 

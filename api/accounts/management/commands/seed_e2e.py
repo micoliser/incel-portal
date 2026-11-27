@@ -75,6 +75,7 @@ class Seeder:
         self.seed_summaries_and_goals()
         self.seed_notifications()
         self.seed_audit_logs()
+        self.seed_credit_clients()
 
     # ------------------------------------------------------------------
     # Organization and people
@@ -163,6 +164,17 @@ class Seeder:
         self.unit_logistics.save()
         self.team_dispatch.team_lead = u['lead']
         self.team_dispatch.save()
+        # Credit clients: Wale (Warehouse) manages; Sam manages as Logistics
+        # supervisor while the rest of Logistics views; Mary views as the
+        # Operations line manager. Existing units are reused so no counts move.
+        from organization.models import Unit
+
+        self.unit_warehouse.credit_client_access = Unit.CreditClientAccess.MANAGE
+        self.unit_warehouse.save()
+        self.unit_logistics.credit_client_access = Unit.CreditClientAccess.SUPERVISOR_MANAGES
+        self.unit_logistics.save()
+        self.dept_ops.manager_views_credit_clients = True
+        self.dept_ops.save()
 
     # ------------------------------------------------------------------
     # Applications
@@ -546,3 +558,27 @@ class Seeder:
             action='ADMIN_USER_CREATED', actor_user=admin, target_type='User', target_id=self.users['staff'].id,
             metadata={'email': 'staff@e2e.test', 'role_code': 'STAFF', 'role_name': 'Staff'},
         )
+
+    # ------------------------------------------------------------------
+    # Credit clients
+    # ------------------------------------------------------------------
+
+    def seed_credit_clients(self):
+        from decimal import Decimal
+
+        from clients.models import CreditClient, CreditClientChange
+
+        for name, tin, limit, used, currency, status in [
+            ('Harbour Logistics Ltd', '10000001', '5000000.00', '1250000.00', 'NGN', 'active'),
+            ('Desert Rose Travel', '10000002', '20000.00', '25000.00', 'USD', 'active'),
+            ('Old Mill Supplies', '10000003', '100000.00', '0.00', 'NGN', 'inactive'),
+        ]:
+            client = CreditClient.objects.create(
+                name=name, tin=tin, credit_limit=Decimal(limit), credit_utilization=Decimal(used),
+                credit_days=30, currency=currency, status=status, contact_person='Kemi Lawal',
+                phone='+234 803 000 0000', email=f'accounts@{tin}.example.com', created_by=self.users['warehouse'],
+                updated_by=self.users['warehouse'],
+            )
+            CreditClientChange.objects.create(
+                client=client, changed_by=self.users['warehouse'], source=CreditClientChange.Source.CREATED,
+            )

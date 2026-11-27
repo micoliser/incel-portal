@@ -44,6 +44,9 @@ class Department(TimeStampedModel):
     handles_general_support = models.BooleanField(
         default=False, help_text='Support requests that are not IT are routed to this department.',
     )
+    manager_views_credit_clients = models.BooleanField(
+        default=False, help_text="The department's line manager may view credit clients.",
+    )
 
     class Meta:
         ordering = ['name']
@@ -53,6 +56,12 @@ class Department(TimeStampedModel):
 
 
 class Unit(TimeStampedModel):
+    class CreditClientAccess(models.TextChoices):
+        NONE = '', 'No access'
+        VIEW = 'view', 'Members view'
+        SUPERVISOR_MANAGES = 'supervisor_manages', 'Members view, supervisor manages'
+        MANAGE = 'manage', 'Members manage'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='units')
     name = models.CharField(max_length=120)
@@ -65,6 +74,11 @@ class Unit(TimeStampedModel):
         related_name='managed_units'
     )
     is_active = models.BooleanField(default=True)
+    # Who may see or manage credit clients (clients app). Managing means adding,
+    # editing and importing clients and changing their limits.
+    credit_client_access = models.CharField(
+        max_length=20, choices=CreditClientAccess.choices, default=CreditClientAccess.NONE, blank=True,
+    )
 
     class Meta:
         ordering = ['name']
